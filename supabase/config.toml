@@ -1,0 +1,18 @@
+# MSDPS — Supabase CLI project config
+# Run: supabase init (already done via this file), supabase db reset / db push.
+project_id = "msdps"
+
+[db]
+major_version = 15
+
+[auth]
+# Internal staff only (Fase 1). Admin-invite, no public signup (OTA-11).
+enable_signup = false
+[auth.email]
+enable_signup = false
+enable_confirmations = true
+
+[storage]
+# Private buckets created in app/storage migration (contracts, payment/transfer/
+# delivery proof, lsr-source). All RLS-gated, none user-deletable (OTA-10).
+enabled = true
