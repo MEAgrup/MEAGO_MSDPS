@@ -13,10 +13,14 @@ type Creator = {
   id: string;
   code: string | null;
   name: string;
+  username: string | null;
   platform: string;
   status: string;
   niche: string | null;
   jenis_creator: string | null;
+  city: string | null;
+  creator_level: string | null;
+  binding_status: string | null;
   gmv: number | null;
   gmv_live: number | null;
   gmv_video: number | null;
@@ -31,6 +35,16 @@ const STATUS_CLASS: Record<string, string> = {
   binding: "amber",
   aktif: "green",
   nonaktif: "red",
+};
+
+const BINDING_LABEL: Record<string, string> = {
+  "Bound creators": "Bound",
+  "Previously bound creators": "Lepas",
+};
+
+const BINDING_CLASS: Record<string, string> = {
+  "Bound creators": "green",
+  "Previously bound creators": "red",
 };
 
 export default async function McnCreatorsPage() {
@@ -57,7 +71,7 @@ export default async function McnCreatorsPage() {
   const { data: creatorsRaw } = await supabase
     .from("mcn_creators")
     .select(
-      "id, code, name, platform, status, niche, jenis_creator, gmv, gmv_live, gmv_video, commission_share, owner_cpm_id, live_roster, ads_budget_cap"
+      "id, code, name, username, platform, status, niche, jenis_creator, city, creator_level, binding_status, gmv, gmv_live, gmv_video, commission_share, owner_cpm_id, live_roster, ads_budget_cap"
     )
     .order("name", { ascending: true });
   const creators = (creatorsRaw as Creator[] | null) ?? [];
@@ -90,10 +104,14 @@ export default async function McnCreatorsPage() {
               <tr>
                 <th>Kode</th>
                 <th>Nama</th>
+                <th>Username</th>
                 <th>Platform</th>
                 <th>Status</th>
+                <th>Binding</th>
                 <th>Niche</th>
                 <th>Jenis</th>
+                <th>Kota</th>
+                <th>Level</th>
                 <th className="right">GMV/bln</th>
                 <th>Komisi</th>
                 <th>Owner CM</th>
@@ -107,12 +125,30 @@ export default async function McnCreatorsPage() {
                 <tr key={c.id}>
                   <td className="mono">{c.code ?? "—"}</td>
                   <td>{c.name}</td>
+                  <td className="mono">{c.username ?? "—"}</td>
                   <td className="muted">{c.platform}</td>
                   <td>
                     <span className={`badge ${STATUS_CLASS[c.status] ?? "gray"}`}>{c.status}</span>
                   </td>
+                  <td>
+                    {c.binding_status ? (
+                      <span className={`badge ${BINDING_CLASS[c.binding_status] ?? "gray"}`}>
+                        {BINDING_LABEL[c.binding_status] ?? c.binding_status}
+                      </span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
                   <td className="muted">{c.niche ?? "—"}</td>
                   <td className="muted">{c.jenis_creator ?? "—"}</td>
+                  <td className="muted">{c.city ?? "—"}</td>
+                  <td>
+                    {c.creator_level ? (
+                      <span className="badge slate">{c.creator_level}</span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
                   <td className="right">{rupiah(c.gmv)}</td>
                   <td className="muted">{c.commission_share !== null ? `${c.commission_share}%` : "—"}</td>
                   <td>
@@ -143,7 +179,7 @@ export default async function McnCreatorsPage() {
               ))}
               {creators.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="muted">
+                  <td colSpan={16} className="muted">
                     Belum ada kreator terdaftar.
                   </td>
                 </tr>

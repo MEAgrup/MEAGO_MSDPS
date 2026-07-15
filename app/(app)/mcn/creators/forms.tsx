@@ -31,6 +31,12 @@ export function AddCreatorForm() {
           <input name="name" required />
         </div>
         <div>
+          <label>Username</label>
+          <input name="username" placeholder="username TikTok (opsional)" />
+        </div>
+      </div>
+      <div className="row">
+        <div>
           <label>Niche</label>
           <input name="niche" placeholder="mis. Fashion" />
         </div>

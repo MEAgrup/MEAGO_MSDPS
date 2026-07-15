@@ -1,8 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { rupiah, tanggal } from "@/lib/format";
-import { buildMonthlyGrowth, daysInMonth, formatYMD, type GrowthRow } from "@/lib/mcn/weeks";
+import { rupiah, num, tanggal } from "@/lib/format";
+import {
+  buildMonthlyGrowth,
+  daysInMonth,
+  formatYMD,
+  w1w5WindowsOf,
+  type GrowthRow,
+} from "@/lib/mcn/weeks";
 import {
   IngestForm,
   CreateRequestForm,
@@ -31,6 +37,21 @@ type CreatorRequest = {
   approved_by: string | null;
   created_at: string;
 };
+// creator_period_summary lengkap (growth + detail mingguan Creator Analysis) —
+// reuse satu fetch utk kedua card, dedupe per (creator, period_start) sendiri di sini
+// (dedupeLatestByPeriod di lib/mcn/weeks tidak diexport, jadi direplikasi lokal).
+type SummaryRow = GrowthRow & {
+  mcn_creator_id: string;
+  orders: number | null;
+  aov: number | null;
+  redemption_amount: number | null;
+  redeemed_orders: number | null;
+  new_posts: number | null;
+  posts_with_sales: number | null;
+  live_streams: number | null;
+  valid_live_streams: number | null;
+};
+
 type ProjectSummary = {
   id: string;
   code: string | null;
@@ -57,7 +78,7 @@ function shiftMonth(ym: string, delta: number): string {
 export default async function McnWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>;
+  searchParams: Promise<{ month?: string; week?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -107,27 +128,58 @@ export default async function McnWorkspacePage({
     )
   );
 
-  // (b) Growth W1-W5.
+  // (b) Growth W1-W5 + Detail Mingguan (Creator Analysis) — satu fetch, dua tampilan.
   const growthByCreator = new Map<string, ReturnType<typeof buildMonthlyGrowth>>();
+  // Map<creatorId, Map<period_start, SummaryRow>> — sudah dedupe created_at terbaru.
+  const dedupedByCreator = new Map<string, Map<string, SummaryRow>>();
   if (creatorIds.length > 0) {
     const { data: summaryRaw } = await supabase
       .from("creator_period_summary")
-      .select("mcn_creator_id, period_start, created_at, affiliate_gmv")
+      .select(
+        "mcn_creator_id, period_start, created_at, affiliate_gmv, orders, aov, redemption_amount, redeemed_orders, new_posts, posts_with_sales, live_streams, valid_live_streams"
+      )
       .in("mcn_creator_id", creatorIds)
       .gte("period_start", monthStart)
       .lte("period_start", monthEnd);
-    const rows =
-      (summaryRaw as (GrowthRow & { mcn_creator_id: string })[] | null) ?? [];
-    const byCreator = new Map<string, GrowthRow[]>();
+    const rows = (summaryRaw as SummaryRow[] | null) ?? [];
+    const byCreator = new Map<string, SummaryRow[]>();
     for (const r of rows) {
       const arr = byCreator.get(r.mcn_creator_id) ?? [];
       arr.push(r);
       byCreator.set(r.mcn_creator_id, arr);
     }
     for (const c of creators) {
-      growthByCreator.set(c.id, buildMonthlyGrowth(byCreator.get(c.id) ?? []));
+      const creatorRows = byCreator.get(c.id) ?? [];
+      growthByCreator.set(c.id, buildMonthlyGrowth(creatorRows));
+
+      // Dedupe per period_start — created_at terbaru menang (pola sama seperti
+      // dedupeLatestByPeriod di lib/mcn/weeks.ts).
+      const byPeriod = new Map<string, SummaryRow>();
+      for (const r of creatorRows) {
+        const existing = byPeriod.get(r.period_start);
+        if (!existing || r.created_at > existing.created_at) byPeriod.set(r.period_start, r);
+      }
+      dedupedByCreator.set(c.id, byPeriod);
     }
   }
+
+  // Window W1-W5 dari lib/mcn/weeks (JANGAN hitung tanggal manual / new Date(iso)).
+  const weekWindows = w1w5WindowsOf(ymYear, ymMonth);
+  const weekHasData = weekWindows.map((w) =>
+    creators.some((c) => dedupedByCreator.get(c.id)?.has(w.start))
+  );
+  let defaultWeekIndex = 1;
+  for (let i = weekHasData.length - 1; i >= 0; i--) {
+    if (weekHasData[i]) {
+      defaultWeekIndex = i + 1;
+      break;
+    }
+  }
+  const weekParamMatch = sp.week ? /^W([1-5])$/.exec(sp.week) : null;
+  const weekParamNum = weekParamMatch ? Number(weekParamMatch[1]) : null;
+  const weekIndex =
+    weekParamNum && weekParamNum <= weekWindows.length ? weekParamNum : defaultWeekIndex;
+  const selectedWeekWindow = weekWindows[weekIndex - 1];
 
   // (c) Alerts unresolved.
   let alertQuery = supabase
@@ -236,6 +288,107 @@ export default async function McnWorkspacePage({
                         <span className={g.monthGrowth >= 0 ? "badge green" : "badge red"}>
                           {(g.monthGrowth * 100).toFixed(1)}%
                         </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {creators.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="muted">
+                    Tidak ada kreator dalam scope Anda.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Detail Mingguan — {ym}</h2>
+        <p className="section-sub">
+          Data Creator Analysis per minggu (window W1-W5, W1: {weekWindows[0].start} s/d{" "}
+          {weekWindows[0].end}, dst).
+        </p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          {weekWindows.map((w, i) => {
+            const wn = i + 1;
+            const active = wn === weekIndex;
+            return (
+              <Link
+                key={wn}
+                className={active ? "btn sm" : "btn-ghost sm"}
+                href={`/mcn/workspace?month=${ym}&week=W${wn}`}
+              >
+                W{wn}
+              </Link>
+            );
+          })}
+        </div>
+        <p className="section-sub">
+          Periode terpilih: {selectedWeekWindow.start} s/d {selectedWeekWindow.end}
+        </p>
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Kreator</th>
+                <th className="right">Sales</th>
+                <th className="right">Redemption</th>
+                <th className="right">Orders</th>
+                <th className="right">AOV</th>
+                <th className="right">Posts</th>
+                <th className="right">LIVE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {creators.map((c) => {
+                const row = dedupedByCreator.get(c.id)?.get(selectedWeekWindow.start);
+                return (
+                  <tr key={c.id}>
+                    <td>
+                      {c.code ?? "—"} · {c.name}
+                    </td>
+                    <td className="right">
+                      {row?.affiliate_gmv != null ? (
+                        rupiah(row.affiliate_gmv)
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td className="right">
+                      {row?.redemption_amount != null ? (
+                        <>
+                          {rupiah(row.redemption_amount)}
+                          {row.redeemed_orders != null && (
+                            <div style={{ fontSize: 11, color: "#64748b" }}>
+                              {num(row.redeemed_orders)} order
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td className="right">
+                      {row?.orders != null ? num(row.orders) : <span className="muted">—</span>}
+                    </td>
+                    <td className="right">
+                      {row?.aov != null ? rupiah(row.aov) : <span className="muted">—</span>}
+                    </td>
+                    <td className="right">
+                      {row && (row.new_posts != null || row.posts_with_sales != null) ? (
+                        `${row.new_posts ?? "—"}/${row.posts_with_sales ?? "—"}`
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td className="right">
+                      {row && (row.live_streams != null || row.valid_live_streams != null) ? (
+                        `${row.live_streams ?? "—"}/${row.valid_live_streams ?? "—"}`
                       ) : (
                         <span className="muted">—</span>
                       )}
