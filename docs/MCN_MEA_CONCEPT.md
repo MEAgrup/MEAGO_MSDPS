@@ -177,11 +177,8 @@ Semua tabel dilengkapi: ID trigger + state_transitions + RLS + audit.
 
 ## 7. Fase E — Status Implementasi
 
-**DB + Pure Lib**: Selesai (migrasi 0300–0308, triggers, views, semua aturan business tertanam di Postgres).
+**DB + Pure Lib + Server Actions + UI + Nav**: Selesai.
 
-**Server Actions + UI**: Dalam pengerjaan sesi ini.
-- Actions: `mcn-creators.ts`, `mcn-ingest.ts`, `mcn-schedule.ts`, `deals.ts`, `bizdev.ts`, `acquisition.ts`, `projects.ts`, `mcn-requests.ts`, `config.ts`.
-- Routes: `/mcn/creators`, `/mcn/workspace`, `/mcn/schedule`, `/deals`, `/bizdev`, `/acquisition`, `/projects`.
-- Nav: sidebar seksi per team (server component, role-gated).
+Migrasi 0300–0308 applied ke live 2026-07-15. Smoke test SQL 6/6 PASS: creator auto-ID, state machine, slot locking, shop_id unique, referral constraint, project_summary accuracy. Harness rollback verified—DB live bersih. Actions 9 file (`mcn-creators.ts`, `mcn-ingest.ts`, `mcn-schedule.ts`, `deals.ts`, `bizdev.ts`, `acquisition.ts`, `projects.ts`, `mcn-requests.ts`, `config.ts`) + Routes 7 (`/mcn/creators`, `/mcn/workspace`, `/mcn/schedule`, `/deals`, `/bizdev`, `/acquisition`, `/projects`) + Nav per team (server component, role-gated): ter-commit, build clean, `npx tsc --noEmit` bersih, QC pure lib 37/37.
 
-Delivery: Draft PR, smoke test SQL + parser + end-to-end ingest, typecheck clean, docs update.
+Pending: preview/manual test UI end-to-end.
