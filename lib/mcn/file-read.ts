@@ -32,6 +32,30 @@ function parseXlsxBuffer(buf: Buffer): string[][] {
   return raw.map((row) => row.map((cell) => (cell === null || cell === undefined ? "" : String(cell))));
 }
 
+// Sama seperti readFileToCells, tapi mengembalikan SEMUA sheet workbook (bukan cuma
+// sheet pertama) — dipakai format export multi-sheet spt "Creator Analysis" (sheet
+// Filter + Data). CSV tak punya konsep multi-sheet -> dibungkus jadi 1 sheet "Data".
+export async function readWorkbookSheets(file: File): Promise<{ name: string; cells: string[][] }[]> {
+  const name = (file.name || "").toLowerCase();
+  const type = (file.type || "").toLowerCase();
+  const isXlsx =
+    name.endsWith(".xlsx") || name.endsWith(".xls") || type.includes("spreadsheet") || type.includes("excel");
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  if (isXlsx) return parseXlsxAllSheets(buf);
+  return [{ name: "Data", cells: parseCsvText(stripBom(buf.toString("utf-8"))) }];
+}
+
+function parseXlsxAllSheets(buf: Buffer): { name: string; cells: string[][] }[] {
+  const workbook = XLSX.read(buf, { type: "buffer" });
+  return workbook.SheetNames.map((sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "" });
+    const cells = raw.map((row) => row.map((cell) => (cell === null || cell === undefined ? "" : String(cell))));
+    return { name: sheetName, cells };
+  });
+}
+
 // Parser CSV manual, quote-aware: dukung koma di dalam kutip dan CRLF/LF campuran.
 export function parseCsvText(text: string): string[][] {
   const rows: string[][] = [];
