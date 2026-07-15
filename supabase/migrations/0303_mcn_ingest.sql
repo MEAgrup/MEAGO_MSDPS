@@ -27,6 +27,12 @@ create table upload_batches (
 
 create index upload_batches_period_idx on upload_batches (period_start, status);
 
+-- Audit run ingest: 1x per event batch (INSERT staging + UPDATE processed/failed),
+-- entity 'ingest', entity_id = upload_batches.id. audit_log hanya bisa ditulis via
+-- trigger SECURITY DEFINER — action tidak boleh insert audit_log langsung.
+create trigger trg_upload_batches_audit after insert or update on upload_batches
+  for each row execute function capture_audit('ingest');
+
 -- ---- Ringkasan performa per kreator × minggu --------------------------------
 create table creator_period_summary (
   id                  uuid primary key default gen_random_uuid(),
