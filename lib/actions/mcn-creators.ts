@@ -48,6 +48,7 @@ export async function addCreator(
   const platform = String(formData.get("platform") || "").trim() || "tiktok";
   const niche = String(formData.get("niche") || "").trim() || null;
   const notes = String(formData.get("notes") || "").trim() || null;
+  const username = String(formData.get("username") || "").trim() || null;
 
   if (!name) {
     return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
@@ -55,7 +56,7 @@ export async function addCreator(
 
   const { error } = await supabase
     .from("mcn_creators")
-    .insert({ name, platform, niche, notes });
+    .insert({ name, platform, niche, notes, username });
 
   if (error) {
     if (error.code === "23505") {
