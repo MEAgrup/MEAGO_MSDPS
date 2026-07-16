@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { rupiah } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AssignOwnerRow } from "./forms";
+import { AssignOwnerRow, BudgetCapRow, RosterToggleRow } from "./forms";
 import { IngestForm } from "../ingest-form";
 
 type Creator = {
@@ -17,6 +17,7 @@ type Creator = {
   commission_share: number | null;
   owner_cpm_id: string | null;
   live_roster: boolean;
+  ads_budget_cap: number | null;
 };
 
 const BINDING_BADGE: Record<string, { cls: string; label: string }> = {
@@ -154,14 +155,27 @@ export default async function McnCreatorsPage() {
   // Lead Creator Growth = lead divisi CreatorManagement. Management (OD/Director) selalu boleh.
   const canAssignOwner = mgmt || (div === "CreatorManagement" && me?.rank === "lead");
 
+  // Gate card "Budget Cap Ads & Roster Live" — mengikuti policy RLS mcn_creators_update.
+  // BizDev & KOL tidak melihat card ini.
+  const canManageOps = mgmt || div === "Acquisition" || div === "CreatorManagement";
+
   const { data: creatorsRaw } = await supabase
     .from("mcn_creators")
     .select(
-      "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster"
+      "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap"
     )
     .order("name", { ascending: true });
   const creators = (creatorsRaw as Creator[] | null) ?? [];
   const creatorIds = creators.map((c) => c.id);
+
+  // Baris yang ditampilkan di card ops: lead CM/Acquisition/management lihat semua;
+  // CM staff hanya lihat kreator miliknya sendiri (mencegah kegagalan RLS yang
+  // membingungkan saat mereka mencoba mengubah kreator milik CM lain).
+  const canManageAllOps =
+    mgmt || div === "Acquisition" || (div === "CreatorManagement" && me?.rank === "lead");
+  const opsCreators = canManageAllOps
+    ? creators
+    : creators.filter((c) => c.owner_cpm_id === me?.id);
 
   const { data: emps } = await supabase.from("employees").select("id, full_name");
   const empName = new Map(
@@ -354,6 +368,57 @@ export default async function McnCreatorsPage() {
                   <tr>
                     <td colSpan={5} className="muted">
                       Belum ada kreator terdaftar.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {canManageOps && (
+        <div className="card">
+          <h2>Budget Cap Ads & Roster Live</h2>
+          <p className="section-sub">
+            Atur batas budget ads per kreator (dipakai gate approval request ads) dan
+            keanggotaan roster live. CM staff hanya bisa mengubah kreator miliknya.
+          </p>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Kode</th>
+                  <th>Nama</th>
+                  <th>Budget Cap Ads</th>
+                  <th>Roster Live</th>
+                  <th>Status Roster</th>
+                </tr>
+              </thead>
+              <tbody>
+                {opsCreators.map((c) => (
+                  <tr key={c.id}>
+                    <td className="mono">{c.code ?? "—"}</td>
+                    <td>{c.name}</td>
+                    <td>
+                      <BudgetCapRow creatorId={c.id} currentCap={c.ads_budget_cap} />
+                    </td>
+                    <td>
+                      <RosterToggleRow creatorId={c.id} inRoster={c.live_roster} />
+                    </td>
+                    <td>
+                      {c.live_roster ? (
+                        <span className="badge green">Roster</span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {opsCreators.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="muted">
+                      Tidak ada kreator yang bisa Anda kelola.
                     </td>
                   </tr>
                 )}

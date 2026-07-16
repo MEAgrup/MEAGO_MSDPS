@@ -104,10 +104,12 @@ Semua sudah **applied ke project live** `mvcckptntrvzujqaoxxh`.
 
 ## 8. Sisa / langkah berikutnya
 
-1. **Merge PR #3** — masih draft. Setelah puas, tandai *ready for review* / merge ke `main`.
-2. **Rotasi password** akun dummy (atau hapus) sebelum produksi.
-3. **Fase berikutnya — export "list konten video"**: untuk mengisi `niche`/`jenis_creator` otomatis. Butuh file sample dulu (kolomnya harus dilihat nyata). Data konten sangat banyak → perlu diproses/di-agregat saat ingest supaya hemat DB.
-4. Fungsi yang sempat ada di halaman CM lama namun kini tidak bertempat: **set ads budget cap** & **toggle live roster** manual — server action masih ada di `lib/actions/mcn-creators.ts`, tinggal diberi tempat bila diperlukan.
+_Update 2026-07-16 (sesi orchestrator):_
+
+1. ~~**Merge PR #3**~~ — ✅ **MERGED ke `main`** (2026-07-16, setelah QC: tsc + build produksi bersih, advisor DB tanpa temuan baru). PR #2 (draft rencana, tersalip) ditutup. PR #1 (hardening middleware Vercel) juga **merged** — merge bersih, `package-lock.json` versi main (xlsx) dipertahankan.
+2. **Rotasi password** akun dummy (atau hapus) sebelum produksi. — masih terbuka.
+3. **Fase berikutnya — export "list konten video"**: untuk mengisi `niche`/`jenis_creator` otomatis. Butuh file sample dulu (kolomnya harus dilihat nyata). Data konten sangat banyak → perlu diproses/di-agregat saat ingest supaya hemat DB. — menunggu file sample dari Yohan.
+4. ~~Fungsi yang tidak bertempat~~ — ✅ **selesai via PR #4** (`claude/fable-orchestrator-workflow-iqd1w6`): card "Budget Cap Ads & Roster Live" di `/meago/creators` untuk `setAdsBudgetCap` & `toggleRoster`; gate mengikuti RLS `mcn_creators_update` (CM staff hanya kreator miliknya).
 
 ---
 _Dokumen ini ringkasan status implementasi; detail keputusan interview ada di `docs/MCN_MEA_CONCEPT.md` (§7–8) dan `docs/BUILD_PLAN.md` (baris Fase E / E.1)._
