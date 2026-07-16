@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { rupiah } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AddCreatorForm } from "./forms";
+import { AddCreatorForm, AssignOwnerRow } from "./forms";
 import { IngestForm } from "../ingest-form";
 
 type Creator = {
@@ -152,6 +152,8 @@ export default async function McnCreatorsPage() {
   if (!canView) redirect("/dashboard");
 
   const canAddProspect = mgmt || div === "CreatorManagement" || div === "Acquisition";
+  // Lead Creator Growth = lead divisi CreatorManagement. Management (OD/Director) selalu boleh.
+  const canAssignOwner = mgmt || (div === "CreatorManagement" && me?.rank === "lead");
 
   const { data: creatorsRaw } = await supabase
     .from("mcn_creators")
@@ -166,6 +168,19 @@ export default async function McnCreatorsPage() {
   const empName = new Map(
     ((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name])
   );
+
+  // Daftar CM aktif (divisi CreatorManagement) — dipakai di dropdown assign owner.
+  // Hanya di-fetch bila section-nya bakal dirender (canAssignOwner).
+  let cmEmployees: { id: string; full_name: string; rank: string }[] = [];
+  if (canAssignOwner) {
+    const { data: cmEmpsRaw } = await supabase
+      .from("employees")
+      .select("id, full_name, rank")
+      .eq("division", "CreatorManagement")
+      .eq("active", true)
+      .order("full_name", { ascending: true });
+    cmEmployees = (cmEmpsRaw as { id: string; full_name: string; rank: string }[] | null) ?? [];
+  }
 
   // Boundary bulan berjalan + 2 sebelumnya (hari-1 bulan M-2). Pakai `new Date()` tanpa
   // argumen (wall-clock sekarang) — BUKAN new Date(isoString), jadi aman dari pergeseran
@@ -204,7 +219,7 @@ export default async function McnCreatorsPage() {
 
   return (
     <>
-      <h1>Data Kreator MCN</h1>
+      <h1>Data Kreator Meago</h1>
       <p className="page-sub">
         Master kreator affiliate TikTok — terpisah dari master KOL (M9). Kolom GMV & aktivitas
         adalah rata-rata bulanan 3 bulan kalender terakhir (bulan berjalan + 2 sebelumnya).
@@ -301,6 +316,53 @@ export default async function McnCreatorsPage() {
           </table>
         </div>
       </div>
+
+      {canAssignOwner && (
+        <div className="card">
+          <h2>Assign CM / CPM</h2>
+          <p className="section-sub">
+            Tetapkan atau lepas CM/CPM penanggung jawab per kreator. Hanya Lead Creator Growth
+            dan management yang bisa mengubah.
+          </p>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Kode</th>
+                  <th>Nama</th>
+                  <th>Username</th>
+                  <th>CM Saat Ini</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {creators.map((c) => (
+                  <tr key={c.id}>
+                    <td className="mono">{c.code ?? "—"}</td>
+                    <td>{c.name}</td>
+                    <td className="mono">{c.username ?? "—"}</td>
+                    <td>{empName.get(c.owner_cpm_id ?? "") ?? <span className="muted">—</span>}</td>
+                    <td>
+                      <AssignOwnerRow
+                        creatorId={c.id}
+                        currentOwnerId={c.owner_cpm_id}
+                        cmOptions={cmEmployees}
+                      />
+                    </td>
+                  </tr>
+                ))}
+                {creators.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="muted">
+                      Belum ada kreator terdaftar.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {canAddProspect && (
         <div className="card">

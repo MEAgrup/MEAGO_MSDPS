@@ -60,7 +60,7 @@ export async function createSlot(
   });
   if (error) return { ok: false, message: `Gagal membuat slot: ${error.message}` };
 
-  revalidatePath("/mcn/schedule");
+  revalidatePath("/meago/schedule");
   return { ok: true, message: "Slot jadwal dibuat." };
 }
 
@@ -102,7 +102,7 @@ export async function updateSlot(
   const { error } = await supabase.from("live_schedule_slots").update(patch).eq("id", id);
   if (error) return { ok: false, message: `Gagal memperbarui slot: ${error.message}` };
 
-  revalidatePath("/mcn/schedule");
+  revalidatePath("/meago/schedule");
   return { ok: true, message: "Slot diperbarui." };
 }
 
@@ -120,7 +120,7 @@ export async function deleteSlot(
   const { error } = await supabase.from("live_schedule_slots").delete().eq("id", id);
   if (error) return { ok: false, message: `Gagal menghapus slot: ${error.message}` };
 
-  revalidatePath("/mcn/schedule");
+  revalidatePath("/meago/schedule");
   return { ok: true, message: "Slot dihapus." };
 }
 
@@ -146,7 +146,7 @@ export async function verifySlot(
     .eq("id", id);
   if (error) return { ok: false, message: `Verifikasi ditolak: ${error.message}` };
 
-  revalidatePath("/mcn/schedule");
+  revalidatePath("/meago/schedule");
   return { ok: true, message: "Slot terverifikasi (done)." };
 }
 
@@ -207,7 +207,7 @@ export async function copyWeek(
   const { error: iErr } = await supabase.from("live_schedule_slots").insert(copied);
   if (iErr) return { ok: false, message: `Gagal menyalin slot: ${iErr.message}` };
 
-  revalidatePath("/mcn/schedule");
+  revalidatePath("/meago/schedule");
   return { ok: true, message: `${copied.length} slot disalin ke minggu ${targetMonday}.` };
 }
 
@@ -229,6 +229,6 @@ export async function toggleRosterInline(
     .eq("id", creator_id);
   if (error) return { ok: false, message: `Gagal memperbarui roster: ${error.message}` };
 
-  revalidatePath("/mcn/schedule");
+  revalidatePath("/meago/schedule");
   return { ok: true, message: live_roster ? "Kreator masuk roster live." : "Kreator keluar dari roster live." };
 }

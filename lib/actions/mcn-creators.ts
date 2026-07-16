@@ -76,7 +76,7 @@ export async function addCreator(
     return { ok: false, message: `Gagal menyimpan kreator: ${error.message}` };
   }
 
-  revalidatePath("/mcn/creators");
+  revalidatePath("/meago/creators");
   return { ok: true, message: `Kreator "${name}" terdaftar sebagai prospek.` };
 }
 
@@ -101,7 +101,7 @@ export async function assignOwner(
     .eq("id", creator_id);
   if (error) return { ok: false, message: `Gagal menetapkan owner: ${error.message}` };
 
-  revalidatePath("/mcn/creators");
+  revalidatePath("/meago/creators");
   return { ok: true, message: owner_cpm_id ? "Owner CM diperbarui." : "Owner CM dilepas." };
 }
 
@@ -123,7 +123,7 @@ export async function toggleRoster(
     .eq("id", creator_id);
   if (error) return { ok: false, message: `Gagal memperbarui roster: ${error.message}` };
 
-  revalidatePath("/mcn/creators");
+  revalidatePath("/meago/creators");
   return { ok: true, message: live_roster ? "Kreator masuk roster live." : "Kreator keluar dari roster live." };
 }
 
@@ -150,7 +150,7 @@ export async function setAdsBudgetCap(
     .eq("id", creator_id);
   if (error) return { ok: false, message: `Gagal menyimpan budget cap: ${error.message}` };
 
-  revalidatePath("/mcn/creators");
+  revalidatePath("/meago/creators");
   return { ok: true, message: "Ads budget cap diperbarui." };
 }
 
@@ -173,6 +173,6 @@ export async function setCreatorStatus(
     .eq("id", creator_id);
   if (error) return { ok: false, message: `Transisi status ditolak: ${error.message}` };
 
-  revalidatePath("/mcn/creators");
+  revalidatePath("/meago/creators");
   return { ok: true, message: `Status kreator diubah ke ${status}.` };
 }

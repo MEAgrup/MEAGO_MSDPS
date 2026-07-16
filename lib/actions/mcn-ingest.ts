@@ -375,8 +375,8 @@ export async function runIngest(
     .eq("id", batchRowId);
   if (pErr) return failBatch(`Gagal menandai processed: ${pErr.message}`);
 
-  revalidatePath("/mcn/workspace");
-  revalidatePath("/mcn/creators");
+  revalidatePath("/meago/workspace");
+  revalidatePath("/meago/creators");
 
   const skippedPreview = parsed.skipped
     .slice(0, 10)
@@ -632,8 +632,8 @@ async function runCreatorAnalysisIngest(
     .eq("id", staging.batchRowId);
   if (pErr) return failBatch(`Gagal menandai processed: ${pErr.message}`);
 
-  revalidatePath("/mcn/workspace");
-  revalidatePath("/mcn/creators");
+  revalidatePath("/meago/workspace");
+  revalidatePath("/meago/creators");
 
   const autoMsg = autoCreated.length
     ? ` Auto-created: ${autoCreated.slice(0, 10).join(", ")}${autoCreated.length > 10 ? ` (+${autoCreated.length - 10})` : ""}.`

@@ -60,7 +60,7 @@ export async function createRequest(
     .insert({ mcn_creator_id, type, target_brand, detail, needs_approval });
   if (error) return { ok: false, message: `Gagal membuat request: ${error.message}` };
 
-  revalidatePath("/mcn/workspace");
+  revalidatePath("/meago/workspace");
   return {
     ok: true,
     message: needs_approval
@@ -86,7 +86,7 @@ export async function approveRequest(
     .eq("id", id);
   if (error) return { ok: false, message: `Approval ditolak: ${error.message}` };
 
-  revalidatePath("/mcn/workspace");
+  revalidatePath("/meago/workspace");
   return { ok: true, message: "Request di-approve." };
 }
 
@@ -105,6 +105,6 @@ export async function progressRequest(
   const { error } = await supabase.from("creator_requests").update({ status }).eq("id", id);
   if (error) return { ok: false, message: `Transisi ditolak: ${error.message}` };
 
-  revalidatePath("/mcn/workspace");
+  revalidatePath("/meago/workspace");
   return { ok: true, message: `Request diubah ke ${status}.` };
 }

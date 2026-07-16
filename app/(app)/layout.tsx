@@ -71,9 +71,9 @@ export default async function AppLayout({
         {canManage && <Link href="/employees">Kelola Karyawan</Link>}
 
         {seeCM && sectionHeading("CM Kreator")}
-        {(seeCM || div === "BizDev") && <Link href="/mcn/creators">Data Kreator</Link>}
-        {seeCM && <Link href="/mcn/workspace">CM Workspace</Link>}
-        {(seeCM || div === "BizDev") && <Link href="/mcn/schedule">Jadwal Live</Link>}
+        {(seeCM || div === "BizDev") && <Link href="/meago/creators">Data Kreator</Link>}
+        {seeCM && <Link href="/meago/workspace">CM Workspace</Link>}
+        {(seeCM || div === "BizDev") && <Link href="/meago/schedule">Jadwal Live</Link>}
 
         {seeBD && sectionHeading("BizDev & Admin Ops")}
         {seeLeads && <Link href="/leads">Leads &amp; Prospek</Link>}

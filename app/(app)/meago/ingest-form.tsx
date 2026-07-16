@@ -1,6 +1,6 @@
 "use client";
 
-// IngestForm — dipakai bersama oleh /mcn/workspace dan /mcn/creators (card "Upload Data
+// IngestForm — dipakai bersama oleh /meago/workspace dan /meago/creators (card "Upload Data
 // Mingguan"). Jangan duplikasi: kedua halaman import dari sini (workspace/forms.tsx
 // re-export komponen ini supaya import lama tetap jalan).
 

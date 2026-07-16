@@ -8,8 +8,8 @@ import {
   type ActionResult,
 } from "@/lib/actions/mcn-requests";
 
-// IngestForm sekarang komponen bersama (dipakai juga di /mcn/creators) — lihat
-// app/(app)/mcn/ingest-form.tsx. Re-export di sini supaya import existing
+// IngestForm sekarang komponen bersama (dipakai juga di /meago/creators) — lihat
+// app/(app)/meago/ingest-form.tsx. Re-export di sini supaya import existing
 // (`import { IngestForm } from "./forms"`) tetap jalan tanpa perlu ubah page.tsx.
 export { IngestForm } from "../ingest-form";
 

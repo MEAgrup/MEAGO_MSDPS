@@ -137,17 +137,17 @@ export default async function McnSchedulePage({
       </p>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
-        <Link className="btn-ghost sm" href={`/mcn/schedule?week=${prevWeek}`}>
+        <Link className="btn-ghost sm" href={`/meago/schedule?week=${prevWeek}`}>
           ← {prevWeek}
         </Link>
         <strong>
           {monday} s/d {sunday}
         </strong>
-        <Link className="btn-ghost sm" href={`/mcn/schedule?week=${nextWeek}`}>
+        <Link className="btn-ghost sm" href={`/meago/schedule?week=${nextWeek}`}>
           {nextWeek} →
         </Link>
         {monday !== defaultMonday && (
-          <Link className="sm" href={`/mcn/schedule?week=${defaultMonday}`}>
+          <Link className="sm" href={`/meago/schedule?week=${defaultMonday}`}>
             Ke minggu ini ({defaultMonday})
           </Link>
         )}

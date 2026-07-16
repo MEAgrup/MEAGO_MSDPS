@@ -220,15 +220,15 @@ export default async function McnWorkspacePage({
         {isStaffCM && <span className="badge slate">scope: kreator saya</span>}
       </p>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 20 }}>
-        <Link className="btn-ghost sm" href={`/mcn/workspace?month=${prevYM}`}>
+        <Link className="btn-ghost sm" href={`/meago/workspace?month=${prevYM}`}>
           ← {prevYM}
         </Link>
         <strong>{ym}</strong>
-        <Link className="btn-ghost sm" href={`/mcn/workspace?month=${nextYM}`}>
+        <Link className="btn-ghost sm" href={`/meago/workspace?month=${nextYM}`}>
           {nextYM} →
         </Link>
         {ym !== curYM && (
-          <Link className="sm" href={`/mcn/workspace?month=${curYM}`}>
+          <Link className="sm" href={`/meago/workspace?month=${curYM}`}>
             Ke bulan berjalan ({curYM})
           </Link>
         )}
@@ -321,7 +321,7 @@ export default async function McnWorkspacePage({
               <Link
                 key={wn}
                 className={active ? "btn sm" : "btn-ghost sm"}
-                href={`/mcn/workspace?month=${ym}&week=W${wn}`}
+                href={`/meago/workspace?month=${ym}&week=W${wn}`}
               >
                 W{wn}
               </Link>
