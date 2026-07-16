@@ -182,3 +182,47 @@ Semua tabel dilengkapi: ID trigger + state_transitions + RLS + audit.
 Migrasi 0300–0308 applied ke live 2026-07-15. Smoke test SQL 6/6 PASS: creator auto-ID, state machine, slot locking, shop_id unique, referral constraint, project_summary accuracy. Harness rollback verified—DB live bersih. Actions 9 file (`mcn-creators.ts`, `mcn-ingest.ts`, `mcn-schedule.ts`, `deals.ts`, `bizdev.ts`, `acquisition.ts`, `projects.ts`, `mcn-requests.ts`, `config.ts`) + Routes 7 (`/mcn/creators`, `/mcn/workspace`, `/mcn/schedule`, `/deals`, `/bizdev`, `/acquisition`, `/projects`) + Nav per team (server component, role-gated): ter-commit, build clean, `npx tsc --noEmit` bersih, QC pure lib 37/37.
 
 Pending: preview/manual test UI end-to-end.
+
+---
+
+## 8. Fase E.1 — Format Nyata "Creator Analysis"
+
+### Format Export TikTok Resmi
+- **File**: Workbook dengan 2 sheet (`Filter`, `Data`).
+- **Granularitas**: 1 baris = 1 kreator per minggu (bukan per-produk).
+- **Kolom**: Creator name, Creator ID, Binding status, city, level, Sales value, Orders, AOV, Redemption amount, Redeemed orders, New posts, Posts with sales, LIVE streams, Valid LIVE streams.
+
+### Keputusan Interview Final (Hasil QA User + Verifikasi)
+- **Username = kunci identitas unik** per platform, tidak berubah (display name auto-update dari file).
+- **Sales value & Redemption amount keduanya disimpan** di DB (growth metrics pakai `affiliate_gmv` = Sales value; redemption tracking terpisah).
+- **Sinkronisasi master** (name, city, level, binding status) = info-only; tidak overwrite user changes. **Transisi status kreator tetap manual** (tidak auto-trigger dari ingest).
+- **jenis_creator & niche TIDAK auto-fill** saat ingest — menunggu fase berikutnya (export list konten video).
+- **Alert binding_lost baru**: create saat 'Previously bound creators', auto-resolve saat kembali 'Bound'.
+
+### Perubahan Skema — Migrasi 0309 (Applied 2026-07-16)
+| Tabel | Perubahan |
+|-------|-----------|
+| `mcn_creators` | +`username` (unik per platform + lowercase), +`city`, +`creator_level`, +`binding_status`; index unik berubah ke `(platform, lower(username))` (nama jadi non-unik) |
+| `creator_period_summary` | +`aov`, +`redemption_amount`, +`redeemed_orders`, +`new_posts`, +`posts_with_sales`, +`live_streams`, +`valid_live_streams` |
+| `platform_alerts` | +`alert_type` = `'binding_lost'` |
+
+### Dua Jalur Ingest
+- **Workbook "Creator Analysis"** → jalur username-first: parser baca sheet, normalisasi kolom, username = kunci, aggregate mingguan ke `creator_period_summary`, insert/update `mcn_creators` (sync master).
+- **Format lain** (legacy per-produk) → jalur lama: tidak berubah (tabel `creator_subcat_segment_gmv`, `creator_top_products` dorman untuk format baru).
+
+### Revisi QA UI — `/mcn/creators` + `/mcn/workspace`
+- **Tabel 15 kolom**: Nama | Username | CM | Status (Bounded/Previously Bounded/Unbounded) | Industry | Jenis | Level | Avg Pay GMV | Redeemed GMV | Komisi | Total posts | Posts with sales | Live stream | Valid live stream | Roster Live.
+- **Rata-rata bulanan**: Avg Pay GMV, Redeemed GMV = rata-rata 3 bulan terakhir (null ≠ 0).
+- **Form tambah kreator**: Industry dropdown (Dining, Accommodation, Things to Do).
+- **Upload ingest**: lokasi di `/mcn/creators` DAN `/mcn/workspace` (komponen bersama `app/(app)/mcn/ingest-form.tsx`).
+- **Detail Mingguan card** (workspace): selector W1–W5, tampil data mingguan per sheet.
+- UI transisi lifecycle DIHAPUS dari halaman creators (server actions transisi tetap ada, tidak dipakai halaman ini).
+
+### Validasi & Kualitas
+- `lib/mcn/creator-analysis.ts`: parser pure, QC 32/32 PASS vs sample file asli.
+- `readWorkbookSheets` di `lib/mcn/file-read.ts`: helper baca workbook multi-sheet.
+- `npx tsc --noEmit` bersih di setiap step.
+
+### Pending
+- End-to-end upload test via UI (sedang berlangsung).
+- Export list konten video (untuk niche & jenis_creator) = fase berikutnya.
