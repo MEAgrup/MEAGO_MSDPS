@@ -145,7 +145,7 @@ export default async function BizDevPage() {
       <h1>BizDev Workspace</h1>
       <p className="page-sub">
         Tracker request kreator lintas CM, pipeline deal, routing campaign, lead shop, dan ringkasan
-        brand report.
+        merchant report.
       </p>
 
       <div className="card">
@@ -296,7 +296,7 @@ export default async function BizDevPage() {
       </div>
 
       <div className="card">
-        <h2>Brand Report Ringkas (GMV per shop ber-deal)</h2>
+        <h2>Merchant Report Ringkas (GMV per shop ber-deal)</h2>
         <table>
           <thead>
             <tr>

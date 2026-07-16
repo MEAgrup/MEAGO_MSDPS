@@ -161,7 +161,7 @@ export default async function McnSchedulePage({
               <th>Kreator</th>
               <th>Tanggal</th>
               <th>Jam</th>
-              <th>Brand</th>
+              <th>Merchant</th>
               <th>Verifikasi</th>
             </tr>
           </thead>
@@ -199,7 +199,7 @@ export default async function McnSchedulePage({
               <th>Kreator</th>
               <th>Tanggal</th>
               <th>Jam</th>
-              <th>Brand</th>
+              <th>Merchant</th>
               <th>Verifikasi</th>
             </tr>
           </thead>
@@ -284,7 +284,7 @@ export default async function McnSchedulePage({
                                   {s.end_time ? `–${s.end_time}` : ""}
                                 </div>
                                 <div className="muted" style={{ fontSize: 11 }}>
-                                  {s.brand_name ?? "(tanpa brand)"}
+                                  {s.brand_name ?? "(tanpa merchant)"}
                                 </div>
                                 <div style={{ marginTop: 4 }}>
                                   <span

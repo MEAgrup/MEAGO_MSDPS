@@ -38,7 +38,7 @@ export function AddSlotForm({ creatorId, date }: { creatorId: string; date: stri
             <input type="time" name="end_time" />
           </div>
         </div>
-        <label>Brand</label>
+        <label>Merchant</label>
         <input name="brand_name" />
         <label>Status</label>
         <select name="status" defaultValue="scheduled">

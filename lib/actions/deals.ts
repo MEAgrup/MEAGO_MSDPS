@@ -358,6 +358,217 @@ export async function setPipelineStage(
   return { ok: true, message: `Pipeline stage → ${pipeline_stage}.` };
 }
 
+// ============================================================================
+// POI Dealing — dealing BD dengan venue/POI (TTD/Accomodation/Dining) untuk
+// visit kreator (program MEA GO). Baris brand_deals dgn kategori_poi terisi.
+// ============================================================================
+
+export const KATEGORI_POI_OPTIONS = ["TTD", "Accomodation", "Dining"] as const;
+export const BENTUK_KERJASAMA_OPTIONS = ["Free", "Berbayar"] as const;
+export const PAYMENT_INTENT_OPTIONS = [
+  "Lunas",
+  "Bayar Sebagian",
+  "Termin",
+  "Bayar di Belakang",
+] as const;
+
+// registerPoiDeal: registrasi deal POI (venue/merchant utk visit kreator), field
+// persis urutan Google Form BD. bd_id = BD yang login. poin TIDAK PERNAH dikirim
+// (derived, dihitung trigger). Bila Berbayar & insert sukses -> panggil RPC
+// create_poi_finance; kegagalan RPC TIDAK membatalkan deal (deal tetap tersimpan,
+// pesan kembali berisi peringatan + alasan).
+export async function registerPoiDeal(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user } = await ctx();
+  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+  const nama_poi = String(formData.get("nama_poi") || "").trim();
+  const kategori_poi = String(formData.get("kategori_poi") || "").trim();
+  const pic_name = String(formData.get("pic_name") || "").trim();
+  const pic_whatsapp = String(formData.get("pic_whatsapp") || "").trim();
+  const bentuk_kerjasama = String(formData.get("bentuk_kerjasama") || "").trim();
+  const nominalRaw = String(formData.get("nominal_harga") || "").trim();
+  const payment_intent_raw = String(formData.get("payment_intent") || "").trim();
+  const benefit = String(formData.get("benefit") || "").trim() || null;
+  const visit_start_date = String(formData.get("visit_start_date") || "").trim();
+  const visit_start_time = String(formData.get("visit_start_time") || "").trim();
+  const visit_end_date = String(formData.get("visit_end_date") || "").trim();
+  const visit_end_time = String(formData.get("visit_end_time") || "").trim();
+  const kreatorRaw = String(formData.get("kreator_needed") || "").trim();
+  const kontenRaw = String(formData.get("konten_needed") || "").trim();
+  const brief_link = String(formData.get("brief_link") || "").trim() || null;
+
+  const fieldErrors: Record<string, string> = {};
+
+  if (!nama_poi) fieldErrors.nama_poi = "nama POI wajib diisi";
+  if (!KATEGORI_POI_OPTIONS.includes(kategori_poi as (typeof KATEGORI_POI_OPTIONS)[number])) {
+    fieldErrors.kategori_poi = "kategori POI wajib dipilih";
+  }
+  if (!pic_name) fieldErrors.pic_name = "nama PIC wajib diisi";
+  if (!pic_whatsapp) fieldErrors.pic_whatsapp = "no. WhatsApp PIC wajib diisi";
+  if (
+    !BENTUK_KERJASAMA_OPTIONS.includes(
+      bentuk_kerjasama as (typeof BENTUK_KERJASAMA_OPTIONS)[number]
+    )
+  ) {
+    fieldErrors.bentuk_kerjasama = "bentuk kerjasama wajib dipilih (Free/Berbayar)";
+  }
+
+  let nominal_harga: number | null = null;
+  let payment_intent: string | null = null;
+  if (bentuk_kerjasama === "Berbayar") {
+    nominal_harga = nominalRaw ? parseRupiah(nominalRaw) : null;
+    if (nominal_harga === null || !(nominal_harga > 0)) {
+      fieldErrors.nominal_harga =
+        "nominal harga wajib diisi & lebih dari 0 untuk kerjasama Berbayar";
+    }
+    payment_intent = payment_intent_raw || "Lunas";
+    if (!PAYMENT_INTENT_OPTIONS.includes(payment_intent as (typeof PAYMENT_INTENT_OPTIONS)[number])) {
+      fieldErrors.payment_intent = "metode pembayaran tidak valid";
+    }
+  }
+
+  // benefit wajib diisi utk deal POI (ditegakkan juga oleh trigger DB).
+  if (!benefit) fieldErrors.benefit = "benefit wajib dipilih";
+
+  if (!visit_start_date) fieldErrors.visit_start_date = "tanggal visit mulai wajib diisi";
+  if (!visit_start_time) fieldErrors.visit_start_time = "jam visit mulai wajib diisi";
+  if (!visit_end_date) fieldErrors.visit_end_date = "tanggal visit berakhir wajib diisi";
+  if (!visit_end_time) fieldErrors.visit_end_time = "jam visit berakhir wajib diisi";
+  if (visit_start_date && visit_end_date && visit_end_date < visit_start_date) {
+    fieldErrors.visit_end_date = "tanggal berakhir tidak boleh sebelum tanggal mulai";
+  }
+
+  const kreator_needed = kreatorRaw ? parseInt(kreatorRaw, 10) : NaN;
+  if (!kreatorRaw || !Number.isFinite(kreator_needed) || kreator_needed <= 0) {
+    fieldErrors.kreator_needed = "jumlah kreator dibutuhkan wajib diisi angka > 0";
+  }
+  const konten_needed = kontenRaw ? parseInt(kontenRaw, 10) : NaN;
+  if (!kontenRaw || !Number.isFinite(konten_needed) || konten_needed <= 0) {
+    fieldErrors.konten_needed = "jumlah konten dibutuhkan wajib diisi angka > 0";
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    const detail = Object.entries(fieldErrors)
+      .map(([f, msg]) => `• ${f}: ${msg}`)
+      .join("\n");
+    return { ok: false, message: `Input Deal POI gagal — perbaiki:\n${detail}` };
+  }
+
+  const { data: deal, error } = await supabase
+    .from("brand_deals")
+    .insert({
+      brand_name: nama_poi,
+      kategori_poi,
+      pic_name,
+      pic_whatsapp,
+      bentuk_kerjasama,
+      nominal_harga,
+      benefit,
+      visit_start_date,
+      visit_start_time,
+      visit_end_date,
+      visit_end_time,
+      kreator_needed,
+      konten_needed,
+      brief_link,
+      bd_id: user.id,
+      sourced_by_role: "bd",
+    })
+    .select("id, code")
+    .single();
+  if (error) return { ok: false, message: `Gagal menyimpan Deal POI: ${error.message}` };
+
+  let trxMsg = "";
+  if (bentuk_kerjasama === "Berbayar") {
+    const { data: trx, error: trxErr } = await supabase.rpc("create_poi_finance", {
+      p_deal_id: deal.id,
+      p_payment_intent: payment_intent,
+    });
+    trxMsg = trxErr
+      ? ` Peringatan: transaksi gagal dibuat otomatis — ${trxErr.message}. Deal tetap tersimpan, gunakan tombol "Buat Transaksi" pada baris ini.`
+      : ` Transaksi ${trx} dibuat.`;
+  }
+
+  revalidatePath("/deals");
+  return { ok: true, message: `Deal POI ${deal.code} — ${nama_poi} terdaftar.${trxMsg}` };
+}
+
+// updatePoiRealisasi: isi/perbarui realisasi visit POI (boleh diisi semua tim
+// yang bisa melihat halaman deal). Field kosong dikirim null ke RPC.
+export async function updatePoiRealisasi(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user } = await ctx();
+  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+  const id = String(formData.get("id") || "");
+  if (!id) return { ok: false, message: "Deal tidak ditemukan." };
+
+  const listingRaw = String(formData.get("listing_date") || "").trim();
+  const visitRaw = String(formData.get("visit_realized_date") || "").trim();
+  const kreatorRaw = String(formData.get("kreator_realized") || "").trim();
+  const videoRaw = String(formData.get("video_realized") || "").trim();
+  const p_visit_checked = formData.get("visit_checked") === "on";
+
+  let p_kreator_realized: number | null = null;
+  if (kreatorRaw) {
+    p_kreator_realized = parseInt(kreatorRaw, 10);
+    if (!Number.isFinite(p_kreator_realized) || p_kreator_realized < 0) {
+      return { ok: false, message: "Kreator realized harus angka >= 0." };
+    }
+  }
+  let p_video_realized: number | null = null;
+  if (videoRaw) {
+    p_video_realized = parseInt(videoRaw, 10);
+    if (!Number.isFinite(p_video_realized) || p_video_realized < 0) {
+      return { ok: false, message: "Video realized harus angka >= 0." };
+    }
+  }
+
+  const { error } = await supabase.rpc("update_poi_realisasi", {
+    p_deal_id: id,
+    p_listing_date: listingRaw || null,
+    p_visit_realized_date: visitRaw || null,
+    p_kreator_realized,
+    p_video_realized,
+    p_visit_checked,
+  });
+  if (error) return { ok: false, message: `Gagal menyimpan realisasi: ${error.message}` };
+
+  revalidatePath("/deals");
+  return { ok: true, message: "Realisasi Deal POI tersimpan." };
+}
+
+// createPoiFinanceAction: buat transaksi utk deal POI Berbayar lama yang belum
+// punya transaction_id (RPC juga dipakai otomatis di registerPoiDeal).
+export async function createPoiFinanceAction(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user } = await ctx();
+  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+  const id = String(formData.get("id") || "");
+  if (!id) return { ok: false, message: "Deal tidak ditemukan." };
+  const payment_intent = String(formData.get("payment_intent") || "").trim() || "Lunas";
+  if (!PAYMENT_INTENT_OPTIONS.includes(payment_intent as (typeof PAYMENT_INTENT_OPTIONS)[number])) {
+    return { ok: false, message: "Metode pembayaran tidak valid." };
+  }
+
+  const { data, error } = await supabase.rpc("create_poi_finance", {
+    p_deal_id: id,
+    p_payment_intent: payment_intent,
+  });
+  if (error) return { ok: false, message: `Gagal membuat transaksi: ${error.message}` };
+
+  revalidatePath("/deals");
+  return { ok: true, message: `Transaksi ${data} dibuat.` };
+}
+
 // addDealProduct: tambah satu produk ke deal existing.
 export async function addDealProduct(
   _prev: ActionResult | null,
