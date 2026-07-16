@@ -22,6 +22,7 @@ export default async function AppLayout({
 
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
+  const isLead = me?.rank === "lead";
   const canManage = mgmt;
   const seeLeads = mgmt || div === "BizDev" || div === "Marketing";
   const seeMerchants = mgmt || ["BizDev", "Account", "Finance"].includes(div);
@@ -32,26 +33,69 @@ export default async function AppLayout({
   const seeKol = mgmt || ["KOL", "Account"].includes(div);
   const seeLivestream = mgmt || ["Account", "LiveStream"].includes(div);
 
+  // ---- MCN nav groups ----
+  const seeCM = mgmt || div === "CreatorManagement";
+  const seeBD = mgmt || div === "BizDev";
+  const seeAcq = mgmt || div === "Acquisition";
+  const seeProj =
+    mgmt || isLead || ["CreatorManagement", "BizDev", "Acquisition"].includes(div);
+
+  const sectionHeading = (label: string) => (
+    <div
+      style={{
+        fontSize: 11,
+        textTransform: "uppercase",
+        letterSpacing: ".04em",
+        color: "#64748b",
+        marginTop: 14,
+        marginBottom: 2,
+        padding: "0 12px",
+      }}
+    >
+      {label}
+    </div>
+  );
+
   return (
     <div className="app-shell">
       <nav className="sidebar">
         <div className="brand">MSDPS</div>
         <div className="sub">MEAGO!</div>
+
+        {sectionHeading("Umum")}
         <Link href="/dashboard">Dashboard</Link>
         <Link href="/portal">Team Portal</Link>
-        <Link href="/board">Merchant Board</Link>
-        {mgmt && <Link href="/management">Manajemen</Link>}
+        {seeFinance && <Link href="/finance">Keuangan</Link>}
         {mgmt && <Link href="/okr">Target OKR</Link>}
-        <Link href="/campaigns">Kampanye</Link>
+        {mgmt && <Link href="/management">Manajemen</Link>}
+        {canManage && <Link href="/employees">Kelola Karyawan</Link>}
+
+        {seeCM && sectionHeading("CM Kreator")}
+        {(seeCM || div === "BizDev") && <Link href="/meago/creators">Data Kreator</Link>}
+        {seeCM && <Link href="/meago/workspace">CM Workspace</Link>}
+        {(seeCM || div === "BizDev") && <Link href="/meago/schedule">Jadwal Live</Link>}
+
+        {seeBD && sectionHeading("BizDev & Admin Ops")}
         {seeLeads && <Link href="/leads">Leads &amp; Prospek</Link>}
-        {seeMerchants && <Link href="/merchants">Merchant</Link>}
+        {seeBD && <Link href="/deals">Merchant Deals</Link>}
+        {seeBD && <Link href="/bizdev">BizDev Workspace</Link>}
+
+        {seeAcq && sectionHeading("Akuisisi Kreator")}
+        {seeAcq && <Link href="/acquisition">Akuisisi Kreator</Link>}
+
+        {seeProj && sectionHeading("Special Project")}
+        {seeProj && <Link href="/projects">Special Project</Link>}
+
+        {sectionHeading("Account & Service")}
+        <Link href="/board">Merchant Board</Link>
         {seeAccount && <Link href="/account">Account</Link>}
         {seeEcommerce && <Link href="/ecommerce">E-commerce</Link>}
         {seeAds && <Link href="/ads">Ads</Link>}
         {seeKol && <Link href="/kol">KOL</Link>}
         {seeLivestream && <Link href="/livestream">Live Stream</Link>}
-        {seeFinance && <Link href="/finance">Keuangan</Link>}
-        {canManage && <Link href="/employees">Kelola Karyawan</Link>}
+        {seeMerchants && <Link href="/merchants">Merchant</Link>}
+        <Link href="/campaigns">Kampanye</Link>
+
         <div className="spacer" />
         <div className="me">
           {me ? (
