@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { rupiah } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AddCreatorForm, AssignOwnerRow } from "./forms";
+import { AssignOwnerRow } from "./forms";
 import { IngestForm } from "../ingest-form";
 
 type Creator = {
@@ -151,7 +151,6 @@ export default async function McnCreatorsPage() {
   const canView = mgmt || ["CreatorManagement", "BizDev", "Acquisition", "KOL"].includes(div);
   if (!canView) redirect("/dashboard");
 
-  const canAddProspect = mgmt || div === "CreatorManagement" || div === "Acquisition";
   // Lead Creator Growth = lead divisi CreatorManagement. Management (OD/Director) selalu boleh.
   const canAssignOwner = mgmt || (div === "CreatorManagement" && me?.rank === "lead");
 
@@ -361,13 +360,6 @@ export default async function McnCreatorsPage() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-
-      {canAddProspect && (
-        <div className="card">
-          <h2>Daftarkan Prospek Baru</h2>
-          <AddCreatorForm />
         </div>
       )}
     </>

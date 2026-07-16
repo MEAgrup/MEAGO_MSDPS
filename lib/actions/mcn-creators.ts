@@ -49,6 +49,7 @@ export async function addCreator(
   const niche = String(formData.get("niche") || "").trim() || null;
   const notes = String(formData.get("notes") || "").trim() || null;
   const username = String(formData.get("username") || "").trim() || null;
+  const city = String(formData.get("city") || "").trim() || null;
 
   if (!name) {
     return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
@@ -56,7 +57,7 @@ export async function addCreator(
 
   const { error } = await supabase
     .from("mcn_creators")
-    .insert({ name, platform, niche, notes, username });
+    .insert({ name, platform, niche, notes, username, city });
 
   if (error) {
     if (error.code === "23505") {
@@ -77,6 +78,7 @@ export async function addCreator(
   }
 
   revalidatePath("/meago/creators");
+  revalidatePath("/acquisition");
   return { ok: true, message: `Kreator "${name}" terdaftar sebagai prospek.` };
 }
 

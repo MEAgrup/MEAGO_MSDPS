@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
 import {
+  AddCreatorForm,
   RecordAcquisitionForm,
   RefreshGmvButton,
   HandoffButton,
@@ -65,13 +66,28 @@ export default async function AcquisitionPage() {
 
   const { data: creatorsRaw } = await supabase
     .from("mcn_creators")
-    .select("id, name, code, status, owner_cpm_id")
+    .select("id, name, code, status, owner_cpm_id, username, niche, city, created_at")
     .order("name", { ascending: true });
   const creators =
-    (creatorsRaw as { id: string; name: string; code: string | null; status: string; owner_cpm_id: string | null }[] | null) ??
-    [];
+    (creatorsRaw as
+      | {
+          id: string;
+          name: string;
+          code: string | null;
+          status: string;
+          owner_cpm_id: string | null;
+          username: string | null;
+          niche: string | null;
+          city: string | null;
+          created_at: string;
+        }[]
+      | null) ?? [];
   const creatorMap = new Map(creators.map((c) => [c.id, c]));
   const prospects = creators.filter((c) => c.status === "prospek").map((c) => ({ id: c.id, code: c.code, name: c.name }));
+  const prospectRows = creators
+    .filter((c) => c.status === "prospek")
+    .slice()
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
 
   const { data: acqRaw } = await supabase
     .from("acquisitions")
@@ -107,6 +123,50 @@ export default async function AcquisitionPage() {
       <p className="page-sub">
         Catat closing/binding kreator baru, referral antar-kreator, dan handoff ke tim CM.
       </p>
+
+      {canWrite && (
+        <div className="card">
+          <h2>Daftarkan Kreator Baru (Prospek)</h2>
+          <AddCreatorForm />
+        </div>
+      )}
+
+      <div className="card">
+        <h2>Prospek Terdaftar ({prospectRows.length})</h2>
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Kode</th>
+                <th>Nama</th>
+                <th>Username</th>
+                <th>Industry</th>
+                <th>Kota</th>
+                <th>Tanggal Daftar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prospectRows.map((c) => (
+                <tr key={c.id}>
+                  <td className="mono">{c.code ?? "—"}</td>
+                  <td>{c.name}</td>
+                  <td className="mono">{c.username ?? "—"}</td>
+                  <td className="muted">{c.niche ?? "—"}</td>
+                  <td className="muted">{c.city ?? "—"}</td>
+                  <td className="muted">{tanggal(c.created_at)}</td>
+                </tr>
+              ))}
+              {prospectRows.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="muted">
+                    Belum ada prospek.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {canWrite && (
         <div className="card">
