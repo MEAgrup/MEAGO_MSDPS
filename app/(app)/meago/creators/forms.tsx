@@ -1,7 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
-import { assignOwner, type ActionResult } from "@/lib/actions/mcn-creators";
+import {
+  assignOwner,
+  setAdsBudgetCap,
+  toggleRoster,
+  type ActionResult,
+} from "@/lib/actions/mcn-creators";
 
 type CmOption = { id: string; full_name: string; rank: string };
 
@@ -35,6 +40,70 @@ export function AssignOwnerRow({
       </select>
       <button className="sm" type="submit" disabled={pending}>
         {pending ? "…" : "Simpan"}
+      </button>
+      {state && (
+        <span className={state.ok ? "ok-msg" : "err"} style={{ fontSize: 11 }}>
+          {state.message}
+        </span>
+      )}
+    </form>
+  );
+}
+
+// BudgetCapRow — form set ads_budget_cap per kreator. Input dikosongkan → hapus cap
+// (action sudah menangani "" → null); validasi angka dilakukan di server via parseRupiah.
+export function BudgetCapRow({
+  creatorId,
+  currentCap,
+}: {
+  creatorId: string;
+  currentCap: number | null;
+}) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    setAdsBudgetCap,
+    null
+  );
+  return (
+    <form action={action} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <input type="hidden" name="creator_id" value={creatorId} />
+      <input
+        name="ads_budget_cap"
+        defaultValue={currentCap !== null ? String(currentCap) : ""}
+        inputMode="numeric"
+        placeholder="mis. 1.500.000"
+        style={{ width: 130 }}
+      />
+      <button className="sm" type="submit" disabled={pending}>
+        {pending ? "…" : "Simpan"}
+      </button>
+      {state && (
+        <span className={state.ok ? "ok-msg" : "err"} style={{ fontSize: 11 }}>
+          {state.message}
+        </span>
+      )}
+    </form>
+  );
+}
+
+// RosterToggleRow — form toggleRoster per kreator. Hidden `live_roster` mengirim nilai
+// TUJUAN (bukan nilai sekarang) — action membaca `=== "true"`.
+export function RosterToggleRow({
+  creatorId,
+  inRoster,
+}: {
+  creatorId: string;
+  inRoster: boolean;
+}) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    toggleRoster,
+    null
+  );
+  return (
+    <form action={action} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <input type="hidden" name="creator_id" value={creatorId} />
+      <input type="hidden" name="live_roster" value={inRoster ? "false" : "true"} />
+      <button className="sm" type="submit" disabled={pending}>
+        {pending ? "…" : inRoster ? "Keluarkan dari roster" : "Masukkan ke roster"}
       </button>
       {state && (
         <span className={state.ok ? "ok-msg" : "err"} style={{ fontSize: 11 }}>
