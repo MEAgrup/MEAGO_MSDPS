@@ -1,13 +1,17 @@
 "use client";
 
 import { useActionState } from "react";
-import { runIngest, type ActionResult as IngestResult } from "@/lib/actions/mcn-ingest";
 import {
   createRequest,
   approveRequest,
   progressRequest,
   type ActionResult,
 } from "@/lib/actions/mcn-requests";
+
+// IngestForm sekarang komponen bersama (dipakai juga di /mcn/creators) — lihat
+// app/(app)/mcn/ingest-form.tsx. Re-export di sini supaya import existing
+// (`import { IngestForm } from "./forms"`) tetap jalan tanpa perlu ubah page.tsx.
+export { IngestForm } from "../ingest-form";
 
 type CreatorOpt = { id: string; name: string; code: string | null };
 
@@ -17,24 +21,6 @@ function Msg({ state }: { state: ActionResult | null }) {
     <div className={state.ok ? "ok-msg" : "err"} style={{ whiteSpace: "pre-wrap" }}>
       {state.message}
     </div>
-  );
-}
-
-export function IngestForm() {
-  const [state, action, pending] = useActionState<IngestResult | null, FormData>(
-    runIngest,
-    null
-  );
-  return (
-    <form action={action}>
-      <Msg state={state} />
-      <label>File Performa (CSV/XLSX) *</label>
-      <input type="file" name="file" accept=".csv,.xlsx,.xls" required />
-      <input type="hidden" name="source_type" value="tiktok" />
-      <button type="submit" disabled={pending}>
-        {pending ? "Memproses…" : "Upload & Proses"}
-      </button>
-    </form>
   );
 }
 
