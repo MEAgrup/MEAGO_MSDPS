@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { parseRupiah } from "@/lib/mcn/parsers";
+import { INDUSTRIES } from "@/lib/mcn/industries";
+
+const JENIS_CREATOR_VALUES = ["live", "video", "mixed"] as const;
 
 export type ActionResult = { ok: boolean; message: string };
 
@@ -177,4 +180,40 @@ export async function setCreatorStatus(
 
   revalidatePath("/meago/creators");
   return { ok: true, message: `Status kreator diubah ke ${status}.` };
+}
+
+// setCreatorProfile: update jenis_creator & niche. Fase "export list konten video" (yang
+// tadinya akan auto-fill dua kolom ini dari data ingest) DIBATALKAN (keputusan
+// 2026-07-16) — ini satu-satunya jalur pengisian, diisi manual per kreator di sini.
+export async function setCreatorProfile(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user } = await ctx();
+  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+  const creator_id = String(formData.get("creator_id") || "");
+  if (!creator_id) return { ok: false, message: "Kreator tidak valid." };
+
+  const jenisRaw = String(formData.get("jenis_creator") || "").trim();
+  if (jenisRaw !== "" && !JENIS_CREATOR_VALUES.includes(jenisRaw as (typeof JENIS_CREATOR_VALUES)[number])) {
+    return { ok: false, message: "Jenis kreator tidak dikenali." };
+  }
+  const jenis_creator = jenisRaw === "" ? null : jenisRaw;
+
+  const nicheRaw = String(formData.get("niche") || "").trim();
+  if (nicheRaw !== "" && !INDUSTRIES.includes(nicheRaw as (typeof INDUSTRIES)[number])) {
+    return { ok: false, message: "Industry tidak dikenali." };
+  }
+  const niche = nicheRaw === "" ? null : nicheRaw;
+
+  const { error } = await supabase
+    .from("mcn_creators")
+    .update({ jenis_creator, niche })
+    .eq("id", creator_id);
+  if (error) return { ok: false, message: `Gagal menyimpan profil kreator: ${error.message}` };
+
+  revalidatePath("/meago/creators");
+  revalidatePath("/acquisition");
+  return { ok: true, message: "Profil kreator diperbarui." };
 }

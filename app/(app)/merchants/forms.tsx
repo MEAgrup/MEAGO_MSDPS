@@ -2,23 +2,15 @@
 
 import { useActionState } from "react";
 import { closeDeal, type ActionResult } from "@/lib/actions/merchants";
+import { INDUSTRIES } from "@/lib/mcn/industries";
 
 type Nego = { attempt_id: string; label: string };
 
 const SERVICE_TYPES = ["KOL-Video", "KOL-Live", "E-commerce", "Ads", "Live Stream"];
 const PAYMENT_INTENTS = ["Lunas", "Bayar Sebagian", "Termin", "Bayar di Belakang"];
-// MEAGO! merchant categories (hospitality/lifestyle) — NOT the agency's e-commerce
-// taxonomy (beauty/fashion). Confirm/expand this list with the product owner.
-const KATEGORI = [
-  "Dining",
-  "Accommodation",
-  "Café & Bakery",
-  "Bar & Nightlife",
-  "Spa & Wellness",
-  "Attraction & Leisure",
-  "Retail",
-  "Lainnya",
-];
+// Kategori merchant TikTok GO — daftar final 3 industri (keputusan 2026-07-16), sumber
+// tunggal di lib/mcn/industries.ts.
+const KATEGORI = [...INDUSTRIES];
 
 export function CloseDealForm({ negotiations }: { negotiations: Nego[] }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(closeDeal, null);

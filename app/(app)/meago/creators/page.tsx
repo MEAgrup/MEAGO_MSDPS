@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { rupiah } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AssignOwnerRow, BudgetCapRow, RosterToggleRow } from "./forms";
+import { AssignOwnerRow, BudgetCapRow, ProfileRow, RosterToggleRow } from "./forms";
 import { IngestForm } from "../ingest-form";
 
 type Creator = {
@@ -379,10 +379,11 @@ export default async function McnCreatorsPage() {
 
       {canManageOps && (
         <div className="card">
-          <h2>Budget Cap Ads & Roster Live</h2>
+          <h2>Kelola Kreator — Profil, Budget Cap Ads & Roster Live</h2>
           <p className="section-sub">
             Atur batas budget ads per kreator (dipakai gate approval request ads) dan
-            keanggotaan roster live. CM staff hanya bisa mengubah kreator miliknya.
+            keanggotaan roster live. CM staff hanya bisa mengubah kreator miliknya. Jenis &amp;
+            Industry diisi manual di sini — fase auto-fill dari export konten video dibatalkan.
           </p>
           <div style={{ overflowX: "auto" }}>
             <table>
@@ -390,6 +391,7 @@ export default async function McnCreatorsPage() {
                 <tr>
                   <th>Kode</th>
                   <th>Nama</th>
+                  <th>Jenis & Industry</th>
                   <th>Budget Cap Ads</th>
                   <th>Roster Live</th>
                   <th>Status Roster</th>
@@ -400,6 +402,13 @@ export default async function McnCreatorsPage() {
                   <tr key={c.id}>
                     <td className="mono">{c.code ?? "—"}</td>
                     <td>{c.name}</td>
+                    <td>
+                      <ProfileRow
+                        creatorId={c.id}
+                        currentJenis={c.jenis_creator}
+                        currentNiche={c.niche}
+                      />
+                    </td>
                     <td>
                       <BudgetCapRow creatorId={c.id} currentCap={c.ads_budget_cap} />
                     </td>
@@ -417,7 +426,7 @@ export default async function McnCreatorsPage() {
                 ))}
                 {opsCreators.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="muted">
+                    <td colSpan={6} className="muted">
                       Tidak ada kreator yang bisa Anda kelola.
                     </td>
                   </tr>

@@ -225,4 +225,4 @@ Pending: preview/manual test UI end-to-end.
 
 ### Pending
 - End-to-end upload test via UI (sedang berlangsung).
-- Export list konten video (untuk niche & jenis_creator) = fase berikutnya.
+- ~~Export list konten video (untuk niche & jenis_creator) = fase berikutnya.~~ **DIBATALKAN** (2026-07-16) — `jenis_creator`/`niche` diisi manual via card "Kelola Kreator" di `/meago/creators` (`setCreatorProfile`).

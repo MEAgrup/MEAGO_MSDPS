@@ -10,6 +10,7 @@ import {
   unassignProjectCreator,
   type ActionResult,
 } from "@/lib/actions/projects";
+import { INDUSTRIES as INDUSTRY_CATEGORIES } from "@/lib/mcn/industries";
 
 type MerchantOpt = { id: string; code: string | null; nama_toko: string };
 type CreatorOpt = { id: string; code: string | null; name: string };
@@ -18,8 +19,6 @@ function Msg({ state }: { state: ActionResult | null }) {
   if (!state) return null;
   return <div className={state.ok ? "ok-msg" : "err"}>{state.message}</div>;
 }
-
-const INDUSTRY_CATEGORIES = ["Dining", "Accommodation", "Things to Do"];
 
 export function CreateProjectForm() {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(
