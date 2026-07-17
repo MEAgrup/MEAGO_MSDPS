@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { rupiah } from "@/lib/format";
 import { projectBadge, todayJakartaYMD } from "@/lib/mcn/project-status";
 import { campaignRoutingNext, type CampaignRoutingState } from "@/lib/mcn/routing";
+import { requestTypeLabel } from "@/lib/mcn/request-types";
 import {
   ShopLeadForm,
   CampaignRequestForm,
@@ -12,6 +13,7 @@ import {
   HandoverButton,
   PipelineStageSelect,
   PIPELINE_STAGES,
+  RequestProgressControls,
 } from "./forms";
 
 type CreatorRequest = {
@@ -22,7 +24,11 @@ type CreatorRequest = {
   status: string;
   needs_approval: boolean;
   approved_by: string | null;
+  approved_at: string | null;
   target_brand: string | null;
+  target_merchant_id: string | null;
+  nominal: number | null;
+  detail: string | null;
 };
 
 type Deal = {
@@ -81,9 +87,27 @@ export default async function BizDevPage() {
 
   const { data: reqRaw } = await supabase
     .from("creator_requests")
-    .select("id, code, mcn_creator_id, type, status, needs_approval, approved_by, target_brand")
+    .select(
+      "id, code, mcn_creator_id, type, status, needs_approval, approved_by, approved_at, target_brand, target_merchant_id, nominal, detail"
+    )
     .order("created_at", { ascending: false });
   const requests = (reqRaw as CreatorRequest[] | null) ?? [];
+
+  // Nama merchant target (free_meal/visit) — fallback ke target_brand teks bebas
+  // bila belum terdaftar di master M4. BizDev punya akses select merchants (0102).
+  const targetMerchantIds = Array.from(
+    new Set(requests.map((r) => r.target_merchant_id).filter((id): id is string => !!id))
+  );
+  let merchantName = new Map<string, string>();
+  if (targetMerchantIds.length > 0) {
+    const { data: merchRaw } = await supabase
+      .from("merchants")
+      .select("id, nama_toko")
+      .in("id", targetMerchantIds);
+    merchantName = new Map(
+      ((merchRaw as { id: string; nama_toko: string }[] | null) ?? []).map((m) => [m.id, m.nama_toko])
+    );
+  }
 
   const { data: dealsRaw } = await supabase
     .from("brand_deals")
@@ -157,42 +181,62 @@ export default async function BizDevPage() {
       </p>
 
       <div className="card">
-        <h2>Tracker Request Kreator ({requests.length})</h2>
+        <h2>Request Portal Kreator ({requests.length})</h2>
+        <p className="section-sub">
+          Antrian request kreator (form CM lama sample/ads/hsl + 4 jenis portal MEA GO). Progress
+          status di sini; transisi diajukan→diproses ditolak DB bila butuh approval Director yang
+          belum diberikan.
+        </p>
         <table>
           <thead>
             <tr>
               <th>Kode</th>
               <th>Kreator</th>
-              <th>Tipe</th>
-              <th>Target Brand</th>
+              <th>Jenis</th>
+              <th>Target Merchant</th>
+              <th className="right">Nominal</th>
+              <th>Detail</th>
               <th>Status</th>
               <th>Approval</th>
+              <th>Aksi</th>
             </tr>
           </thead>
           <tbody>
-            {requests.map((r) => (
-              <tr key={r.id}>
-                <td className="mono">{r.code ?? "—"}</td>
-                <td>{creatorName.get(r.mcn_creator_id) ?? "—"}</td>
-                <td className="muted">{r.type}</td>
-                <td className="muted">{r.target_brand ?? "—"}</td>
-                <td>
-                  <span className="badge slate">{r.status}</span>
-                </td>
-                <td>
-                  {!r.needs_approval ? (
-                    <span className="muted">tidak perlu</span>
-                  ) : r.approved_by ? (
-                    <span className="badge green">disetujui</span>
-                  ) : (
-                    <span className="badge amber">menunggu Director</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {requests.map((r) => {
+              const target = r.target_merchant_id
+                ? merchantName.get(r.target_merchant_id) ?? "—"
+                : r.target_brand ?? "—";
+              return (
+                <tr key={r.id}>
+                  <td className="mono">{r.code ?? "—"}</td>
+                  <td>{creatorName.get(r.mcn_creator_id) ?? "—"}</td>
+                  <td className="muted">{requestTypeLabel(r.type)}</td>
+                  <td className="muted">{target}</td>
+                  <td className="right">{r.nominal !== null ? rupiah(r.nominal) : "—"}</td>
+                  <td className="muted">{r.detail ?? "—"}</td>
+                  <td>
+                    <span className="badge slate">{r.status}</span>
+                  </td>
+                  <td>
+                    {r.needs_approval && r.approved_at === null && r.status === "diajukan" ? (
+                      <span className="badge amber">Menunggu approval Director</span>
+                    ) : r.needs_approval && r.approved_at ? (
+                      <span className="badge green">disetujui</span>
+                    ) : !r.needs_approval ? (
+                      <span className="muted">tidak perlu</span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                  <td>
+                    <RequestProgressControls id={r.id} status={r.status} />
+                  </td>
+                </tr>
+              );
+            })}
             {requests.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted">
+                <td colSpan={9} className="muted">
                   Belum ada request kreator.
                 </td>
               </tr>

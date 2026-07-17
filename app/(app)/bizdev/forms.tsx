@@ -11,6 +11,7 @@ import {
   type ActionResult,
 } from "@/lib/actions/bizdev";
 import { setPipelineStage } from "@/lib/actions/deals";
+import { progressRequest } from "@/lib/actions/mcn-requests";
 
 type DealOpt = { id: string; code: string | null; brand_name: string };
 type CreatorOpt = { id: string; code: string | null; name: string };
@@ -209,6 +210,47 @@ export function PipelineStageSelect({ dealId, current }: { dealId: string; curre
         </span>
       )}
     </form>
+  );
+}
+
+// Progress status creator_requests (state machine DB: diajukan→diproses|ditolak,
+// diproses→selesai). Sama seperti /meago/workspace, diduplikasi di sini karena
+// tiap route menyimpan komponen form sendiri (konvensi repo).
+const REQUEST_NEXT: Record<string, string[]> = {
+  diajukan: ["diproses", "ditolak"],
+  diproses: ["selesai"],
+};
+
+function RequestProgressButton({ id, to }: { id: string; to: string }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    progressRequest,
+    null
+  );
+  return (
+    <form action={action} style={{ display: "inline-block", marginRight: 6 }}>
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="status" value={to} />
+      <button className={`sm ${to === "ditolak" ? "ghost2" : ""}`} disabled={pending}>
+        {pending ? "…" : `→ ${to}`}
+      </button>
+      {state && !state.ok && (
+        <span className="badge red" title={state.message}>
+          {state.message}
+        </span>
+      )}
+    </form>
+  );
+}
+
+export function RequestProgressControls({ id, status }: { id: string; status: string }) {
+  const targets = REQUEST_NEXT[status] ?? [];
+  if (targets.length === 0) return <span className="muted">—</span>;
+  return (
+    <div className="actions-row">
+      {targets.map((t) => (
+        <RequestProgressButton key={t} id={id} to={t} />
+      ))}
+    </div>
   );
 }
 

@@ -8,6 +8,7 @@ import {
   toggleRoster,
   type ActionResult,
 } from "@/lib/actions/mcn-creators";
+import { createCreatorAccount } from "@/lib/actions/portal";
 import { INDUSTRIES } from "@/lib/mcn/industries";
 
 const JENIS_CREATOR_OPTIONS = ["live", "video", "mixed"] as const;
@@ -126,6 +127,37 @@ export function ProfileRow({
       </select>
       <button className="sm" type="submit" disabled={pending}>
         {pending ? "…" : "Simpan"}
+      </button>
+      {state && (
+        <span className={state.ok ? "ok-msg" : "err"} style={{ fontSize: 11 }}>
+          {state.message}
+        </span>
+      )}
+    </form>
+  );
+}
+
+// PortalAccountRow — form buat akun portal kreator (email + password). Server action
+// createCreatorAccount memakai service-role + gate CM Lead/OD/Director; kesalahan email
+// duplikat dsb. diteruskan apa adanya.
+export function PortalAccountRow({ creatorId }: { creatorId: string }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    createCreatorAccount,
+    null
+  );
+  return (
+    <form action={action} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <input type="hidden" name="creator_id" value={creatorId} />
+      <input name="email" type="email" placeholder="email kreator" required style={{ width: 180 }} />
+      <input
+        name="password"
+        type="text"
+        placeholder="password (min 8)"
+        required
+        style={{ width: 140 }}
+      />
+      <button className="sm" type="submit" disabled={pending}>
+        {pending ? "…" : "Buat akun"}
       </button>
       {state && (
         <span className={state.ok ? "ok-msg" : "err"} style={{ fontSize: 11 }}>

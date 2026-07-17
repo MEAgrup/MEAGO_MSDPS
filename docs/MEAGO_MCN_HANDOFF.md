@@ -117,5 +117,10 @@ _Update 2026-07-17 (Fase E.2–E.3, PR #5 `claude/fable-orchestrator-multi-model
 6. **Fase E.3 — Revisi QA /projects & workspace** ✅: migrasi **0310** (applied + smoke test PASS 2026-07-17) menambah `special_projects.videos_needed` & `poi_location` (info-only, OPSIONAL) — form Buat Project Baru + list `/projects` saja. Card project di **3 workspace** (CM/Akuisisi/BizDev) kini menampilkan **semua project kecuali cancelled** dengan badge status: **[Persiapan]** bila tanggal mulai belum tiba (turunan tanggal via `lib/mcn/project-status.ts`, hari Asia/Jakarta), [Berjalan]/[Draft]/[Selesai].
 7. **Sisa platform** (di luar PR #5): Merchant Portal Fase 2 (belum dibangun, butuh interview desain), rotasi password akun dummy (ditunda ke pra-produksi, keputusan 2026-07-16), aktifkan *leaked password protection* di Supabase Auth (setting dashboard).
 
+_Update 2026-07-17 sore — PR #5 **merged ke production**; fase berikutnya:_
+
+8. **Fase F — Creator Portal (PRIORITAS BERIKUTNYA)**: interview selesai, desain F.1 **terkunci** — lihat **`docs/CREATOR_PORTAL_PLAN.md`** (keputusan lengkap + temuan teknis + urutan step + pertanyaan terbuka F.2). Implementasi belum dimulai. Kunci: auth kreator via `mcn_creators.auth_user_id` (akun dibuat admin), route `/kreator/*` (JANGAN `/portal` — sudah dipakai Team Portal), request model MEA GO 4 jenis (free_meal/visit/ads_live/special_price_live) routing ke BizDev, `ads_live` auto-gate cap Director, Performa Saya tanpa komisi. Dibangun **dari awal** pola MSDPS — TIDAK menyalin kode mcnapp (repo tak dapat diakses lintas-owner; mockup UI = satu-satunya referensi).
+9. **Advisor keamanan (opsional, pra-produksi)**: 5 view `SECURITY DEFINER` flag ERROR (`v_merchant_board`, `v_management_dashboard`, `v_okr_attainment`, `v_speed_score`, `v_team_portal_tasks`) — sebagian disengaja (role-gate WHERE), `v_team_portal_tasks` dicurigai tidak sengaja (2 saudaranya invoker); tinjau satu-per-satu sebelum flip. WARN fungsi definer & INFO deny-all = by design.
+
 ---
 _Dokumen ini ringkasan status implementasi; detail keputusan interview ada di `docs/MCN_MEA_CONCEPT.md` (§7–8) dan `docs/BUILD_PLAN.md` (baris Fase E / E.1)._
