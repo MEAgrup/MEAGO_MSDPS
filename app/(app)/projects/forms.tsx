@@ -69,6 +69,16 @@ export function CreateProjectForm() {
       </div>
       <label>Jumlah Kreator Dibutuhkan *</label>
       <input name="creators_needed" type="number" min="1" required style={{ maxWidth: 160 }} />
+      <div className="row">
+        <div>
+          <label>Total Video Dibutuhkan</label>
+          <input name="videos_needed" type="number" min="1" placeholder="mis. 100" />
+        </div>
+        <div>
+          <label>Lokasi POI</label>
+          <input name="poi_location" placeholder="mis. Bandung — Braga" />
+        </div>
+      </div>
       <label>Deskripsi</label>
       <textarea name="description" rows={3} />
       <button type="submit" disabled={pending}>

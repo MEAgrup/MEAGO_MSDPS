@@ -37,6 +37,8 @@ export async function createProject(
   const description = String(formData.get("description") || "").trim() || null;
   const ads_budget = parseRupiah(String(formData.get("ads_budget") || ""));
   const target_gmv = parseRupiah(String(formData.get("target_gmv") || ""));
+  const videosRaw = String(formData.get("videos_needed") || "").trim();
+  const poi_location = String(formData.get("poi_location") || "").trim() || null;
 
   if (!name || !industry_category || !startRaw || !endRaw || !neededRaw) {
     return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
@@ -54,6 +56,11 @@ export async function createProject(
   if (creators_needed === null || creators_needed <= 0) {
     return { ok: false, message: "Jumlah kreator dibutuhkan harus bilangan bulat > 0." };
   }
+  // Opsional: kosong → null; bila diisi harus bilangan bulat > 0.
+  const videos_needed = videosRaw === "" ? null : parseIntTolerant(videosRaw);
+  if (videosRaw !== "" && (videos_needed === null || videos_needed <= 0)) {
+    return { ok: false, message: "Total video dibutuhkan harus bilangan bulat > 0." };
+  }
 
   const { error } = await supabase.from("special_projects").insert({
     name,
@@ -64,6 +71,8 @@ export async function createProject(
     ads_budget,
     target_gmv,
     description,
+    videos_needed,
+    poi_location,
   });
   if (error) return { ok: false, message: `Gagal membuat project: ${error.message}` };
 

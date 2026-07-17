@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { rupiah } from "@/lib/format";
+import { projectBadge, todayJakartaYMD } from "@/lib/mcn/project-status";
 import { campaignRoutingNext, type CampaignRoutingState } from "@/lib/mcn/routing";
 import {
   ShopLeadForm,
@@ -50,6 +51,8 @@ type ProjectSummary = {
   id: string;
   code: string | null;
   name: string;
+  status: string;
+  start_date: string;
   creators_cm: number;
   creators_acquisition: number;
   creators_needed: number;
@@ -128,12 +131,17 @@ export default async function BizDevPage() {
     .map((s) => ({ shop_id: s.shop_id, shop_name: s.shop_name, gmv: gmvByShop.get(s.shop_id) ?? 0 }))
     .sort((a, b) => b.gmv - a.gmv);
 
-  // (f) Special Project aktif (read-only).
+  // (f) Special Project (read-only): semua kecuali cancelled — yang belum mulai
+  // tampil [Persiapan] (QA 2026-07-17).
   const { data: projRaw } = await supabase
     .from("v_project_summary")
-    .select("id, code, name, creators_cm, creators_acquisition, creators_needed, actual_gmv, target_gmv, pct_gmv")
-    .eq("status", "active");
+    .select(
+      "id, code, name, status, start_date, creators_cm, creators_acquisition, creators_needed, actual_gmv, target_gmv, pct_gmv"
+    )
+    .neq("status", "cancelled")
+    .order("start_date", { ascending: false });
   const projects = (projRaw as ProjectSummary[] | null) ?? [];
+  const todayYMD = todayJakartaYMD();
 
   // Kolom pipeline: PIPELINE_STAGES + stage lain yang tak terdaftar.
   const knownStages = new Set(PIPELINE_STAGES);
@@ -325,21 +333,27 @@ export default async function BizDevPage() {
       </div>
 
       <div className="card">
-        <h2>Special Project Aktif</h2>
+        <h2>Special Project</h2>
         <table>
           <thead>
             <tr>
               <th>Kode</th>
               <th>Nama</th>
+              <th>Status</th>
               <th>Kreator (cm/akuisisi/butuh)</th>
               <th className="right">GMV Aktual / Target</th>
             </tr>
           </thead>
           <tbody>
-            {projects.map((p) => (
+            {projects.map((p) => {
+              const b = projectBadge(p.status, p.start_date, todayYMD);
+              return (
               <tr key={p.id}>
                 <td className="mono">{p.code ?? "—"}</td>
                 <td>{p.name}</td>
+                <td>
+                  <span className={`badge ${b.cls}`}>{b.label}</span>
+                </td>
                 <td className="muted">
                   {p.creators_cm}/{p.creators_acquisition}/{p.creators_needed}
                 </td>
@@ -348,11 +362,12 @@ export default async function BizDevPage() {
                   {p.pct_gmv !== null && <div style={{ fontSize: 11, color: "#64748b" }}>{p.pct_gmv}%</div>}
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {projects.length === 0 && (
               <tr>
-                <td colSpan={4} className="muted">
-                  Tidak ada special project aktif.
+                <td colSpan={5} className="muted">
+                  Belum ada special project.
                 </td>
               </tr>
             )}

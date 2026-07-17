@@ -31,6 +31,8 @@ Divisi baru di enum `division`: `CreatorManagement` dan `Acquisition` (BizDev su
 - Merchant peserta dipilih dari master M4 existing.
 - Registrar: Lead/OD/Director (divisi apa saja) — tidak perlu khusus divisi.
 - GMV aktual = Σ affiliate_gmv kreator ter-assign dalam rentang tanggal project (dari tabel `creator_period_summary` hasil ingest).
+- **Total Video Dibutuhkan & Lokasi POI** (revisi QA 2026-07-17): field info OPSIONAL di form/list `/projects` saja — angka target video tanpa hitung realisasi; POI teks bebas. Migrasi 0310.
+- **List workspace** (revisi QA 2026-07-17): card project di workspace CM/Akuisisi/BizDev menampilkan **semua project kecuali cancelled**; project yang tanggal mulainya belum tiba berbadge **[Persiapan]** (turunan tanggal, bukan status DB).
 
 ### Deal ↔ Merchant (link opsional)
 - `brand_deals.merchant_id` nullable — brand lokal pakai M4, brand luar (chain) cukup nama + shop_id.
@@ -94,7 +96,7 @@ Divisi baru di enum `division`: `CreatorManagement` dan `Acquisition` (BizDev su
 
 ### Special Project
 - **Derived summary** (view): creators_assigned vs needed (split per filled_by = cm|acquisition), GMV aktual Σ affiliate_gmv kreator ter-assign dalam [start_date, end_date].
-- **Summary card** aktif muncul read-only di workspace CM, BD, Akuisisi; `/projects` untuk kelola (create, set status, tambah/hapus merchant, assign kreator).
+- **Summary card** muncul read-only di workspace CM, BD, Akuisisi — semua project kecuali cancelled, badge [Persiapan]/[Berjalan]/[Draft]/[Selesai] (revisi QA 2026-07-17); `/projects` untuk kelola (create, set status, tambah/hapus merchant, assign kreator).
 - **Status workflow**: draft → active, active → done/cancelled, draft → cancelled (role: lead+).
 
 ---

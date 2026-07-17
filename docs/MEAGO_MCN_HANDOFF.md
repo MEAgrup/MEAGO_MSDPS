@@ -111,5 +111,11 @@ _Update 2026-07-16 (sesi orchestrator):_
 3. ~~**Fase berikutnya — export "list konten video"**~~ — ❌ **DIBATALKAN** (keputusan 2026-07-16). `jenis_creator` & `niche` kini diisi **manual** via card "Kelola Kreator — Profil, Budget Cap Ads & Roster Live" di `/meago/creators` (`setCreatorProfile`). Artefak dorman terkait fase ini dibiarkan di DB — tidak menunggu apa pun lagi.
 4. ~~Fungsi yang tidak bertempat~~ — ✅ **selesai via PR #4** (`claude/fable-orchestrator-workflow-iqd1w6`, merged 2026-07-16): card "Budget Cap Ads & Roster Live" di `/meago/creators` untuk `setAdsBudgetCap` & `toggleRoster`; gate mengikuti RLS `mcn_creators_update` (CM staff hanya kreator miliknya).
 
+_Update 2026-07-17 (Fase E.2–E.3, PR #5 `claude/fable-orchestrator-multi-model-k367i0`):_
+
+5. **Fase E.2 — Penutupan gap MCN** ✅: `setCreatorProfile` + `ProfileRow` (edit manual Jenis live/video/mixed & Industry per kreator di card "Kelola Kreator" `/meago/creators`); `lib/mcn/industries.ts` = sumber tunggal 3 industri TikTok GO (**Dining, Accommodation, Things to Do**) — dipakai kategori merchant (final, PENDING dihapus), project, acquisition. Tanpa migrasi.
+6. **Fase E.3 — Revisi QA /projects & workspace** ✅: migrasi **0310** (applied + smoke test PASS 2026-07-17) menambah `special_projects.videos_needed` & `poi_location` (info-only, OPSIONAL) — form Buat Project Baru + list `/projects` saja. Card project di **3 workspace** (CM/Akuisisi/BizDev) kini menampilkan **semua project kecuali cancelled** dengan badge status: **[Persiapan]** bila tanggal mulai belum tiba (turunan tanggal via `lib/mcn/project-status.ts`, hari Asia/Jakarta), [Berjalan]/[Draft]/[Selesai].
+7. **Sisa platform** (di luar PR #5): Merchant Portal Fase 2 (belum dibangun, butuh interview desain), rotasi password akun dummy (ditunda ke pra-produksi, keputusan 2026-07-16), aktifkan *leaked password protection* di Supabase Auth (setting dashboard).
+
 ---
 _Dokumen ini ringkasan status implementasi; detail keputusan interview ada di `docs/MCN_MEA_CONCEPT.md` (§7–8) dan `docs/BUILD_PLAN.md` (baris Fase E / E.1)._
