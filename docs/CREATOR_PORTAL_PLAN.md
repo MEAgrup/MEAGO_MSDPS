@@ -11,7 +11,7 @@ Portal untuk **kreator** (user eksternal, BUKAN karyawan MEAGO) melihat performa
 | Menu | Fase | Isi |
 |---|---|---|
 | Performa Saya | **F.1** | Metrik mingguan W1–W5 + ringkasan 3 bulan |
-| Agency Plan | F.2 | ⚠ definisi belum di-interview |
+| Merchant Deals | F.2 | ⚠ definisi belum di-interview (label eks "Agency Plan", rename QA 2026-07-17) |
 | Report Saya | F.2 | ⚠ definisi belum di-interview (bedanya dgn Performa?) |
 | Request Brand/Ads | **F.1** | Ajukan request model MEA GO + status request |
 | Special Project | **F.1** | Read-only project yang meng-assign kreator ybs |
@@ -71,7 +71,7 @@ F.1 = pondasi auth + 3 menu inti. Menu F.2 tetap tampil di sidebar sebagai place
 
 ## 5. Pertanyaan terbuka untuk sesi berikutnya (tanya Yohan sebelum F.2)
 
-1. Definisi **Agency Plan** & **Report Saya** (belum di-interview).
+1. Definisi **Merchant Deals** (eks Agency Plan, di-rename hasil QA 2026-07-17) & **Report Saya** (belum di-interview).
 2. Nasib form request lama di CM Workspace (jenis `sample/ads/hsl`): tetap ada untuk internal, atau ikut model baru?
 3. Kolom komplain & feedback: skema baru atau extend `complaints` M6 (saat ini merchant-scoped)?
 
