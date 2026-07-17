@@ -32,7 +32,7 @@ export default async function KreatorLayout({
         <div className="sub">Portal Kreator</div>
 
         <Link href="/kreator/performa">Performa Saya</Link>
-        <Link href="/kreator/agency-plan">Agency Plan</Link>
+        <Link href="/kreator/agency-plan">Merchant Deals</Link>
         <Link href="/kreator/report">Report Saya</Link>
         <Link href="/kreator/request">Request Brand/Ads</Link>
         <Link href="/kreator/special-project">Special Project</Link>
