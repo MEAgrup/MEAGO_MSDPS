@@ -20,6 +20,19 @@ export default async function AppLayout({
     .eq("id", user.id)
     .maybeSingle();
 
+  // Cross-blocking identitas: sesi yang BUKAN karyawan tidak boleh masuk route (app).
+  // Kreator → portal; akun tanpa identitas apa pun → sign-out + login.
+  if (!me) {
+    const { data: creator } = await supabase
+      .from("mcn_creators")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    if (creator) redirect("/kreator/performa");
+    await supabase.auth.signOut();
+    redirect("/login");
+  }
+
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
   const isLead = me?.rank === "lead";

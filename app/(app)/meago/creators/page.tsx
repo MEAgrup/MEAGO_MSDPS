@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { rupiah } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AssignOwnerRow, BudgetCapRow, ProfileRow, RosterToggleRow } from "./forms";
+import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
 import { IngestForm } from "../ingest-form";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 type Creator = {
   id: string;
@@ -18,6 +19,7 @@ type Creator = {
   owner_cpm_id: string | null;
   live_roster: boolean;
   ads_budget_cap: number | null;
+  auth_user_id: string | null;
 };
 
 const BINDING_BADGE: Record<string, { cls: string; label: string }> = {
@@ -162,7 +164,7 @@ export default async function McnCreatorsPage() {
   const { data: creatorsRaw } = await supabase
     .from("mcn_creators")
     .select(
-      "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap"
+      "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id"
     )
     .order("name", { ascending: true });
   const creators = (creatorsRaw as Creator[] | null) ?? [];
@@ -193,6 +195,26 @@ export default async function McnCreatorsPage() {
       .eq("active", true)
       .order("full_name", { ascending: true });
     cmEmployees = (cmEmpsRaw as { id: string; full_name: string; rank: string }[] | null) ?? [];
+  }
+
+  // Email akun portal untuk kreator yang sudah punya auth_user_id (service-role,
+  // server-only). Hanya di-fetch bila card "Akun Portal Kreator" bakal dirender.
+  const accountEmail = new Map<string, string>();
+  if (canAssignOwner) {
+    // Jangan biarkan lookup email menjatuhkan render (mis. service key belum diset
+    // di environment) — kolom email cukup tampil "—".
+    try {
+      const admin = createAdminClient();
+      const linked = creators.filter((c) => c.auth_user_id);
+      await Promise.all(
+        linked.map(async (c) => {
+          const { data } = await admin.auth.admin.getUserById(c.auth_user_id as string);
+          if (data?.user?.email) accountEmail.set(c.id, data.user.email);
+        })
+      );
+    } catch (err) {
+      console.error("[creators] lookup email akun portal gagal:", err);
+    }
   }
 
   // Boundary bulan berjalan + 2 sebelumnya (hari-1 bulan M-2). Pakai `new Date()` tanpa
@@ -367,6 +389,52 @@ export default async function McnCreatorsPage() {
                 {creators.length === 0 && (
                   <tr>
                     <td colSpan={5} className="muted">
+                      Belum ada kreator terdaftar.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {canAssignOwner && (
+        <div className="card">
+          <h2>Akun Portal Kreator</h2>
+          <p className="section-sub">
+            Buat akun login portal /kreator untuk kreator (tidak ada pendaftaran mandiri).
+            Hanya CM Lead / OD / Director. Kreator memakai email &amp; password ini untuk masuk.
+          </p>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Kode</th>
+                  <th>Nama</th>
+                  <th>Akun Portal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {creators.map((c) => (
+                  <tr key={c.id}>
+                    <td className="mono">{c.code ?? "—"}</td>
+                    <td>{c.name}</td>
+                    <td>
+                      {c.auth_user_id ? (
+                        <span>
+                          <span className="badge green">Akun portal aktif</span>{" "}
+                          <span className="mono muted">{accountEmail.get(c.id) ?? "—"}</span>
+                        </span>
+                      ) : (
+                        <PortalAccountRow creatorId={c.id} />
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {creators.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="muted">
                       Belum ada kreator terdaftar.
                     </td>
                   </tr>

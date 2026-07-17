@@ -4,7 +4,10 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 // Refreshes the Supabase session on every request and gates access:
-// unauthenticated users are sent to /login; logged-in users on /login go to /dashboard.
+// unauthenticated users are sent to /login. Logged-in users landing on /login are
+// routed by identity (employee → /dashboard, kreator → /kreator/performa) via ONE
+// lightweight query scoped to that path only — every other route stays DB-free, with
+// employee/kreator cross-blocking enforced in the (app) and (kreator) layouts.
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -58,8 +61,24 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   if (user && isAuthRoute) {
+    // Route by identity. Employees resolve via employees.id = auth.uid(); a kreator
+    // sees no employee row (RLS is_employee() gate) but resolves via mcn_creators.
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    const { data: emp } = await supabase
+      .from("employees")
+      .select("id")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (emp) {
+      url.pathname = "/dashboard";
+      return NextResponse.redirect(url);
+    }
+    const { data: creator } = await supabase
+      .from("mcn_creators")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    url.pathname = creator ? "/kreator/performa" : "/dashboard";
     return NextResponse.redirect(url);
   }
 
