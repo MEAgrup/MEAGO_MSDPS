@@ -87,6 +87,7 @@ export async function approveRequest(
   if (error) return { ok: false, message: `Approval ditolak: ${error.message}` };
 
   revalidatePath("/meago/workspace");
+  revalidatePath("/bizdev");
   return { ok: true, message: "Request di-approve." };
 }
 
@@ -106,5 +107,6 @@ export async function progressRequest(
   if (error) return { ok: false, message: `Transisi ditolak: ${error.message}` };
 
   revalidatePath("/meago/workspace");
+  revalidatePath("/bizdev");
   return { ok: true, message: `Request diubah ke ${status}.` };
 }

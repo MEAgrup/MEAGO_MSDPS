@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { rupiah, num, tanggal } from "@/lib/format";
 import { projectBadge, todayJakartaYMD } from "@/lib/mcn/project-status";
+import { requestTypeLabel } from "@/lib/mcn/request-types";
 import {
   buildMonthlyGrowth,
   daysInMonth,
@@ -32,6 +33,8 @@ type CreatorRequest = {
   mcn_creator_id: string;
   type: string;
   target_brand: string | null;
+  target_merchant_id: string | null;
+  nominal: number | null;
   detail: string | null;
   status: string;
   needs_approval: boolean;
@@ -197,13 +200,30 @@ export default async function McnWorkspacePage({
   let reqQuery = supabase
     .from("creator_requests")
     .select(
-      "id, code, mcn_creator_id, type, target_brand, detail, status, needs_approval, approved_by, created_at"
+      "id, code, mcn_creator_id, type, target_brand, target_merchant_id, nominal, detail, status, needs_approval, approved_by, created_at"
     )
     .order("created_at", { ascending: false });
   if (isStaffCM) reqQuery = reqQuery.in("mcn_creator_id", creatorIds.length ? creatorIds : ["-"]);
   const { data: reqRaw } = await reqQuery;
   const requests = (reqRaw as CreatorRequest[] | null) ?? [];
   const approvalQueue = requests.filter((r) => r.needs_approval && !r.approved_by);
+
+  // Nama merchant target (free_meal/visit) untuk antrian approval Director. merchants
+  // RLS (0102) hanya BizDev/Account/Finance/mgmt — aman karena kartu approval hanya
+  // tampil untuk Director (is_director() lolos RLS merchants juga).
+  const approvalMerchantIds = Array.from(
+    new Set(approvalQueue.map((r) => r.target_merchant_id).filter((id): id is string => !!id))
+  );
+  let merchantName = new Map<string, string>();
+  if (approvalMerchantIds.length > 0) {
+    const { data: merchRaw } = await supabase
+      .from("merchants")
+      .select("id, nama_toko")
+      .in("id", approvalMerchantIds);
+    merchantName = new Map(
+      ((merchRaw as { id: string; nama_toko: string }[] | null) ?? []).map((m) => [m.id, m.nama_toko])
+    );
+  }
 
   // (e) Special Project (read-only): semua kecuali cancelled — project yang belum
   // mulai tampil sebagai [Persiapan] (keputusan QA 2026-07-17).
@@ -468,7 +488,7 @@ export default async function McnWorkspacePage({
               <tr key={r.id}>
                 <td className="mono">{r.code ?? "—"}</td>
                 <td>{creatorName.get(r.mcn_creator_id) ?? "—"}</td>
-                <td className="muted">{r.type}</td>
+                <td className="muted">{requestTypeLabel(r.type)}</td>
                 <td className="muted">{r.target_brand ?? "—"}</td>
                 <td>
                   <span className="badge slate">{r.status}</span>
@@ -506,24 +526,35 @@ export default async function McnWorkspacePage({
               <tr>
                 <th>Kode</th>
                 <th>Kreator</th>
+                <th>Jenis</th>
+                <th>Target</th>
+                <th className="right">Nominal</th>
                 <th>Detail</th>
                 <th>Aksi</th>
               </tr>
             </thead>
             <tbody>
-              {approvalQueue.map((r) => (
-                <tr key={r.id}>
-                  <td className="mono">{r.code ?? "—"}</td>
-                  <td>{creatorName.get(r.mcn_creator_id) ?? "—"}</td>
-                  <td className="muted">{r.detail ?? "—"}</td>
-                  <td>
-                    <ApproveRequestButton id={r.id} />
-                  </td>
-                </tr>
-              ))}
+              {approvalQueue.map((r) => {
+                const target = r.target_merchant_id
+                  ? merchantName.get(r.target_merchant_id) ?? "—"
+                  : r.target_brand ?? "—";
+                return (
+                  <tr key={r.id}>
+                    <td className="mono">{r.code ?? "—"}</td>
+                    <td>{creatorName.get(r.mcn_creator_id) ?? "—"}</td>
+                    <td className="muted">{requestTypeLabel(r.type)}</td>
+                    <td className="muted">{target}</td>
+                    <td className="right">{r.nominal !== null ? rupiah(r.nominal) : "—"}</td>
+                    <td className="muted">{r.detail ?? "—"}</td>
+                    <td>
+                      <ApproveRequestButton id={r.id} />
+                    </td>
+                  </tr>
+                );
+              })}
               {approvalQueue.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="muted">
+                  <td colSpan={7} className="muted">
                     Tidak ada request menunggu approval.
                   </td>
                 </tr>
