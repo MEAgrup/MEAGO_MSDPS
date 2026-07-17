@@ -68,6 +68,18 @@ export default async function ProjectsPage() {
     .order("start_date", { ascending: false });
   const projects = (projRaw as ProjectSummary[] | null) ?? [];
 
+  // videos_needed & poi_location tidak ada di v_project_summary (sengaja — view tidak
+  // diubah); dibaca langsung dari special_projects lalu digabung by id.
+  const { data: extraRaw } = await supabase
+    .from("special_projects")
+    .select("id, videos_needed, poi_location");
+  const projExtra = new Map(
+    (
+      (extraRaw as { id: string; videos_needed: number | null; poi_location: string | null }[] | null) ??
+      []
+    ).map((e) => [e.id, e])
+  );
+
   const { data: merchantsRaw } = await supabase
     .from("merchants")
     .select("id, code, nama_toko")
@@ -147,6 +159,10 @@ export default async function ProjectsPage() {
                   </div>
                   <div className="muted" style={{ fontSize: 12 }}>
                     Merchant: {p.merchant_count} · Ads Budget: {rupiah(p.ads_budget)}
+                  </div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    Total Video: {projExtra.get(p.id)?.videos_needed ?? "—"} · Lokasi POI:{" "}
+                    {projExtra.get(p.id)?.poi_location ?? "—"}
                   </div>
                 </div>
               </div>

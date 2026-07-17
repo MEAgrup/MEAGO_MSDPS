@@ -10,6 +10,7 @@ import {
   type ActionResult,
 } from "@/lib/actions/acquisition";
 import { addCreator, type ActionResult as McnActionResult } from "@/lib/actions/mcn-creators";
+import { INDUSTRIES } from "@/lib/mcn/industries";
 
 type CreatorOpt = { id: string; code: string | null; name: string };
 
@@ -41,9 +42,11 @@ export function AddCreatorForm() {
           <label>Industry</label>
           <select name="niche" defaultValue="">
             <option value="">— pilih —</option>
-            <option value="Dining">Dining</option>
-            <option value="Accommodation">Accommodation</option>
-            <option value="Things to Do">Things to Do</option>
+            {INDUSTRIES.map((i) => (
+              <option key={i} value={i}>
+                {i}
+              </option>
+            ))}
           </select>
         </div>
         <div>

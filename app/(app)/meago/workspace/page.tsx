@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { rupiah, num, tanggal } from "@/lib/format";
+import { projectBadge, todayJakartaYMD } from "@/lib/mcn/project-status";
 import {
   buildMonthlyGrowth,
   daysInMonth,
@@ -57,6 +58,7 @@ type ProjectSummary = {
   code: string | null;
   name: string;
   status: string;
+  start_date: string;
   creators_assigned: number;
   creators_cm: number;
   creators_acquisition: number;
@@ -203,14 +205,17 @@ export default async function McnWorkspacePage({
   const requests = (reqRaw as CreatorRequest[] | null) ?? [];
   const approvalQueue = requests.filter((r) => r.needs_approval && !r.approved_by);
 
-  // (e) Special Project aktif (read-only).
+  // (e) Special Project (read-only): semua kecuali cancelled — project yang belum
+  // mulai tampil sebagai [Persiapan] (keputusan QA 2026-07-17).
   const { data: projRaw } = await supabase
     .from("v_project_summary")
     .select(
-      "id, code, name, status, creators_assigned, creators_cm, creators_acquisition, creators_needed, merchant_count, actual_gmv, target_gmv, pct_gmv"
+      "id, code, name, status, start_date, creators_assigned, creators_cm, creators_acquisition, creators_needed, merchant_count, actual_gmv, target_gmv, pct_gmv"
     )
-    .eq("status", "active");
+    .neq("status", "cancelled")
+    .order("start_date", { ascending: false });
   const projects = (projRaw as ProjectSummary[] | null) ?? [];
+  const todayYMD = todayJakartaYMD();
 
   return (
     <>
@@ -529,22 +534,28 @@ export default async function McnWorkspacePage({
       )}
 
       <div className="card">
-        <h2>Special Project Aktif</h2>
+        <h2>Special Project</h2>
         <table>
           <thead>
             <tr>
               <th>Kode</th>
               <th>Nama</th>
+              <th>Status</th>
               <th>Kreator (cm/akuisisi/butuh)</th>
               <th>Merchant</th>
               <th className="right">GMV Aktual / Target</th>
             </tr>
           </thead>
           <tbody>
-            {projects.map((p) => (
+            {projects.map((p) => {
+              const b = projectBadge(p.status, p.start_date, todayYMD);
+              return (
               <tr key={p.id}>
                 <td className="mono">{p.code ?? "—"}</td>
                 <td>{p.name}</td>
+                <td>
+                  <span className={`badge ${b.cls}`}>{b.label}</span>
+                </td>
                 <td className="muted">
                   {p.creators_cm}/{p.creators_acquisition}/{p.creators_needed}
                 </td>
@@ -556,11 +567,12 @@ export default async function McnWorkspacePage({
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {projects.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">
-                  Tidak ada special project aktif.
+                <td colSpan={6} className="muted">
+                  Belum ada special project.
                 </td>
               </tr>
             )}

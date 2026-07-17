@@ -4,9 +4,13 @@ import { useActionState } from "react";
 import {
   assignOwner,
   setAdsBudgetCap,
+  setCreatorProfile,
   toggleRoster,
   type ActionResult,
 } from "@/lib/actions/mcn-creators";
+import { INDUSTRIES } from "@/lib/mcn/industries";
+
+const JENIS_CREATOR_OPTIONS = ["live", "video", "mixed"] as const;
 
 type CmOption = { id: string; full_name: string; rank: string };
 
@@ -73,6 +77,53 @@ export function BudgetCapRow({
         placeholder="mis. 1.500.000"
         style={{ width: 130 }}
       />
+      <button className="sm" type="submit" disabled={pending}>
+        {pending ? "…" : "Simpan"}
+      </button>
+      {state && (
+        <span className={state.ok ? "ok-msg" : "err"} style={{ fontSize: 11 }}>
+          {state.message}
+        </span>
+      )}
+    </form>
+  );
+}
+
+// ProfileRow — form setCreatorProfile per kreator (jenis_creator + niche/Industry).
+// Jalur pengisian manual satu-satunya sejak fase auto-fill dari export konten video
+// dibatalkan (2026-07-16).
+export function ProfileRow({
+  creatorId,
+  currentJenis,
+  currentNiche,
+}: {
+  creatorId: string;
+  currentJenis: string | null;
+  currentNiche: string | null;
+}) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    setCreatorProfile,
+    null
+  );
+  return (
+    <form action={action} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <input type="hidden" name="creator_id" value={creatorId} />
+      <select name="jenis_creator" defaultValue={currentJenis ?? ""}>
+        <option value="">— jenis —</option>
+        {JENIS_CREATOR_OPTIONS.map((j) => (
+          <option key={j} value={j}>
+            {j}
+          </option>
+        ))}
+      </select>
+      <select name="niche" defaultValue={currentNiche ?? ""}>
+        <option value="">— industry —</option>
+        {INDUSTRIES.map((i) => (
+          <option key={i} value={i}>
+            {i}
+          </option>
+        ))}
+      </select>
       <button className="sm" type="submit" disabled={pending}>
         {pending ? "…" : "Simpan"}
       </button>

@@ -10,6 +10,7 @@ import {
   unassignProjectCreator,
   type ActionResult,
 } from "@/lib/actions/projects";
+import { INDUSTRIES as INDUSTRY_CATEGORIES } from "@/lib/mcn/industries";
 
 type MerchantOpt = { id: string; code: string | null; nama_toko: string };
 type CreatorOpt = { id: string; code: string | null; name: string };
@@ -18,8 +19,6 @@ function Msg({ state }: { state: ActionResult | null }) {
   if (!state) return null;
   return <div className={state.ok ? "ok-msg" : "err"}>{state.message}</div>;
 }
-
-const INDUSTRY_CATEGORIES = ["Dining", "Accommodation", "Things to Do"];
 
 export function CreateProjectForm() {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(
@@ -70,6 +69,16 @@ export function CreateProjectForm() {
       </div>
       <label>Jumlah Kreator Dibutuhkan *</label>
       <input name="creators_needed" type="number" min="1" required style={{ maxWidth: 160 }} />
+      <div className="row">
+        <div>
+          <label>Total Video Dibutuhkan</label>
+          <input name="videos_needed" type="number" min="1" placeholder="mis. 100" />
+        </div>
+        <div>
+          <label>Lokasi POI</label>
+          <input name="poi_location" placeholder="mis. Bandung — Braga" />
+        </div>
+      </div>
       <label>Deskripsi</label>
       <textarea name="description" rows={3} />
       <button type="submit" disabled={pending}>
