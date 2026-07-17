@@ -74,3 +74,26 @@ F.1 = pondasi auth + 3 menu inti. Menu F.2 tetap tampil di sidebar sebagai place
 1. Definisi **Agency Plan** & **Report Saya** (belum di-interview).
 2. Nasib form request lama di CM Workspace (jenis `sample/ads/hsl`): tetap ada untuk internal, atau ikut model baru?
 3. Kolom komplain & feedback: skema baru atau extend `complaints` M6 (saat ini merchant-scoped)?
+
+---
+
+## 6. STATUS IMPLEMENTASI (2026-07-17, sesi orchestrator branch `claude/fable-orchestrator-multi-model-347a6n`)
+
+**Step 1–3 SELESAI di kode; Step 4 selesai KECUALI apply migrasi ke live** (di-hold — lihat bawah).
+
+- **Step 1 ✅** — `supabase/migrations/0311_creator_portal_auth.sql` ditulis + lolos smoke test transaksi-rollback di live. `creator_requests` live saat itu KOSONG, tapi check `type` tetap dibuat **union lama+baru** (bukan ganti total) agar form CM lama tak pecah sebelum keputusan Yohan (§5.2). Dua keputusan keamanan TAMBAHAN di luar plan awal:
+  1. Gate cap `ads_live` **dipaksa di trigger** `creator_requests_validate()` (nominal null / cap null / nominal > cap → `needs_approval=true`) — kreator tak bisa bypass via API.
+  2. Enam policy `using (true)` lama digate helper baru `is_employee()`: `employees`, `campaigns`, `service_catalog`, `package_catalog`, `app_config`, `working_calendar` — kreator ikut role `authenticated`, tanpa ini bisa baca data internal.
+- **Step 2 ✅** (eksekutor Opus, QC orchestrator) — commit `8278e89`. Portal `app/(kreator)/kreator/*` (layout 6 menu — angka "7 menu" di plan salah hitung, tabel §1 memang 6), Performa (W1–W5 + rata-rata 3 bulan, tanpa komisi), Request (4 jenis, picker `v_portal_merchants` + "Lainnya"), Special Project read-only, 3 placeholder F.2. Routing identitas: query DB hanya di `/login` (middleware) + gating server di kedua layout; orphan → signOut. `lib/actions/portal.ts`: `createPortalRequest` (needs_approval DISERAHKAN ke trigger) + `createCreatorAccount` (service-role, gate CM Lead/OD/Director, rollback deleteUser bila gagal link, guard balapan `.is("auth_user_id", null)`). Card "Akun Portal Kreator" di `/meago/creators` (lookup email dibungkus try/catch).
+- **Step 3 ✅** (eksekutor Sonnet, QC orchestrator) — commit `7378f8c`. `/bizdev` card "Request Portal Kreator" (label via `lib/mcn/request-types.ts`, target merchant + nominal, aksi progress state-machine); workspace: antrian approval Director + jenis/target/nominal (kolom merchant sengaja HANYA di antrian Director — RLS merchants tak mengizinkan staff CM); `approveRequest`/`progressRequest` revalidate `/bizdev` juga.
+- **Step 4** — `tsc` + `npm run build` LOLOS. Kontrak label bersama: `lib/mcn/request-types.ts`.
+
+### ⛔ BELUM: apply 0311 ke live + uji RLS (sesi berikutnya mulai dari sini)
+
+Apply `0311` ke `mvcckptntrvzujqaoxxh` **ditolak/di-hold user pada sesi ini** — konfirmasi dulu ke Yohan sebelum apply. Konsekuensi sampai di-apply: login kreator/`v_portal_merchants`/kolom `target_merchant_id`+`nominal` belum ada di live → build tetap jalan, halaman baru degrade graceful, TAPI fitur portal belum bisa dipakai dan **deploy kode ini AMAN tanpa migrasi** (tidak ada breaking change ke fitur lama; satu-satunya interaksi: form CM lama tetap valid karena check union).
+
+Urutan sesi berikutnya:
+1. Apply `supabase/migrations/0311_creator_portal_auth.sql` ke live via MCP `apply_migration` (isi file = final, sudah smoke-tested).
+2. Jalankan uji RLS: skrip draf ada di scratchpad sesi lama (hilang bila container reclaim) — intinya, dalam transaksi rollback: insert 2 user dummy `auth.users` + 2 kreator ber-auth, `set local role authenticated` + `set local request.jwt.claims = '{"sub":"<uuid>"}'`, assert: kreator lihat 1 baris `mcn_creators` (dirinya), performa sendiri saja, `employees`/`campaigns`/`app_config`/`merchants` = 0 baris, `v_portal_merchants` terbaca, insert request sendiri OK + `ads_live` > cap → `needs_approval=true`, insert utk kreator lain GAGAL, update request = 0 baris.
+3. Uji e2e manual: buat akun portal via `/meago/creators` (butuh `SUPABASE_SERVICE_ROLE_KEY` di env Vercel — SUDAH ada, dipakai fitur employees), login sebagai kreator, cek 3 halaman + blokir silang route.
+4. Buka/refresh PR branch `claude/fable-orchestrator-multi-model-347a6n` (PR #6 lama di branch `-k367i0` docs-only; commit plan-nya sudah di-cherry-pick ke branch ini sebagai `818034d` — PR #6 boleh ditutup).
