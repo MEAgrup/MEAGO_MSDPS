@@ -98,6 +98,10 @@ Lokasi (folder induk ADA SPASI di akhir: `Claude Code `):
      bukan owner — terbukti empiris). **JANGAN ubah jadi `security_invoker`** — akan memutus baca lintas-RLS.
      Pola sama dengan `v_marketing_metrics` (Fase B). View yang cukup pakai RLS tabel = invoker
      (`v_team_portal_performance`/`_blocks`).
+     **[Superseded 2026-07-18, migrasi 0313]**: khusus `v_team_portal_tasks` klaim "wajib definer" TIDAK
+     berlaku — ia tidak membaca tabel RLS langsung, hanya `v_merchant_board` (yang tetap definer ber-gate;
+     view definer di dalam view invoker tetap berjalan sebagai owner) → di-flip `security_invoker=true`,
+     paritas dengan saudaranya. 4 view lain tetap definer sesuai catatan ini.
    - `auth_leaked_password_protection` (WARN) = setting Auth Supabase (HaveIBeenPwned), keputusan Yohan
      bila mau diaktifkan; bukan isu kode.
 
