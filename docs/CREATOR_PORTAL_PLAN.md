@@ -11,11 +11,11 @@ Portal untuk **kreator** (user eksternal, BUKAN karyawan MEAGO) melihat performa
 | Menu | Fase | Isi |
 |---|---|---|
 | Performa Saya | **F.1** | Metrik mingguan W1–W5 + ringkasan 3 bulan |
-| Merchant Deals | F.2 | ⚠ definisi belum di-interview (label eks "Agency Plan", rename QA 2026-07-17) |
-| Report Saya | F.2 | ⚠ definisi belum di-interview (bedanya dgn Performa?) |
+| Merchant Deals | **F.2** ✅ | Deal BizDev (`brand_deals` 0305) read-only: + kebutuhan kreator/jumlah video/lokasi POI (label eks "Agency Plan", rename QA 2026-07-17) |
+| Report Saya | **F.2** ✅ | File diupload tim CM, diakses kreator ybs (bucket privat `creator-reports`) |
 | Request Brand/Ads | **F.1** | Ajukan request model MEA GO + status request |
 | Special Project | **F.1** | Read-only project yang meng-assign kreator ybs |
-| Komplain & Feedback | F.2 | Antrian ke **CM owner** kreator (keputusan terkunci) |
+| Komplain & Feedback | **F.2** ✅ | Tabel baru `creator_complaints` → antrian **CM owner** (M6 `complaints` tetap milik Account) |
 
 F.1 = pondasi auth + 3 menu inti. Menu F.2 tetap tampil di sidebar sebagai placeholder.
 
@@ -69,11 +69,13 @@ F.1 = pondasi auth + 3 menu inti. Menu F.2 tetap tampil di sidebar sebagai place
 
 **Orkestrasi**: Fable = orchestrator/QC/revisi; eksekutor Sonnet/Opus/Haiku per step (per instruksi Yohan). Migrasi + RLS dikerjakan/di-QC orchestrator sendiri (kritikal keamanan).
 
-## 5. Pertanyaan terbuka untuk sesi berikutnya (tanya Yohan sebelum F.2)
+## 5. Pertanyaan terbuka F.2 — ✅ TERJAWAB (interview Yohan 2026-07-17, pasca-QA F.1)
 
-1. Definisi **Merchant Deals** (eks Agency Plan, di-rename hasil QA 2026-07-17) & **Report Saya** (belum di-interview).
-2. Nasib form request lama di CM Workspace (jenis `sample/ads/hsl`): tetap ada untuk internal, atau ikut model baru?
-3. Kolom komplain & feedback: skema baru atau extend `complaints` M6 (saat ini merchant-scoped)?
+1. **Merchant Deals** (eks Agency Plan): deal yang didapat BizDev = `brand_deals` (0305, header migrasinya memang "Merchant Deals"). Konsep mirip special project: + jumlah kreator dibutuhkan, jumlah video, lokasi POI (kolom info-only opsional, pola 0310). Kreator melihat deal running via view terbatas `v_portal_deals`. **Report Saya**: file diupload tim CM, bisa diakses kreator ybs — metadata `creator_reports` + bucket privat `creator-reports` (akses file hanya via service-role server action).
+2. Form request: **dibuat oleh CM & kreator** — dua-duanya tetap; form CM ditambah 4 jenis MEA GO (jenis lama `sample/ads/hsl` tetap ada untuk internal).
+3. Komplain: **tabel baru** `creator_complaints` routing ke CM owner (staff CM hanya kreator miliknya, Lead lintas, mgmt semua); `complaints` M6 tetap untuk bagian Account/merchant.
+
+Semua di migrasi **0312** (`0312_creator_portal_f2.sql`).
 
 ---
 
@@ -97,3 +99,11 @@ Urutan sesi berikutnya:
 2. Jalankan uji RLS: skrip draf ada di scratchpad sesi lama (hilang bila container reclaim) — intinya, dalam transaksi rollback: insert 2 user dummy `auth.users` + 2 kreator ber-auth, `set local role authenticated` + `set local request.jwt.claims = '{"sub":"<uuid>"}'`, assert: kreator lihat 1 baris `mcn_creators` (dirinya), performa sendiri saja, `employees`/`campaigns`/`app_config`/`merchants` = 0 baris, `v_portal_merchants` terbaca, insert request sendiri OK + `ads_live` > cap → `needs_approval=true`, insert utk kreator lain GAGAL, update request = 0 baris.
 3. Uji e2e manual: buat akun portal via `/meago/creators` (butuh `SUPABASE_SERVICE_ROLE_KEY` di env Vercel — SUDAH ada, dipakai fitur employees), login sebagai kreator, cek 3 halaman + blokir silang route.
 4. Buka/refresh PR branch `claude/fable-orchestrator-multi-model-347a6n` (PR #6 lama di branch `-k367i0` docs-only; commit plan-nya sudah di-cherry-pick ke branch ini sebagai `818034d` — PR #6 boleh ditutup).
+
+---
+
+## 7. STATUS F.1 RILIS + F.2 (2026-07-17/18, sesi live-migration)
+
+**F.1 SELESAI & LIVE**: migrasi 0311 applied ke `mvcckptntrvzujqaoxxh` (konfirmasi Yohan), uji RLS transaksi-rollback PASS (isolasi kreator, gate cap, blokir lintas-kreator, karyawan normal), PR #7 merged ke production, PR #6 docs-only ditutup. QA Yohan: OK, satu revisi — menu "Agency Plan" di-rename **"Merchant Deals"** (PR #8, route `/kreator/agency-plan` tetap). Akun QA dev: `kreator.qa@meago.dev` / `Meago2026!` (kreator `MCR-0032` "QA Dummy Creator", cap ads 500rb, 2 baris performa batch `qa-dummy`) — dibuat via SQL langsung (token-field auth dinormalkan ke ''), hapus sebelum produksi penuh.
+
+**F.2**: keputusan §5 terjawab semua → migrasi **0312** (`0312_creator_portal_f2.sql`): `brand_deals` +kreators_needed/videos_needed/poi_location, view `v_portal_deals`, `creator_reports` + bucket privat `creator-reports` (TANPA policy storage.objects — akses file hanya service-role via `lib/actions/creator-reports.ts`), `creator_complaints` (code KOM-, routing CM owner). Smoke test transaksi-rollback di live PASS (termasuk RLS komplain CM-owner & report). UI: portal (Merchant Deals list, Report Saya + unduh signed URL, Komplain form) + karyawan (form deals 3 field baru, card Report Kreator di /meago/creators, antrian Komplain Kreator di /meago/workspace, form request CM +4 jenis MEA GO).
