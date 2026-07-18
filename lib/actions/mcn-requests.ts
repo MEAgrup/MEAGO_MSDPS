@@ -20,11 +20,19 @@ async function ctx() {
   return { supabase, user, me };
 }
 
-// createRequest: permintaan atas kreator.
-//  - type 'sample' → langsung ok (needs_approval false).
-//  - type 'ads'    → cek ads_budget_cap kreator; bila nominal budget > cap ATAU cap
-//                    belum diisi (null) → needs_approval=true (butuh approval Director).
-//  - type 'hsl'    → biasa.
+// createRequest: permintaan atas kreator (form CM lama, sekarang + 4 jenis MEA GO).
+//  - type 'sample'/'hsl'          → langsung ok (needs_approval false), perilaku lama.
+//  - type 'ads'                   → cek ads_budget_cap kreator; bila nominal budget >
+//                                    cap ATAU cap belum diisi (null) → needs_approval=true
+//                                    (butuh approval Director). Perilaku lama, TIDAK diubah
+//                                    (nominal 'ads' historis tidak disimpan ke kolom nominal).
+//  - type 'free_meal'/'visit'     → target_brand teks bebas (TANPA dropdown merchant di
+//                                    sisi CM); needs_approval tetap default false.
+//  - type 'ads_live'/'special_price_live' → nominal (rupiah) disimpan ke kolom nominal.
+//                                    needs_approval untuk 'ads_live' DISERAHKAN SEPENUHNYA
+//                                    ke trigger DB creator_requests_validate() (0311) yang
+//                                    membandingkan ke ads_budget_cap — TIDAK dihitung/di-set
+//                                    dari sini.
 export async function createRequest(
   _prev: ActionResult | null,
   formData: FormData
@@ -41,6 +49,8 @@ export async function createRequest(
   }
 
   let needs_approval = false;
+  let nominal: number | null = null;
+
   if (type === "ads") {
     const budgetRaw = String(formData.get("budget") || "").trim();
     const budget = budgetRaw === "" ? null : parseRupiah(budgetRaw);
@@ -53,19 +63,31 @@ export async function createRequest(
     const cap = creator?.ads_budget_cap ?? null;
     // Cap belum diisi ATAU budget melebihi cap → butuh approval Director.
     needs_approval = cap === null || (budget !== null && Number(budget) > Number(cap));
+  } else if (type === "ads_live" || type === "special_price_live") {
+    const nominalRaw = String(formData.get("nominal") || "").trim();
+    if (nominalRaw !== "") {
+      nominal = parseRupiah(nominalRaw);
+      if (nominal === null) {
+        return { ok: false, message: "Nominal tidak valid — gunakan format seperti 500.000." };
+      }
+    }
   }
 
   const { error } = await supabase
     .from("creator_requests")
-    .insert({ mcn_creator_id, type, target_brand, detail, needs_approval });
+    .insert({ mcn_creator_id, type, target_brand, detail, needs_approval, nominal });
   if (error) return { ok: false, message: `Gagal membuat request: ${error.message}` };
 
   revalidatePath("/meago/workspace");
+  revalidatePath("/bizdev");
   return {
     ok: true,
-    message: needs_approval
-      ? "Request dibuat — butuh approval Director (melebihi/tanpa budget cap)."
-      : "Request dibuat.",
+    message:
+      type === "ads" && needs_approval
+        ? "Request dibuat — butuh approval Director (melebihi/tanpa budget cap)."
+        : type === "ads_live"
+          ? "Request dibuat — status approval mengikuti budget cap kreator (dicek otomatis)."
+          : "Request dibuat.",
   };
 }
 

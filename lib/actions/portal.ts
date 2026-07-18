@@ -88,6 +88,49 @@ export async function createPortalRequest(
   return { ok: true, message: "Request diajukan — akan diproses tim BizDev." };
 }
 
+// createComplaint — kreator mengirim komplain/feedback dari portal /kreator.
+// Identitas kreator diresolusi dari sesi (auth_user_id = auth.uid()) pakai client
+// biasa (RLS creator-self insert). code diisi trigger DB. subject opsional, body wajib.
+export async function createComplaint(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+  const { data: creator } = await supabase
+    .from("mcn_creators")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+  if (!creator) return { ok: false, message: "Akun ini bukan kreator portal." };
+
+  const subject = String(formData.get("subject") || "").trim() || null;
+  const body = String(formData.get("body") || "").trim();
+  if (!body) {
+    return {
+      ok: false,
+      message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]",
+    };
+  }
+
+  const { error } = await supabase.from("creator_complaints").insert({
+    mcn_creator_id: creator.id,
+    subject,
+    body,
+  });
+  if (error) return { ok: false, message: `Gagal mengirim komplain: ${error.message}` };
+
+  revalidatePath("/kreator/komplain");
+  return {
+    ok: true,
+    message: "Komplain terkirim — akan ditindaklanjuti Creator Manager kamu.",
+  };
+}
+
 // ---- Sisi admin: akun portal kreator ---------------------------------------
 
 async function adminCtx() {

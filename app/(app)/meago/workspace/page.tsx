@@ -17,6 +17,7 @@ import {
   ApproveRequestButton,
   RequestProgressControls,
 } from "./forms";
+import { ComplaintProgressControls } from "./complaint-actions";
 
 type CreatorRow = { id: string; name: string; code: string | null; owner_cpm_id: string | null };
 type Alert = {
@@ -54,6 +55,23 @@ type SummaryRow = GrowthRow & {
   posts_with_sales: number | null;
   live_streams: number | null;
   valid_live_streams: number | null;
+};
+
+// creator_complaints (portal F.2) — antrian "Komplain Kreator".
+type Complaint = {
+  id: string;
+  code: string | null;
+  mcn_creator_id: string;
+  subject: string | null;
+  body: string;
+  status: string;
+  created_at: string;
+};
+
+const COMPLAINT_STATUS_CLASS: Record<string, string> = {
+  baru: "amber",
+  diproses: "slate",
+  selesai: "green",
 };
 
 type ProjectSummary = {
@@ -224,6 +242,29 @@ export default async function McnWorkspacePage({
       ((merchRaw as { id: string; nama_toko: string }[] | null) ?? []).map((m) => [m.id, m.nama_toko])
     );
   }
+
+  // (d.1) Komplain Kreator — RLS creator_complaints_select_internal (0312) sudah
+  // menyaring baris (staff CM hanya kreator miliknya, Lead CM lintas, mgmt semua).
+  const { data: complaintsRaw } = await supabase
+    .from("creator_complaints")
+    .select("id, code, mcn_creator_id, subject, body, status, created_at")
+    .order("created_at", { ascending: false });
+  const allComplaints = (complaintsRaw as Complaint[] | null) ?? [];
+  // Urutan tampil: baru dulu, lalu diproses, selesai paling bawah (masing-masing
+  // kelompok diurutkan terbaru dulu); selesai disembunyikan bila lebih dari 20.
+  const COMPLAINT_STATUS_ORDER: Record<string, number> = { baru: 0, diproses: 1, selesai: 2 };
+  const sortedComplaints = [...allComplaints].sort((a, b) => {
+    const oa = COMPLAINT_STATUS_ORDER[a.status] ?? 3;
+    const ob = COMPLAINT_STATUS_ORDER[b.status] ?? 3;
+    if (oa !== ob) return oa - ob;
+    return b.created_at.localeCompare(a.created_at);
+  });
+  let selesaiSeen = 0;
+  const complaints = sortedComplaints.filter((c) => {
+    if (c.status !== "selesai") return true;
+    selesaiSeen++;
+    return selesaiSeen <= 20;
+  });
 
   // (e) Special Project (read-only): semua kecuali cancelled — project yang belum
   // mulai tampil sebagai [Persiapan] (keputusan QA 2026-07-17).
@@ -466,6 +507,58 @@ export default async function McnWorkspacePage({
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="card">
+        <h2>Komplain Kreator ({complaints.length})</h2>
+        <p className="section-sub">
+          Antrian komplain &amp; feedback dari kreator. Staff CM hanya melihat kreator
+          miliknya, Lead CM &amp; management lintas kreator. Komplain selesai lebih dari 20
+          disembunyikan.
+        </p>
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Kode</th>
+                <th>Kreator</th>
+                <th>Subjek</th>
+                <th>Isi</th>
+                <th>Status</th>
+                <th>Tanggal</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {complaints.map((c) => (
+                <tr key={c.id}>
+                  <td className="mono">{c.code ?? "—"}</td>
+                  <td>{creatorName.get(c.mcn_creator_id) ?? "—"}</td>
+                  <td className="muted">{c.subject ?? "—"}</td>
+                  <td className="muted" style={{ maxWidth: 260 }}>
+                    {c.body}
+                  </td>
+                  <td>
+                    <span className={`badge ${COMPLAINT_STATUS_CLASS[c.status] ?? "gray"}`}>
+                      {c.status}
+                    </span>
+                  </td>
+                  <td className="muted">{tanggal(c.created_at)}</td>
+                  <td>
+                    <ComplaintProgressControls id={c.id} status={c.status} />
+                  </td>
+                </tr>
+              ))}
+              {complaints.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="muted">
+                    Tidak ada komplain.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="card">
