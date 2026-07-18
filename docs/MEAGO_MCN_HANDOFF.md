@@ -115,7 +115,7 @@ _Update 2026-07-17 (Fase E.2–E.3, PR #5 `claude/fable-orchestrator-multi-model
 
 5. **Fase E.2 — Penutupan gap MCN** ✅: `setCreatorProfile` + `ProfileRow` (edit manual Jenis live/video/mixed & Industry per kreator di card "Kelola Kreator" `/meago/creators`); `lib/mcn/industries.ts` = sumber tunggal 3 industri TikTok GO (**Dining, Accommodation, Things to Do**) — dipakai kategori merchant (final, PENDING dihapus), project, acquisition. Tanpa migrasi.
 6. **Fase E.3 — Revisi QA /projects & workspace** ✅: migrasi **0310** (applied + smoke test PASS 2026-07-17) menambah `special_projects.videos_needed` & `poi_location` (info-only, OPSIONAL) — form Buat Project Baru + list `/projects` saja. Card project di **3 workspace** (CM/Akuisisi/BizDev) kini menampilkan **semua project kecuali cancelled** dengan badge status: **[Persiapan]** bila tanggal mulai belum tiba (turunan tanggal via `lib/mcn/project-status.ts`, hari Asia/Jakarta), [Berjalan]/[Draft]/[Selesai].
-7. **Sisa platform** (di luar PR #5): ~~Merchant Portal Fase 2~~ — ❌ **TIDAK AKAN DIBUAT** (keputusan Yohan 2026-07-18, final — jangan diangkat lagi); rotasi password akun dummy (ditunda ke pra-produksi, keputusan 2026-07-16), aktifkan *leaked password protection* di Supabase Auth (setting dashboard).
+7. **Sisa platform** (di luar PR #5): ~~Merchant Portal Fase 2~~ — ❌ **TIDAK AKAN DIBUAT** (keputusan Yohan 2026-07-18, final — jangan diangkat lagi); rotasi password akun dummy (ditunda ke pra-produksi, keputusan 2026-07-16); ~~aktifkan *leaked password protection* di Supabase Auth~~ — ✅ **SELESAI** (diaktifkan Yohan via dashboard, 2026-07-18).
 
 _Update 2026-07-17 sore — PR #5 **merged ke production**; fase berikutnya:_
 
