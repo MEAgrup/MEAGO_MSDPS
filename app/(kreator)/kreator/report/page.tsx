@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getCreator } from "@/lib/supabase/server";
 import { tanggal } from "@/lib/format";
 import { DownloadButton } from "./download-button";
 
@@ -12,19 +12,13 @@ type ReportRow = {
 };
 
 export default async function ReportPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: creator } = await supabase
-    .from("mcn_creators")
-    .select("id")
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
+  const creator = await getCreator();
   if (!creator) redirect("/dashboard");
 
+  const supabase = await getCachedClient();
   const { data: raw } = await supabase
     .from("creator_reports")
     .select("id, title, created_at")

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
 import { projectBadge, todayJakartaYMD } from "@/lib/mcn/project-status";
 import {
@@ -49,17 +49,10 @@ type ProjectSummary = {
 };
 
 export default async function AcquisitionPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
 
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
@@ -67,10 +60,35 @@ export default async function AcquisitionPage() {
   if (!canView) redirect("/dashboard");
   const canWrite = mgmt || div === "Acquisition";
 
-  const { data: creatorsRaw } = await supabase
-    .from("mcn_creators")
-    .select("id, name, code, status, owner_cpm_id, username, niche, city, created_at")
-    .order("name", { ascending: true });
+  const supabase = await getCachedClient();
+
+  const [{ data: creatorsRaw }, { data: acqRaw }, { data: refRaw }, { data: emps }, { data: projRaw }] =
+    await Promise.all([
+      supabase
+        .from("mcn_creators")
+        .select("id, name, code, status, owner_cpm_id, username, niche, city, created_at")
+        .order("name", { ascending: true }),
+      supabase
+        .from("acquisitions")
+        .select(
+          "id, code, mcn_creator_id, specialist_id, lead_source, binding_date, commission_share_at_binding, gmv_last_30d, gmv_post_join, gmv_quarter_actual, handoff_done"
+        )
+        .order("binding_date", { ascending: false }),
+      supabase
+        .from("referrals")
+        .select("id, code, new_creator_id, referrer_creator_id, referral_source, commission_status")
+        .order("created_at", { ascending: false }),
+      supabase.from("employees").select("id, full_name"),
+      // Semua project kecuali cancelled — yang belum mulai tampil [Persiapan] (QA 2026-07-17).
+      supabase
+        .from("v_project_summary")
+        .select(
+          "id, code, name, status, start_date, creators_cm, creators_acquisition, creators_needed, actual_gmv, target_gmv, pct_gmv"
+        )
+        .neq("status", "cancelled")
+        .order("start_date", { ascending: false }),
+    ]);
+
   const creators =
     (creatorsRaw as
       | {
@@ -92,31 +110,12 @@ export default async function AcquisitionPage() {
     .slice()
     .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
 
-  const { data: acqRaw } = await supabase
-    .from("acquisitions")
-    .select(
-      "id, code, mcn_creator_id, specialist_id, lead_source, binding_date, commission_share_at_binding, gmv_last_30d, gmv_post_join, gmv_quarter_actual, handoff_done"
-    )
-    .order("binding_date", { ascending: false });
   const acquisitions = (acqRaw as Acquisition[] | null) ?? [];
 
-  const { data: refRaw } = await supabase
-    .from("referrals")
-    .select("id, code, new_creator_id, referrer_creator_id, referral_source, commission_status")
-    .order("created_at", { ascending: false });
   const referrals = (refRaw as Referral[] | null) ?? [];
 
-  const { data: emps } = await supabase.from("employees").select("id, full_name");
   const empName = new Map(((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name]));
 
-  // Semua project kecuali cancelled — yang belum mulai tampil [Persiapan] (QA 2026-07-17).
-  const { data: projRaw } = await supabase
-    .from("v_project_summary")
-    .select(
-      "id, code, name, status, start_date, creators_cm, creators_acquisition, creators_needed, actual_gmv, target_gmv, pct_gmv"
-    )
-    .neq("status", "cancelled")
-    .order("start_date", { ascending: false });
   const projects = (projRaw as ProjectSummary[] | null) ?? [];
   const todayYMD = todayJakartaYMD();
 

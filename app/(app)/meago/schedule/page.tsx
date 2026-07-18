@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { addDays, parseYMD } from "@/lib/mcn/weeks";
 import { slotIndicators, type SlotForIndicators } from "@/lib/mcn/indicators";
 import {
@@ -39,17 +39,9 @@ export default async function McnSchedulePage({
 }: {
   searchParams: Promise<{ week?: string }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
-
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
 
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
@@ -76,32 +68,25 @@ export default async function McnSchedulePage({
   const canManage = (c: Creator) =>
     mgmt || div === "BizDev" || (div === "CreatorManagement" && (me?.rank === "lead" || c.owner_cpm_id === me?.id));
 
-  const { data: rosterRaw } = await supabase
-    .from("mcn_creators")
-    .select("id, name, code, owner_cpm_id")
-    .eq("live_roster", true)
-    .order("name", { ascending: true });
+  const supabase = await getCachedClient();
+
+  // Stage 1: roster on/off saling independen → paralel (satu round-trip).
+  const [{ data: rosterRaw }, { data: offRosterRaw }] = await Promise.all([
+    supabase
+      .from("mcn_creators")
+      .select("id, name, code, owner_cpm_id")
+      .eq("live_roster", true)
+      .order("name", { ascending: true }),
+    supabase
+      .from("mcn_creators")
+      .select("id, name, code, owner_cpm_id")
+      .eq("live_roster", false)
+      .order("name", { ascending: true })
+      .limit(50),
+  ]);
   const roster = (rosterRaw as Creator[] | null) ?? [];
   const rosterIds = roster.map((c) => c.id);
-
-  const slotsByCell = new Map<string, Slot[]>();
-  if (rosterIds.length > 0) {
-    const { data: slotsRaw } = await supabase
-      .from("live_schedule_slots")
-      .select(
-        "id, mcn_creator_id, schedule_date, start_time, end_time, status, brand_name, pk_ready, product_connected_tap, actual_start, actual_end"
-      )
-      .in("mcn_creator_id", rosterIds)
-      .gte("schedule_date", monday)
-      .lte("schedule_date", sunday)
-      .order("start_time", { ascending: true });
-    for (const s of (slotsRaw as Slot[] | null) ?? []) {
-      const key = `${s.mcn_creator_id}|${s.schedule_date}`;
-      const arr = slotsByCell.get(key) ?? [];
-      arr.push(s);
-      slotsByCell.set(key, arr);
-    }
-  }
+  const offRoster = (offRosterRaw as Creator[] | null) ?? [];
 
   // Panel verifikasi: slot scheduled/tentative dengan tanggal <= hari ini (lintas minggu).
   let verifyQuery = supabase
@@ -113,20 +98,36 @@ export default async function McnSchedulePage({
     .lte("schedule_date", todayStr)
     .order("schedule_date", { ascending: true });
   if (rosterIds.length > 0) verifyQuery = verifyQuery.in("mcn_creator_id", rosterIds);
-  const { data: pendingRaw } = await verifyQuery;
+
+  // Stage 2: slot matriks minggu & panel verifikasi bergantung rosterIds, saling independen.
+  const [slotsRes, { data: pendingRaw }] = await Promise.all([
+    rosterIds.length > 0
+      ? supabase
+          .from("live_schedule_slots")
+          .select(
+            "id, mcn_creator_id, schedule_date, start_time, end_time, status, brand_name, pk_ready, product_connected_tap, actual_start, actual_end"
+          )
+          .in("mcn_creator_id", rosterIds)
+          .gte("schedule_date", monday)
+          .lte("schedule_date", sunday)
+          .order("start_time", { ascending: true })
+      : Promise.resolve({ data: [] as Slot[] }),
+    verifyQuery,
+  ]);
+
+  const slotsByCell = new Map<string, Slot[]>();
+  for (const s of (slotsRes.data as Slot[] | null) ?? []) {
+    const key = `${s.mcn_creator_id}|${s.schedule_date}`;
+    const arr = slotsByCell.get(key) ?? [];
+    arr.push(s);
+    slotsByCell.set(key, arr);
+  }
+
   const pendingSlots = (pendingRaw as Slot[] | null) ?? [];
   const todaySlots = pendingSlots.filter((s) => s.schedule_date === todayStr);
   const overdueSlots = pendingSlots.filter((s) => s.schedule_date < todayStr);
 
   const creatorName = new Map(roster.map((c) => [c.id, `${c.code ?? "(draft)"} · ${c.name}`]));
-
-  const { data: offRosterRaw } = await supabase
-    .from("mcn_creators")
-    .select("id, name, code, owner_cpm_id")
-    .eq("live_roster", false)
-    .order("name", { ascending: true })
-    .limit(50);
-  const offRoster = (offRosterRaw as Creator[] | null) ?? [];
 
   return (
     <>

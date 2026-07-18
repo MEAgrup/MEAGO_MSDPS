@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { tanggal } from "@/lib/format";
 import {
   AssignAmForm,
@@ -69,22 +69,16 @@ const DIV_LABEL: Record<string, string> = {
 };
 
 export default async function AccountPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, full_name, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const mgmt = !!(me?.is_od || me?.is_director);
   const isAccount = me?.division === "Account" || mgmt;
   if (!isAccount) redirect("/dashboard");
   const isLead = me?.rank === "lead" || mgmt;
 
+  const supabase = await getCachedClient();
   const [{ data: merchants }, { data: services }, { data: strategies }, { data: briefs }, { data: complaints }, { data: trxs }, { data: ams }] =
     await Promise.all([
       supabase

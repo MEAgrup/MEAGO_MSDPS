@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah, num, tanggal } from "@/lib/format";
 import { projectBadge, todayJakartaYMD } from "@/lib/mcn/project-status";
 import { requestTypeLabel } from "@/lib/mcn/request-types";
@@ -103,17 +103,9 @@ export default async function McnWorkspacePage({
 }: {
   searchParams: Promise<{ month?: string; week?: string }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
-
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
 
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
@@ -134,37 +126,91 @@ export default async function McnWorkspacePage({
   const prevYM = shiftMonth(ym, -1);
   const nextYM = shiftMonth(ym, 1);
 
+  const supabase = await getCachedClient();
+
   // Scope CPM: staff CM hanya lihat kreator miliknya (RLS juga menegakkan; UI ikut supaya jelas).
   let creatorQuery = supabase
     .from("mcn_creators")
     .select("id, name, code, owner_cpm_id")
     .order("name", { ascending: true });
   if (isStaffCM) creatorQuery = creatorQuery.eq("owner_cpm_id", me!.id);
-  const { data: creatorsRaw } = await creatorQuery;
+
+  // (c) Alerts unresolved.
+  let alertQuery = supabase
+    .from("platform_alerts")
+    .select("id, alert_type, mcn_creator_id, shop_id, detail, created_at")
+    .eq("resolved", false)
+    .order("created_at", { ascending: false });
+  if (isStaffCM) alertQuery = alertQuery.eq("target_member_id", me!.id);
+
+  // Stage 1: semua query yang saling independen di-fetch paralel (satu round-trip).
+  const [
+    { data: creatorsRaw },
+    { data: allCreatorsRaw },
+    { data: alertsRaw },
+    { data: complaintsRaw },
+    { data: projRaw },
+  ] = await Promise.all([
+    creatorQuery,
+    supabase.from("mcn_creators").select("id, name, code"),
+    alertQuery,
+    // (d.1) Komplain Kreator — RLS creator_complaints_select_internal (0312) sudah
+    // menyaring baris (staff CM hanya kreator miliknya, Lead CM lintas, mgmt semua).
+    supabase
+      .from("creator_complaints")
+      .select("id, code, mcn_creator_id, subject, body, status, created_at")
+      .order("created_at", { ascending: false }),
+    // (e) Special Project (read-only): semua kecuali cancelled — project yang belum
+    // mulai tampil sebagai [Persiapan] (keputusan QA 2026-07-17).
+    supabase
+      .from("v_project_summary")
+      .select(
+        "id, code, name, status, start_date, creators_assigned, creators_cm, creators_acquisition, creators_needed, merchant_count, actual_gmv, target_gmv, pct_gmv"
+      )
+      .neq("status", "cancelled")
+      .order("start_date", { ascending: false }),
+  ]);
+
   const creators = (creatorsRaw as CreatorRow[] | null) ?? [];
   const creatorIds = creators.map((c) => c.id);
 
-  const { data: allCreatorsRaw } = await supabase.from("mcn_creators").select("id, name, code");
   const creatorName = new Map<string, string>(
     ((allCreatorsRaw as { id: string; name: string; code: string | null }[] | null) ?? []).map(
       (c) => [c.id, `${c.code ?? "(draft)"} · ${c.name}`]
     )
   );
 
+  // (d) Creator requests — bergantung creatorIds saat isStaffCM.
+  let reqQuery = supabase
+    .from("creator_requests")
+    .select(
+      "id, code, mcn_creator_id, type, target_brand, target_merchant_id, nominal, detail, status, needs_approval, approved_by, created_at"
+    )
+    .order("created_at", { ascending: false });
+  if (isStaffCM) reqQuery = reqQuery.in("mcn_creator_id", creatorIds.length ? creatorIds : ["-"]);
+
   // (b) Growth W1-W5 + Detail Mingguan (Creator Analysis) — satu fetch, dua tampilan.
   const growthByCreator = new Map<string, ReturnType<typeof buildMonthlyGrowth>>();
   // Map<creatorId, Map<period_start, SummaryRow>> — sudah dedupe created_at terbaru.
   const dedupedByCreator = new Map<string, Map<string, SummaryRow>>();
+
+  // Stage 2: query yang bergantung pada creatorIds — summary & requests saling independen.
+  const [summaryRes, { data: reqRaw }] = await Promise.all([
+    creatorIds.length > 0
+      ? supabase
+          .from("creator_period_summary")
+          .select(
+            "mcn_creator_id, period_start, created_at, affiliate_gmv, orders, aov, redemption_amount, redeemed_orders, new_posts, posts_with_sales, live_streams, valid_live_streams"
+          )
+          .in("mcn_creator_id", creatorIds)
+          .gte("period_start", monthStart)
+          .lte("period_start", monthEnd)
+      : Promise.resolve({ data: null as SummaryRow[] | null }),
+    reqQuery,
+  ]);
+
   if (creatorIds.length > 0) {
-    const { data: summaryRaw } = await supabase
-      .from("creator_period_summary")
-      .select(
-        "mcn_creator_id, period_start, created_at, affiliate_gmv, orders, aov, redemption_amount, redeemed_orders, new_posts, posts_with_sales, live_streams, valid_live_streams"
-      )
-      .in("mcn_creator_id", creatorIds)
-      .gte("period_start", monthStart)
-      .lte("period_start", monthEnd);
-    const rows = (summaryRaw as SummaryRow[] | null) ?? [];
+    const rows = (summaryRes.data as SummaryRow[] | null) ?? [];
     const byCreator = new Map<string, SummaryRow[]>();
     for (const r of rows) {
       const arr = byCreator.get(r.mcn_creator_id) ?? [];
@@ -204,25 +250,8 @@ export default async function McnWorkspacePage({
     weekParamNum && weekParamNum <= weekWindows.length ? weekParamNum : defaultWeekIndex;
   const selectedWeekWindow = weekWindows[weekIndex - 1];
 
-  // (c) Alerts unresolved.
-  let alertQuery = supabase
-    .from("platform_alerts")
-    .select("id, alert_type, mcn_creator_id, shop_id, detail, created_at")
-    .eq("resolved", false)
-    .order("created_at", { ascending: false });
-  if (isStaffCM) alertQuery = alertQuery.eq("target_member_id", me!.id);
-  const { data: alertsRaw } = await alertQuery;
   const alerts = (alertsRaw as Alert[] | null) ?? [];
 
-  // (d) Creator requests.
-  let reqQuery = supabase
-    .from("creator_requests")
-    .select(
-      "id, code, mcn_creator_id, type, target_brand, target_merchant_id, nominal, detail, status, needs_approval, approved_by, created_at"
-    )
-    .order("created_at", { ascending: false });
-  if (isStaffCM) reqQuery = reqQuery.in("mcn_creator_id", creatorIds.length ? creatorIds : ["-"]);
-  const { data: reqRaw } = await reqQuery;
   const requests = (reqRaw as CreatorRequest[] | null) ?? [];
   const approvalQueue = requests.filter((r) => r.needs_approval && !r.approved_by);
 
@@ -243,12 +272,6 @@ export default async function McnWorkspacePage({
     );
   }
 
-  // (d.1) Komplain Kreator — RLS creator_complaints_select_internal (0312) sudah
-  // menyaring baris (staff CM hanya kreator miliknya, Lead CM lintas, mgmt semua).
-  const { data: complaintsRaw } = await supabase
-    .from("creator_complaints")
-    .select("id, code, mcn_creator_id, subject, body, status, created_at")
-    .order("created_at", { ascending: false });
   const allComplaints = (complaintsRaw as Complaint[] | null) ?? [];
   // Urutan tampil: baru dulu, lalu diproses, selesai paling bawah (masing-masing
   // kelompok diurutkan terbaru dulu); selesai disembunyikan bila lebih dari 20.
@@ -266,15 +289,6 @@ export default async function McnWorkspacePage({
     return selesaiSeen <= 20;
   });
 
-  // (e) Special Project (read-only): semua kecuali cancelled — project yang belum
-  // mulai tampil sebagai [Persiapan] (keputusan QA 2026-07-17).
-  const { data: projRaw } = await supabase
-    .from("v_project_summary")
-    .select(
-      "id, code, name, status, start_date, creators_assigned, creators_cm, creators_acquisition, creators_needed, merchant_count, actual_gmv, target_gmv, pct_gmv"
-    )
-    .neq("status", "cancelled")
-    .order("start_date", { ascending: false });
   const projects = (projRaw as ProjectSummary[] | null) ?? [];
   const todayYMD = todayJakartaYMD();
 

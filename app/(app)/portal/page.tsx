@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { durasi, tanggal } from "@/lib/format";
 import { AjukanBlockForm, PutuskanBlockForms, ResumeBriefButton } from "./forms";
 
@@ -77,20 +77,14 @@ const SPEED_BADGE: Record<string, string> = {
 };
 
 export default async function PortalPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, full_name, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const mgmt = !!(me?.is_od || me?.is_director);
   const isLead = me?.rank === "lead" || mgmt;
 
+  const supabase = await getCachedClient();
   const [{ data: tasks }, { data: perf }, { data: blocks }, { data: speed }] = await Promise.all([
     supabase
       .from("v_team_portal_tasks")

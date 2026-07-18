@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rupiah, num, tanggal } from "@/lib/format";
 import { NewCampaignForm, StatusButtons, BudgetForm } from "./forms";
@@ -40,17 +40,10 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 export default async function CampaignsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("division, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const canEdit = !!(me?.is_director || me?.division === "Marketing");
   // The M2 dashboard aggregates across leads/attempts/merchants/transactions —
   // tables Marketing has no row-level access to. v_marketing_metrics is
@@ -59,31 +52,35 @@ export default async function CampaignsPage() {
   // which mirrors the marketing_performance_records RLS (budget confidentiality).
   const canSeeMetrics = !!(me?.is_od || me?.is_director || me?.division === "Marketing");
 
-  const { data: campaigns } = await supabase
-    .from("campaigns")
-    .select("id, code, campaign_name, channel, is_online, is_offline, start_date, end_date, status, owner_id")
-    .order("created_at", { ascending: false });
-
+  const supabase = await getCachedClient();
   const admin = canSeeMetrics ? createAdminClient() : null;
-  const { data: budgets } = admin
-    ? await admin.from("marketing_performance_records").select("campaign_id, budget")
-    : { data: [] as { campaign_id: string; budget: number }[] };
+
+  const [{ data: campaigns }, { data: budgets }, { data: metrics }, { data: owners }] =
+    await Promise.all([
+      supabase
+        .from("campaigns")
+        .select("id, code, campaign_name, channel, is_online, is_offline, start_date, end_date, status, owner_id")
+        .order("created_at", { ascending: false }),
+      admin
+        ? admin.from("marketing_performance_records").select("campaign_id, budget")
+        : Promise.resolve({ data: [] as { campaign_id: string; budget: number }[] }),
+      admin
+        ? admin.from("v_marketing_metrics").select("*")
+        : Promise.resolve({ data: [] as Metric[] }),
+      supabase
+        .from("employees")
+        .select("id, full_name")
+        .eq("division", "Marketing")
+        .order("full_name"),
+    ]);
+
   const budgetMap = new Map<string, number>(
     (budgets ?? []).map((b) => [b.campaign_id as string, Number(b.budget)])
   );
 
-  const { data: metrics } = admin
-    ? await admin.from("v_marketing_metrics").select("*")
-    : { data: [] as Metric[] };
-  const owners =
-    (await supabase
-      .from("employees")
-      .select("id, full_name")
-      .eq("division", "Marketing")
-      .order("full_name")).data ?? [];
-
   const list = (campaigns as Campaign[] | null) ?? [];
   const mlist = (metrics as Metric[] | null) ?? [];
+  const ownerList = owners ?? [];
   const active = list.filter((c) => c.status === "[Active]").length;
 
   return (
@@ -229,7 +226,7 @@ export default async function CampaignsPage() {
       {canEdit && (
         <div className="card">
           <h2>Buat Kampanye Baru</h2>
-          <NewCampaignForm owners={owners} />
+          <NewCampaignForm owners={ownerList} />
         </div>
       )}
     </>

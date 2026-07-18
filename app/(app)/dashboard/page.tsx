@@ -1,16 +1,9 @@
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, getEmployee } from "@/lib/supabase/server";
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("full_name, division, rank, is_od, is_director")
-    .eq("id", user!.id)
-    .maybeSingle();
+  const me = await getEmployee();
 
   return (
     <>

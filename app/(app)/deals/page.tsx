@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { tanggal } from "@/lib/format";
 import { addDays } from "@/lib/mcn/weeks";
 import { DealsTabs, PipelineStageSelect, DealExtrasRow } from "./forms";
@@ -39,17 +39,10 @@ function pad2(n: number): string {
 }
 
 export default async function DealsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
 
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
@@ -60,28 +53,31 @@ export default async function DealsPage() {
   const canImport = mgmt || div === "BizDev";
   const sourcedByRole: "bd" | "cm" = div === "CreatorManagement" && !mgmt ? "cm" : "bd";
 
-  const { data: dealsRaw } = await supabase
-    .from("brand_deals")
-    .select(
-      "id, code, brand_name, shop_id, exp_date, status, pipeline_stage, review_flags, kreators_needed, videos_needed, poi_location"
-    )
-    .order("created_at", { ascending: false });
+  const supabase = await getCachedClient();
+
+  const [{ data: dealsRaw }, { data: emps }, { data: merchantsRaw }, { data: cfg }] =
+    await Promise.all([
+      supabase
+        .from("brand_deals")
+        .select(
+          "id, code, brand_name, shop_id, exp_date, status, pipeline_stage, review_flags, kreators_needed, videos_needed, poi_location"
+        )
+        .order("created_at", { ascending: false }),
+      supabase.from("employees").select("id, full_name"),
+      supabase
+        .from("merchants")
+        .select("id, code, nama_toko")
+        .order("nama_toko", { ascending: true }),
+      supabase
+        .from("app_config")
+        .select("value")
+        .eq("key", "mcn.deal_expiring_days")
+        .maybeSingle(),
+    ]);
+
   const deals = (dealsRaw as Deal[] | null) ?? [];
-
-  const { data: emps } = await supabase.from("employees").select("id, full_name");
   const employees = (emps as { id: string; full_name: string }[] | null) ?? [];
-
-  const { data: merchantsRaw } = await supabase
-    .from("merchants")
-    .select("id, code, nama_toko")
-    .order("nama_toko", { ascending: true });
   const merchants = (merchantsRaw as { id: string; code: string | null; nama_toko: string }[] | null) ?? [];
-
-  const { data: cfg } = await supabase
-    .from("app_config")
-    .select("value")
-    .eq("key", "mcn.deal_expiring_days")
-    .maybeSingle();
   const expiringDays = cfg?.value != null ? Number(cfg.value) : 14;
 
   const now = new Date();

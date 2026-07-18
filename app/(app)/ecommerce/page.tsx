@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { durasi, tanggal } from "@/lib/format";
 import { PickupBriefButton, CreateUnitForm, SkuStatusForm, ChecklistForm } from "./forms";
 
@@ -41,22 +41,16 @@ function waktuKerja(b: Brief): string {
 }
 
 export default async function EcommercePage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const mgmt = !!(me?.is_od || me?.is_director);
   if (!(me?.division === "Ecommerce" || me?.division === "Account" || mgmt)) redirect("/dashboard");
   const isEcomStaff = me?.division === "Ecommerce" || mgmt;
   const isAm = me?.division === "Account" || mgmt;
 
+  const supabase = await getCachedClient();
   const [{ data: briefs }, { data: units }] = await Promise.all([
     supabase
       .from("briefs")

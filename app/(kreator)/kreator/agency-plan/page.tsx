@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getCreator } from "@/lib/supabase/server";
 import { tanggal } from "@/lib/format";
 
 // Read-only: deal merchant yang sedang berjalan (view v_portal_deals — kreator-only
@@ -29,19 +29,13 @@ function dash(v: string | null | undefined): string {
 }
 
 export default async function AgencyPlanPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: creator } = await supabase
-    .from("mcn_creators")
-    .select("id")
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
+  const creator = await getCreator();
   if (!creator) redirect("/dashboard");
 
+  const supabase = await getCachedClient();
   const { data: raw } = await supabase
     .from("v_portal_deals")
     .select(

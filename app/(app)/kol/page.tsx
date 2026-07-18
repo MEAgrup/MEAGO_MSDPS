@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { durasi, num, rupiah, tanggal } from "@/lib/format";
 import {
   PickupBriefButton,
@@ -70,21 +70,15 @@ const BKG_BADGE: Record<string, string> = {
 };
 
 export default async function KolPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const mgmt = !!(me?.is_od || me?.is_director);
   if (!(me?.division === "KOL" || me?.division === "Account" || mgmt)) redirect("/dashboard");
   const isKol = me?.division === "KOL" || mgmt;
 
+  const supabase = await getCachedClient();
   const [{ data: briefs }, { data: creators }, { data: bookings }] = await Promise.all([
     supabase
       .from("briefs")
