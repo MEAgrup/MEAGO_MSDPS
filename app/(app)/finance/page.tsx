@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
 import { VerifyForm, FlagButton, PayoutTransferForm, PayoutCancelForm } from "./forms";
 
@@ -42,47 +42,46 @@ const PYO_CLASS: Record<string, string> = {
 };
 
 export default async function FinancePage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const canVerify = me?.division === "Finance" || !!me?.is_director;
   const canCancelPayout =
     (me?.division === "Finance" && me?.rank === "lead") || !!me?.is_director || !!me?.is_od;
 
-  const { data: trxs } = await supabase
-    .from("transactions")
-    .select(
-      "id, code, merchant_id, payment_intent, total_agreed_value, amount_verified, amount_outstanding, status, flag_jatuh_tempo, flag_bermasalah, released_to_account_at"
-    )
-    .order("created_at", { ascending: false });
+  const supabase = await getCachedClient();
+
+  const [{ data: trxs }, { data: payouts }] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select(
+        "id, code, merchant_id, payment_intent, total_agreed_value, amount_verified, amount_outstanding, status, flag_jatuh_tempo, flag_bermasalah, released_to_account_at"
+      )
+      .order("created_at", { ascending: false }),
+    // Out-leg: antrian disbursement payout kreator (PYO dari M9).
+    supabase
+      .from("creator_payouts")
+      .select(
+        "id, code, payout_type, creator_id, amount, status, requested_at, transfer_proof, cancellation_reason"
+      )
+      .order("requested_at", { ascending: false }),
+  ]);
 
   const list = (trxs as Trx[] | null) ?? [];
   const merchantIds = [...new Set(list.map((t) => t.merchant_id))];
-  const { data: merchants } = merchantIds.length
-    ? await supabase.from("merchants").select("id, code, nama_toko").in("id", merchantIds)
-    : { data: [] as { id: string; code: string | null; nama_toko: string }[] };
-  const mMap = new Map((merchants ?? []).map((m) => [m.id, m]));
-
-  // Out-leg: antrian disbursement payout kreator (PYO dari M9).
-  const { data: payouts } = await supabase
-    .from("creator_payouts")
-    .select(
-      "id, code, payout_type, creator_id, amount, status, requested_at, transfer_proof, cancellation_reason"
-    )
-    .order("requested_at", { ascending: false });
   const pList = (payouts as Payout[] | null) ?? [];
   const creatorIds = [...new Set(pList.map((p) => p.creator_id).filter(Boolean))] as string[];
-  const { data: creators } = creatorIds.length
-    ? await supabase.from("creators").select("id, code, name_handle").in("id", creatorIds)
-    : { data: [] as { id: string; code: string | null; name_handle: string }[] };
+
+  const [{ data: merchants }, { data: creators }] = await Promise.all([
+    merchantIds.length
+      ? supabase.from("merchants").select("id, code, nama_toko").in("id", merchantIds)
+      : Promise.resolve({ data: [] as { id: string; code: string | null; nama_toko: string }[] }),
+    creatorIds.length
+      ? supabase.from("creators").select("id, code, name_handle").in("id", creatorIds)
+      : Promise.resolve({ data: [] as { id: string; code: string | null; name_handle: string }[] }),
+  ]);
+  const mMap = new Map((merchants ?? []).map((m) => [m.id, m]));
   const cMap = new Map((creators ?? []).map((c) => [c.id, c]));
   const pyoQueue = pList.filter((p) => p.status === "[Menunggu Disbursement]");
 

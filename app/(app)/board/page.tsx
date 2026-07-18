@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser } from "@/lib/supabase/server";
 import { durasi, tanggal } from "@/lib/format";
 
 // M11 Merchant Board — murni proyeksi v_merchant_board (read-and-coordinate).
@@ -65,12 +65,10 @@ export default async function BoardPage({
   searchParams: Promise<{ merchant?: string }>;
 }) {
   const { merchant } = await searchParams;
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
+  const supabase = await getCachedClient();
   const { data } = await supabase
     .from("v_merchant_board")
     .select(

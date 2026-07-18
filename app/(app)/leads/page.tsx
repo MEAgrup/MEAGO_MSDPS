@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { tanggal } from "@/lib/format";
 import { NewLeadForm, ImportCsvForm, ClaimButton, AttemptControls } from "./forms";
 
@@ -45,39 +45,35 @@ const ATTEMPT_STATUS_CLASS: Record<string, string> = {
 };
 
 export default async function LeadsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const isBizDev = me?.division === "BizDev";
   const canRegister = isBizDev || me?.division === "Marketing" || !!me?.is_director;
   const canControl = (ownerId: string) =>
     ownerId === me?.id || (isBizDev && me?.rank === "lead") || !!me?.is_director;
 
-  const { data: leads } = await supabase
-    .from("leads")
-    .select("id, code, lead_name, phone_normalized, source, status, stale, created_at")
-    .order("created_at", { ascending: false });
+  const supabase = await getCachedClient();
 
-  const { data: attempts } = await supabase
-    .from("prospect_attempts")
-    .select("id, code, parent_lead_id, owner_id, status, won, not_qualified_reason")
-    .order("created_at", { ascending: false });
+  const [{ data: leads }, { data: attempts }, { data: emps }, { data: campaigns }] =
+    await Promise.all([
+      supabase
+        .from("leads")
+        .select("id, code, lead_name, phone_normalized, source, status, stale, created_at")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("prospect_attempts")
+        .select("id, code, parent_lead_id, owner_id, status, won, not_qualified_reason")
+        .order("created_at", { ascending: false }),
+      supabase.from("employees").select("id, full_name"),
+      supabase
+        .from("campaigns")
+        .select("id, code, campaign_name")
+        .order("created_at", { ascending: false }),
+    ]);
 
-  const { data: emps } = await supabase.from("employees").select("id, full_name");
   const empName = new Map<string, string>((emps ?? []).map((e) => [e.id, e.full_name]));
-
-  const { data: campaigns } = await supabase
-    .from("campaigns")
-    .select("id, code, campaign_name")
-    .order("created_at", { ascending: false });
 
   const leadList = (leads as Lead[] | null) ?? [];
   const attList = (attempts as Attempt[] | null) ?? [];

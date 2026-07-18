@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getCreator } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
 import { requestTypeLabel } from "@/lib/mcn/request-types";
 import { RequestForm, type PortalMerchant } from "./request-form";
@@ -24,19 +24,13 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 export default async function RequestPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: creator } = await supabase
-    .from("mcn_creators")
-    .select("id")
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
+  const creator = await getCreator();
   if (!creator) redirect("/dashboard");
 
+  const supabase = await getCachedClient();
   const [{ data: reqRaw }, { data: merchRaw }] = await Promise.all([
     supabase
       .from("creator_requests")

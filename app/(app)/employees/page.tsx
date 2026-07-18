@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { AddEmployeeForm } from "./add-form";
 
 type Employee = {
@@ -13,19 +13,13 @@ type Employee = {
 };
 
 export default async function EmployeesPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const canManage = !!(me?.is_od || me?.is_director);
 
+  const supabase = await getCachedClient();
   const { data: employees } = await supabase
     .from("employees")
     .select("id, full_name, division, rank, is_od, is_director, active")

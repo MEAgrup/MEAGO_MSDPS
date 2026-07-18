@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah } from "@/lib/format";
 import { projectBadge, todayJakartaYMD } from "@/lib/mcn/project-status";
 import { campaignRoutingNext, type CampaignRoutingState } from "@/lib/mcn/routing";
@@ -68,104 +68,106 @@ type ProjectSummary = {
 };
 
 export default async function BizDevPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
-
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
 
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
   const canView = mgmt || div === "BizDev";
   if (!canView) redirect("/dashboard");
 
-  const { data: reqRaw } = await supabase
-    .from("creator_requests")
-    .select(
-      "id, code, mcn_creator_id, type, status, needs_approval, approved_by, approved_at, target_brand, target_merchant_id, nominal, detail"
-    )
-    .order("created_at", { ascending: false });
+  const supabase = await getCachedClient();
+
+  // Stage 1: semua query yang saling independen di-fetch paralel (satu round-trip).
+  const [
+    { data: reqRaw },
+    { data: dealsRaw },
+    { data: crRaw },
+    { data: creatorsRaw },
+    { data: emps },
+    { data: shopsRaw },
+    { data: projRaw },
+  ] = await Promise.all([
+    supabase
+      .from("creator_requests")
+      .select(
+        "id, code, mcn_creator_id, type, status, needs_approval, approved_by, approved_at, target_brand, target_merchant_id, nominal, detail"
+      )
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("brand_deals")
+      .select("id, code, brand_name, shop_id, pipeline_stage, status")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("campaign_requests")
+      .select(
+        "id, code, deal_id, mcn_creator_id, owner_cpm_id, cm_confirm_status, needs_brand_acc, brand_acc_status, final_status, handover_done"
+      )
+      .order("created_at", { ascending: false }),
+    supabase.from("mcn_creators").select("id, name, code").order("name", { ascending: true }),
+    supabase.from("employees").select("id, full_name"),
+    supabase.from("cooperating_shops").select("shop_id, shop_name"),
+    // (f) Special Project (read-only): semua kecuali cancelled — yang belum mulai
+    // tampil [Persiapan] (QA 2026-07-17).
+    supabase
+      .from("v_project_summary")
+      .select(
+        "id, code, name, status, start_date, creators_cm, creators_acquisition, creators_needed, actual_gmv, target_gmv, pct_gmv"
+      )
+      .neq("status", "cancelled")
+      .order("start_date", { ascending: false }),
+  ]);
+
   const requests = (reqRaw as CreatorRequest[] | null) ?? [];
 
+  const deals = (dealsRaw as Deal[] | null) ?? [];
+  const runningDeals = deals.filter((d) => d.status === "running");
+
+  const campaignRequests = (crRaw as CampaignRequest[] | null) ?? [];
+
+  const creators = (creatorsRaw as { id: string; name: string; code: string | null }[] | null) ?? [];
+  const creatorName = new Map(creators.map((c) => [c.id, `${c.code ?? "—"} · ${c.name}`]));
+
+  const empName = new Map(((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name]));
+
+  const dealBrand = new Map(deals.map((d) => [d.id, `${d.code ?? "—"} · ${d.brand_name}`]));
+
+  const shops = (shopsRaw as { shop_id: string; shop_name: string | null }[] | null) ?? [];
+  const shopIds = shops.map((s) => s.shop_id);
+
+  const projects = (projRaw as ProjectSummary[] | null) ?? [];
+  const todayYMD = todayJakartaYMD();
+
+  // Stage 2: query turunan (bergantung hasil di atas) — nama merchant target
+  // (bergantung requests) & GMV top products (bergantung shopIds) saling independen.
   // Nama merchant target (free_meal/visit) — fallback ke target_brand teks bebas
   // bila belum terdaftar di master M4. BizDev punya akses select merchants (0102).
   const targetMerchantIds = Array.from(
     new Set(requests.map((r) => r.target_merchant_id).filter((id): id is string => !!id))
   );
-  let merchantName = new Map<string, string>();
-  if (targetMerchantIds.length > 0) {
-    const { data: merchRaw } = await supabase
-      .from("merchants")
-      .select("id, nama_toko")
-      .in("id", targetMerchantIds);
-    merchantName = new Map(
-      ((merchRaw as { id: string; nama_toko: string }[] | null) ?? []).map((m) => [m.id, m.nama_toko])
-    );
-  }
+  const [merchRes, topRes] = await Promise.all([
+    targetMerchantIds.length > 0
+      ? supabase.from("merchants").select("id, nama_toko").in("id", targetMerchantIds)
+      : Promise.resolve({ data: [] as { id: string; nama_toko: string }[] }),
+    shopIds.length > 0
+      ? supabase.from("creator_top_products").select("shop_id, gmv").in("shop_id", shopIds)
+      : Promise.resolve({ data: [] as { shop_id: string | null; gmv: number | null }[] }),
+  ]);
 
-  const { data: dealsRaw } = await supabase
-    .from("brand_deals")
-    .select("id, code, brand_name, shop_id, pipeline_stage, status")
-    .order("created_at", { ascending: false });
-  const deals = (dealsRaw as Deal[] | null) ?? [];
-  const runningDeals = deals.filter((d) => d.status === "running");
-
-  const { data: crRaw } = await supabase
-    .from("campaign_requests")
-    .select(
-      "id, code, deal_id, mcn_creator_id, owner_cpm_id, cm_confirm_status, needs_brand_acc, brand_acc_status, final_status, handover_done"
-    )
-    .order("created_at", { ascending: false });
-  const campaignRequests = (crRaw as CampaignRequest[] | null) ?? [];
-
-  const { data: creatorsRaw } = await supabase
-    .from("mcn_creators")
-    .select("id, name, code")
-    .order("name", { ascending: true });
-  const creators = (creatorsRaw as { id: string; name: string; code: string | null }[] | null) ?? [];
-  const creatorName = new Map(creators.map((c) => [c.id, `${c.code ?? "—"} · ${c.name}`]));
-
-  const { data: emps } = await supabase.from("employees").select("id, full_name");
-  const empName = new Map(((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name]));
-
-  const dealBrand = new Map(deals.map((d) => [d.id, `${d.code ?? "—"} · ${d.brand_name}`]));
+  const merchantName = new Map(
+    ((merchRes.data as { id: string; nama_toko: string }[] | null) ?? []).map((m) => [m.id, m.nama_toko])
+  );
 
   // (e) Brand report ringkas: Σ GMV per shop ber-deal (creator_top_products join cooperating_shops).
-  const { data: shopsRaw } = await supabase.from("cooperating_shops").select("shop_id, shop_name");
-  const shops = (shopsRaw as { shop_id: string; shop_name: string | null }[] | null) ?? [];
-  const shopIds = shops.map((s) => s.shop_id);
   const gmvByShop = new Map<string, number>();
-  if (shopIds.length > 0) {
-    const { data: topRaw } = await supabase
-      .from("creator_top_products")
-      .select("shop_id, gmv")
-      .in("shop_id", shopIds);
-    for (const r of (topRaw as { shop_id: string | null; gmv: number | null }[] | null) ?? []) {
-      if (!r.shop_id) continue;
-      gmvByShop.set(r.shop_id, (gmvByShop.get(r.shop_id) ?? 0) + Number(r.gmv ?? 0));
-    }
+  for (const r of (topRes.data as { shop_id: string | null; gmv: number | null }[] | null) ?? []) {
+    if (!r.shop_id) continue;
+    gmvByShop.set(r.shop_id, (gmvByShop.get(r.shop_id) ?? 0) + Number(r.gmv ?? 0));
   }
   const brandReport = shops
     .map((s) => ({ shop_id: s.shop_id, shop_name: s.shop_name, gmv: gmvByShop.get(s.shop_id) ?? 0 }))
     .sort((a, b) => b.gmv - a.gmv);
-
-  // (f) Special Project (read-only): semua kecuali cancelled — yang belum mulai
-  // tampil [Persiapan] (QA 2026-07-17).
-  const { data: projRaw } = await supabase
-    .from("v_project_summary")
-    .select(
-      "id, code, name, status, start_date, creators_cm, creators_acquisition, creators_needed, actual_gmv, target_gmv, pct_gmv"
-    )
-    .neq("status", "cancelled")
-    .order("start_date", { ascending: false });
-  const projects = (projRaw as ProjectSummary[] | null) ?? [];
-  const todayYMD = todayJakartaYMD();
 
   // Kolom pipeline: PIPELINE_STAGES + stage lain yang tak terdaftar.
   const knownStages = new Set(PIPELINE_STAGES);

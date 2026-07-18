@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
 import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
@@ -141,17 +141,9 @@ function num1(n: number | null): string {
 type ReportRow = { id: string; mcn_creator_id: string; title: string; created_at: string };
 
 export default async function McnCreatorsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
-
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
 
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
@@ -165,12 +157,51 @@ export default async function McnCreatorsPage() {
   // BizDev & KOL tidak melihat card ini.
   const canManageOps = mgmt || div === "Acquisition" || div === "CreatorManagement";
 
-  const { data: creatorsRaw } = await supabase
-    .from("mcn_creators")
-    .select(
-      "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id"
-    )
-    .order("name", { ascending: true });
+  const supabase = await getCachedClient();
+
+  // Kartu "Report Kreator" (portal F.2): gate mengikuti RLS insert creator_reports
+  // (0312) — hanya CreatorManagement + mgmt (Acquisition/BizDev/KOL tidak insert).
+  const isLeadCM = div === "CreatorManagement" && me?.rank === "lead";
+  const canReportCreator = mgmt || div === "CreatorManagement";
+
+  // Daftar CM aktif (divisi CreatorManagement) — dipakai di dropdown assign owner.
+  // Hanya di-fetch bila section-nya bakal dirender (canAssignOwner).
+  const cmEmployeesQuery = canAssignOwner
+    ? supabase
+        .from("employees")
+        .select("id, full_name, rank")
+        .eq("division", "CreatorManagement")
+        .eq("active", true)
+        .order("full_name", { ascending: true })
+    : Promise.resolve({ data: [] as { id: string; full_name: string; rank: string }[] });
+
+  // Kartu report hanya di-fetch bila bakal dirender (canReportCreator).
+  const reportsQuery = canReportCreator
+    ? supabase
+        .from("creator_reports")
+        .select("id, mcn_creator_id, title, created_at")
+        .order("created_at", { ascending: false })
+        .limit(30)
+    : Promise.resolve({ data: [] as ReportRow[] });
+
+  // Stage 1: query yang saling independen di-fetch paralel (satu round-trip).
+  const [
+    { data: creatorsRaw },
+    { data: emps },
+    { data: cmEmpsRaw },
+    { data: reportsRaw },
+  ] = await Promise.all([
+    supabase
+      .from("mcn_creators")
+      .select(
+        "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id"
+      )
+      .order("name", { ascending: true }),
+    supabase.from("employees").select("id, full_name"),
+    cmEmployeesQuery,
+    reportsQuery,
+  ]);
+
   const creators = (creatorsRaw as Creator[] | null) ?? [];
   const creatorIds = creators.map((c) => c.id);
 
@@ -183,43 +214,19 @@ export default async function McnCreatorsPage() {
     ? creators
     : creators.filter((c) => c.owner_cpm_id === me?.id);
 
-  const { data: emps } = await supabase.from("employees").select("id, full_name");
   const empName = new Map(
     ((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name])
   );
 
-  // Daftar CM aktif (divisi CreatorManagement) — dipakai di dropdown assign owner.
-  // Hanya di-fetch bila section-nya bakal dirender (canAssignOwner).
-  let cmEmployees: { id: string; full_name: string; rank: string }[] = [];
-  if (canAssignOwner) {
-    const { data: cmEmpsRaw } = await supabase
-      .from("employees")
-      .select("id, full_name, rank")
-      .eq("division", "CreatorManagement")
-      .eq("active", true)
-      .order("full_name", { ascending: true });
-    cmEmployees = (cmEmpsRaw as { id: string; full_name: string; rank: string }[] | null) ?? [];
-  }
+  const cmEmployees = (cmEmpsRaw as { id: string; full_name: string; rank: string }[] | null) ?? [];
 
-  // Email akun portal untuk kreator yang sudah punya auth_user_id (service-role,
-  // server-only). Hanya di-fetch bila card "Akun Portal Kreator" bakal dirender.
-  const accountEmail = new Map<string, string>();
-  if (canAssignOwner) {
-    // Jangan biarkan lookup email menjatuhkan render (mis. service key belum diset
-    // di environment) — kolom email cukup tampil "—".
-    try {
-      const admin = createAdminClient();
-      const linked = creators.filter((c) => c.auth_user_id);
-      await Promise.all(
-        linked.map(async (c) => {
-          const { data } = await admin.auth.admin.getUserById(c.auth_user_id as string);
-          if (data?.user?.email) accountEmail.set(c.id, data.user.email);
-        })
-      );
-    } catch (err) {
-      console.error("[creators] lookup email akun portal gagal:", err);
-    }
-  }
+  // Dropdown kreator: staff CM hanya kreator miliknya (RLS insert scope owner), Lead
+  // CM & mgmt lintas kreator.
+  const reportCreators = mgmt || isLeadCM ? creators : creators.filter((c) => c.owner_cpm_id === me?.id);
+  const creatorNameById = new Map(
+    creators.map((c) => [c.id, `${c.code ?? "(draft)"} · ${c.name}`])
+  );
+  const reports = (reportsRaw as ReportRow[] | null) ?? [];
 
   // Boundary bulan berjalan + 2 sebelumnya (hari-1 bulan M-2). Pakai `new Date()` tanpa
   // argumen (wall-clock sekarang) — BUKAN new Date(isoString), jadi aman dari pergeseran
@@ -235,36 +242,46 @@ export default async function McnCreatorsPage() {
   }
   const boundaryStart = formatYMD(boundaryYear, boundaryMonth, 1);
 
-  // Kartu "Report Kreator" (portal F.2): gate mengikuti RLS insert creator_reports
-  // (0312) — hanya CreatorManagement + mgmt (Acquisition/BizDev/KOL tidak insert).
-  // Dropdown kreator: staff CM hanya kreator miliknya (RLS insert scope owner), Lead
-  // CM & mgmt lintas kreator.
-  const isLeadCM = div === "CreatorManagement" && me?.rank === "lead";
-  const canReportCreator = mgmt || div === "CreatorManagement";
-  const reportCreators = mgmt || isLeadCM ? creators : creators.filter((c) => c.owner_cpm_id === me?.id);
-  const creatorNameById = new Map(
-    creators.map((c) => [c.id, `${c.code ?? "(draft)"} · ${c.name}`])
-  );
-  let reports: ReportRow[] = [];
-  if (canReportCreator) {
-    const { data: reportsRaw } = await supabase
-      .from("creator_reports")
-      .select("id, mcn_creator_id, title, created_at")
-      .order("created_at", { ascending: false })
-      .limit(30);
-    reports = (reportsRaw as ReportRow[] | null) ?? [];
-  }
+  // Stage 2: query turunan yang bergantung pada daftar kreator — summary (creatorIds)
+  // & email akun portal (creators) saling independen → paralel.
+  const summaryPromise =
+    creatorIds.length > 0
+      ? supabase
+          .from("creator_period_summary")
+          .select(
+            "mcn_creator_id, period_start, created_at, affiliate_gmv, redemption_amount, new_posts, posts_with_sales, live_streams, valid_live_streams"
+          )
+          .in("mcn_creator_id", creatorIds)
+          .gte("period_start", boundaryStart)
+      : Promise.resolve({ data: null as SummaryRow[] | null });
+
+  // Email akun portal untuk kreator yang sudah punya auth_user_id (service-role,
+  // server-only). Hanya di-fetch bila card "Akun Portal Kreator" bakal dirender.
+  const accountEmail = new Map<string, string>();
+  const emailPromise = canAssignOwner
+    ? (async () => {
+        // Jangan biarkan lookup email menjatuhkan render (mis. service key belum diset
+        // di environment) — kolom email cukup tampil "—".
+        try {
+          const admin = createAdminClient();
+          const linked = creators.filter((c) => c.auth_user_id);
+          await Promise.all(
+            linked.map(async (c) => {
+              const { data } = await admin.auth.admin.getUserById(c.auth_user_id as string);
+              if (data?.user?.email) accountEmail.set(c.id, data.user.email);
+            })
+          );
+        } catch (err) {
+          console.error("[creators] lookup email akun portal gagal:", err);
+        }
+      })()
+    : Promise.resolve();
+
+  const [summaryRes] = await Promise.all([summaryPromise, emailPromise]);
 
   const averagesByCreator = new Map<string, MonthlyMetricAverages>();
   if (creatorIds.length > 0) {
-    const { data: summaryRaw } = await supabase
-      .from("creator_period_summary")
-      .select(
-        "mcn_creator_id, period_start, created_at, affiliate_gmv, redemption_amount, new_posts, posts_with_sales, live_streams, valid_live_streams"
-      )
-      .in("mcn_creator_id", creatorIds)
-      .gte("period_start", boundaryStart);
-    const rows = (summaryRaw as SummaryRow[] | null) ?? [];
+    const rows = (summaryRes.data as SummaryRow[] | null) ?? [];
     const byCreator = new Map<string, SummaryRow[]>();
     for (const r of rows) {
       const arr = byCreator.get(r.mcn_creator_id) ?? [];

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { durasi, num, tanggal } from "@/lib/format";
 import { PickupBriefButton, CreateAdcForm, AdcStatusForm, CreateWpeForm } from "./forms";
 
@@ -76,23 +76,17 @@ function uang(currency: string, n: number | null | undefined): string {
 }
 
 export default async function AdsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const mgmt = !!(me?.is_od || me?.is_director);
   if (!(me?.division === "Ads" || me?.division === "Account" || mgmt)) redirect("/dashboard");
   const isAdsStaff = me?.division === "Ads" || mgmt;
   const isAdsLead = (me?.division === "Ads" && me?.rank === "lead") || mgmt;
   const isAm = me?.division === "Account" || mgmt;
 
+  const supabase = await getCachedClient();
   const [{ data: briefs }, { data: adcs }, { data: wpes }] = await Promise.all([
     supabase
       .from("briefs")

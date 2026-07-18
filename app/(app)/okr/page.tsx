@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { tanggal } from "@/lib/format";
 import {
   OKR_ROLE_ORDER,
@@ -33,21 +33,16 @@ export default async function OkrPage({
 }: {
   searchParams: Promise<{ period?: string }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   if (!(me?.is_od || me?.is_director)) redirect("/dashboard");
 
   const sp = await searchParams;
   const period = sp.period && PERIOD_RE.test(sp.period) ? sp.period : currentQuarter();
+
+  const supabase = await getCachedClient();
 
   const { data: targets } = await supabase
     .from("okr_targets")

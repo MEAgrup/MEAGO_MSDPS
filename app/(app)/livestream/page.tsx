@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { num, rupiah, tanggal } from "@/lib/format";
 import {
   BriefForwardForm,
@@ -58,24 +58,19 @@ const LSR_BADGE: Record<string, string> = {
 };
 
 export default async function LivestreamPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const mgmt = !!(me?.is_od || me?.is_director);
   if (!(me?.division === "Account" || me?.division === "LiveStream" || mgmt)) {
     redirect("/dashboard");
   }
   const isAm = me?.division === "Account" || mgmt;
 
-  const [{ data: briefs }, { data: lsrs }, { data: achievement }, { data: gmvAuth }] =
+  const supabase = await getCachedClient();
+
+  const [{ data: briefs }, { data: lsrs }, { data: achievement }, { data: gmvAuth }, { data: allMerchants }] =
     await Promise.all([
       supabase
         .from("briefs")
@@ -97,12 +92,16 @@ export default async function LivestreamPage() {
         .from("merchant_gmv_authoritative")
         .select("id, merchant_id, period, gmv_value, confidence, source_note")
         .order("period", { ascending: false }),
+      // Merchant untuk form GMV otoritatif: semua merchant yang visible.
+      supabase.from("merchants").select("id, code, nama_toko").order("nama_toko"),
     ]);
 
   const bList = (briefs as Brief[] | null) ?? [];
   const lList = (lsrs as Lsr[] | null) ?? [];
   const aMap = new Map(((achievement as Achievement[] | null) ?? []).map((a) => [a.brief_id, a]));
   const gList = (gmvAuth as GmvAuth[] | null) ?? [];
+  const allM = (allMerchants as { id: string; code: string | null; nama_toko: string }[] | null) ?? [];
+  const allMMap = new Map(allM.map((m) => [m.id, m]));
 
   // Nama merchant per brief (via services) — untuk display + resolve unmatched.
   const serviceIds = [...new Set(bList.map((b) => b.service_id))];
@@ -117,14 +116,6 @@ export default async function LivestreamPage() {
   const mMap = new Map((merchants ?? []).map((m) => [m.id, m]));
   const merchantName = (b: Brief) =>
     mMap.get(svcMerchant.get(b.service_id) ?? "")?.nama_toko ?? "—";
-
-  // Merchant untuk form GMV otoritatif: semua merchant yang visible.
-  const { data: allMerchants } = await supabase
-    .from("merchants")
-    .select("id, code, nama_toko")
-    .order("nama_toko");
-  const allM = (allMerchants as { id: string; code: string | null; nama_toko: string }[] | null) ?? [];
-  const allMMap = new Map(allM.map((m) => [m.id, m]));
 
   const pendingForward = bList.filter((b) => b.status === "[Menunggu Forward ke Vendor]");
   const forwarded = bList.filter((b) => b.status === "[Diteruskan ke Vendor]");

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedClient, getSessionUser, getCreator } from "@/lib/supabase/server";
 import { formatYMD, weekIndexOfDate } from "@/lib/mcn/weeks";
 import { PerformaView, type WeekMetrics, type Averages } from "./performa-view";
 
@@ -81,17 +81,10 @@ function build3MonthAverages(rows: SummaryRow[]): Averages {
 }
 
 export default async function PerformaPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: creator } = await supabase
-    .from("mcn_creators")
-    .select("id")
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
+  const creator = await getCreator();
   if (!creator) redirect("/dashboard");
 
   // Rentang 3 bulan (bulan berjalan + 2 sebelumnya) — wall clock, bukan new Date(iso).
@@ -107,6 +100,7 @@ export default async function PerformaPage() {
   const boundaryStart = formatYMD(boundaryYear, boundaryMonth, 1);
   const curMonthPrefix = `${curYear}-${String(curMonth).padStart(2, "0")}`;
 
+  const supabase = await getCachedClient();
   const { data: raw } = await supabase
     .from("creator_period_summary")
     .select(

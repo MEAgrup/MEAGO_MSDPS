@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah } from "@/lib/format";
 import { CloseDealForm } from "./forms";
 
@@ -28,32 +28,43 @@ type Trx = {
 };
 
 export default async function MerchantsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
-
-  const { data: me } = await supabase
-    .from("employees")
-    .select("id, division, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
   const canClose = me?.division === "BizDev" || !!me?.is_director;
 
-  const { data: merchants } = await supabase
-    .from("merchants")
-    .select(
-      "id, code, nama_toko, kota, kategori, link_toko, gmv_baseline, target_gmv, total_revenue, payment_intent"
-    )
-    .order("created_at", { ascending: false });
+  const supabase = await getCachedClient();
 
-  const { data: services } = await supabase
-    .from("services")
-    .select("id, code, merchant_id, service_type, status");
-  const { data: trxs } = await supabase
-    .from("transactions")
-    .select("id, code, merchant_id, total_agreed_value, amount_verified, amount_outstanding, status");
+  // Stage 1: query yang saling independen di-fetch paralel (satu round-trip).
+  // prospect_attempts (negosiasi) tak bergantung merchants/services/trx → ikut paralel.
+  const attemptsQuery = canClose
+    ? supabase
+        .from("prospect_attempts")
+        .select("id, code, parent_lead_id, owner_id, status")
+        .eq("status", "[Negotiation]")
+    : Promise.resolve({
+        data: [] as {
+          id: string;
+          code: string | null;
+          parent_lead_id: string;
+          owner_id: string;
+          status: string;
+        }[],
+      });
+
+  const [{ data: merchants }, { data: services }, { data: trxs }, { data: att }] = await Promise.all([
+    supabase
+      .from("merchants")
+      .select(
+        "id, code, nama_toko, kota, kategori, link_toko, gmv_baseline, target_gmv, total_revenue, payment_intent"
+      )
+      .order("created_at", { ascending: false }),
+    supabase.from("services").select("id, code, merchant_id, service_type, status"),
+    supabase
+      .from("transactions")
+      .select("id, code, merchant_id, total_agreed_value, amount_verified, amount_outstanding, status"),
+    attemptsQuery,
+  ]);
 
   const mList = (merchants as Merchant[] | null) ?? [];
   const svcByMerchant = new Map<string, Service[]>();
@@ -69,13 +80,10 @@ export default async function MerchantsPage() {
     trxByMerchant.set(t.merchant_id, arr);
   }
 
-  // Negotiation attempts the current user may close.
+  // Negotiation attempts the current user may close. `att` sudah di-fetch paralel
+  // di Stage 1; hanya lookup leads (bergantung leadIds) yang tersisa berurutan.
   let negotiations: { attempt_id: string; label: string }[] = [];
   if (canClose) {
-    const { data: att } = await supabase
-      .from("prospect_attempts")
-      .select("id, code, parent_lead_id, owner_id, status")
-      .eq("status", "[Negotiation]");
     const leadIds = [...new Set((att ?? []).map((a) => a.parent_lead_id))];
     const { data: leadRows } = leadIds.length
       ? await supabase.from("leads").select("id, lead_name, code").in("id", leadIds)
