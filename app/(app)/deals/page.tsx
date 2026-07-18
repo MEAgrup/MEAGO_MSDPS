@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { tanggal } from "@/lib/format";
 import { addDays } from "@/lib/mcn/weeks";
-import { DealsTabs, PipelineStageSelect } from "./forms";
+import { DealsTabs, PipelineStageSelect, DealExtrasRow } from "./forms";
 
 type Deal = {
   id: string;
@@ -13,7 +13,20 @@ type Deal = {
   status: string;
   pipeline_stage: string;
   review_flags: Record<string, unknown> | null;
+  kreators_needed: number | null;
+  videos_needed: number | null;
+  poi_location: string | null;
 };
+
+// Ringkasan kebutuhan deal (kreator/video/POI, info-only 0312) — dipakai utk peran yang
+// tidak bisa mengedit (bukan canRegister).
+function dealExtrasSummary(d: Deal): string {
+  const parts: string[] = [];
+  if (d.kreators_needed !== null) parts.push(`${d.kreators_needed} kreator`);
+  if (d.videos_needed !== null) parts.push(`${d.videos_needed} video`);
+  if (d.poi_location) parts.push(d.poi_location);
+  return parts.length > 0 ? parts.join(" · ") : "—";
+}
 
 const STATUS_CLASS: Record<string, string> = {
   running: "green",
@@ -49,7 +62,9 @@ export default async function DealsPage() {
 
   const { data: dealsRaw } = await supabase
     .from("brand_deals")
-    .select("id, code, brand_name, shop_id, exp_date, status, pipeline_stage, review_flags")
+    .select(
+      "id, code, brand_name, shop_id, exp_date, status, pipeline_stage, review_flags, kreators_needed, videos_needed, poi_location"
+    )
     .order("created_at", { ascending: false });
   const deals = (dealsRaw as Deal[] | null) ?? [];
 
@@ -103,6 +118,7 @@ export default async function DealsPage() {
                 <th>Status</th>
                 <th>Pipeline</th>
                 <th>Flags</th>
+                <th>Kebutuhan Deal</th>
               </tr>
             </thead>
             <tbody>
@@ -139,12 +155,24 @@ export default async function DealsPage() {
                         <span className="muted">—</span>
                       )}
                     </td>
+                    <td>
+                      {canRegister ? (
+                        <DealExtrasRow
+                          dealId={d.id}
+                          currentKreatorsNeeded={d.kreators_needed}
+                          currentVideosNeeded={d.videos_needed}
+                          currentPoiLocation={d.poi_location}
+                        />
+                      ) : (
+                        <span className="muted">{dealExtrasSummary(d)}</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
               {deals.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={8} className="muted">
                     Belum ada deal terdaftar.
                   </td>
                 </tr>

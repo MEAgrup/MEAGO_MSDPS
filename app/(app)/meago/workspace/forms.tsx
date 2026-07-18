@@ -1,12 +1,16 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   createRequest,
   approveRequest,
   progressRequest,
   type ActionResult,
 } from "@/lib/actions/mcn-requests";
+import { PORTAL_REQUEST_TYPES, REQUEST_TYPE_LABELS, NOMINAL_TYPES } from "@/lib/mcn/request-types";
+
+// Jenis lama form CM (tetap valid — lihat komentar 0311 di lib/mcn/request-types.ts).
+const LEGACY_REQUEST_TYPES = ["sample", "ads", "hsl"] as const;
 
 // IngestForm sekarang komponen bersama (dipakai juga di /meago/creators) — lihat
 // app/(app)/meago/ingest-form.tsx. Re-export di sini supaya import existing
@@ -29,6 +33,8 @@ export function CreateRequestForm({ creators }: { creators: CreatorOpt[] }) {
     createRequest,
     null
   );
+  const [type, setType] = useState<string>("sample");
+  const showNominal = (NOMINAL_TYPES as readonly string[]).includes(type);
   return (
     <form action={action}>
       <Msg state={state} />
@@ -48,23 +54,43 @@ export function CreateRequestForm({ creators }: { creators: CreatorOpt[] }) {
         </div>
         <div>
           <label>Tipe *</label>
-          <select name="type" defaultValue="sample" required>
-            <option value="sample">Sample</option>
-            <option value="ads">Ads</option>
-            <option value="hsl">HSL</option>
+          <select
+            name="type"
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            required
+          >
+            {LEGACY_REQUEST_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {REQUEST_TYPE_LABELS[t]}
+              </option>
+            ))}
+            {PORTAL_REQUEST_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {REQUEST_TYPE_LABELS[t]}
+              </option>
+            ))}
           </select>
         </div>
       </div>
       <div className="row">
         <div>
           <label>Target Brand</label>
-          <input name="target_brand" />
+          <input name="target_brand" placeholder="mis. nama tempat/brand (free meal, visit, dll)" />
         </div>
         <div>
           <label>Budget Ads (bila tipe ads)</label>
           <input name="budget" placeholder="mis. 500.000" />
         </div>
       </div>
+      {showNominal && (
+        <div className="row">
+          <div>
+            <label>Nominal (Rupiah) — {REQUEST_TYPE_LABELS[type]}</label>
+            <input name="nominal" placeholder="mis. 500.000" />
+          </div>
+        </div>
+      )}
       <label>Detail</label>
       <textarea name="detail" rows={2} />
       <button type="submit" disabled={pending}>

@@ -42,10 +42,25 @@ export async function registerDeal(
   const komisiKreatorRaw = String(formData.get("komisi_kreator") || "").trim();
   const komisiMeaRaw = String(formData.get("komisi_mea") || "").trim();
   const sourced_by_role = String(formData.get("sourced_by_role") || "").trim() || "bd";
+  const kreatorsNeededRaw = String(formData.get("kreators_needed") || "").trim();
+  const videosNeededRaw = String(formData.get("videos_needed") || "").trim();
+  const poi_location = String(formData.get("poi_location") || "").trim() || null;
 
   const fieldErrors: Record<string, string> = {};
 
   if (!brand_name) fieldErrors.brand_name = "brand wajib diisi (persis nama tampilan platform)";
+
+  // kreators_needed / videos_needed (opsional, info-only 0312): angka bulat bila diisi.
+  let kreators_needed: number | null = null;
+  if (kreatorsNeededRaw) {
+    if (!/^[0-9]+$/.test(kreatorsNeededRaw)) fieldErrors.kreators_needed = "harus angka bulat";
+    else kreators_needed = parseInt(kreatorsNeededRaw, 10);
+  }
+  let videos_needed: number | null = null;
+  if (videosNeededRaw) {
+    if (!/^[0-9]+$/.test(videosNeededRaw)) fieldErrors.videos_needed = "harus angka bulat";
+    else videos_needed = parseInt(videosNeededRaw, 10);
+  }
 
   // shop_id: numeric-only bila diisi + cek duplikat sebelum insert.
   if (shop_id !== null && !/^[0-9]+$/.test(shop_id)) {
@@ -114,6 +129,9 @@ export async function registerDeal(
       komisi_mea_pct,
       pic_tap,
       sourced_by_role,
+      kreators_needed,
+      videos_needed,
+      poi_location,
     })
     .select("id, code")
     .single();
@@ -356,6 +374,48 @@ export async function setPipelineStage(
   revalidatePath("/deals");
   revalidatePath("/bizdev");
   return { ok: true, message: `Pipeline stage → ${pipeline_stage}.` };
+}
+
+// updateDealExtras: edit kebutuhan deal (kreator/video/POI, info-only 0312) untuk deal
+// yang sudah terdaftar — satu-satunya jalur "edit deal" untuk 3 kolom opsional ini
+// (field lain deal tidak diedit di sini). Kosong → null, angka wajib bulat bila diisi.
+export async function updateDealExtras(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user } = await ctx();
+  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+  const id = String(formData.get("id") || "");
+  if (!id) return { ok: false, message: "Deal tidak valid." };
+
+  const kreatorsNeededRaw = String(formData.get("kreators_needed") || "").trim();
+  const videosNeededRaw = String(formData.get("videos_needed") || "").trim();
+  const poi_location = String(formData.get("poi_location") || "").trim() || null;
+
+  let kreators_needed: number | null = null;
+  if (kreatorsNeededRaw) {
+    if (!/^[0-9]+$/.test(kreatorsNeededRaw)) {
+      return { ok: false, message: "Kreator dibutuhkan harus angka bulat." };
+    }
+    kreators_needed = parseInt(kreatorsNeededRaw, 10);
+  }
+  let videos_needed: number | null = null;
+  if (videosNeededRaw) {
+    if (!/^[0-9]+$/.test(videosNeededRaw)) {
+      return { ok: false, message: "Jumlah video harus angka bulat." };
+    }
+    videos_needed = parseInt(videosNeededRaw, 10);
+  }
+
+  const { error } = await supabase
+    .from("brand_deals")
+    .update({ kreators_needed, videos_needed, poi_location })
+    .eq("id", id);
+  if (error) return { ok: false, message: `Gagal menyimpan kebutuhan deal: ${error.message}` };
+
+  revalidatePath("/deals");
+  return { ok: true, message: "Kebutuhan deal disimpan." };
 }
 
 // addDealProduct: tambah satu produk ke deal existing.

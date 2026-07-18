@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { rupiah } from "@/lib/format";
+import { rupiah, tanggal } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
 import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
+import { UploadReportForm, DeleteReportButton } from "./report-forms";
 import { IngestForm } from "../ingest-form";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -136,6 +137,9 @@ function num1(n: number | null): string {
   return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 }).format(n);
 }
 
+// creator_reports (portal F.2) — daftar report terbaru utk kartu "Report Kreator".
+type ReportRow = { id: string; mcn_creator_id: string; title: string; created_at: string };
+
 export default async function McnCreatorsPage() {
   const supabase = await createClient();
   const {
@@ -230,6 +234,26 @@ export default async function McnCreatorsPage() {
     boundaryYear -= 1;
   }
   const boundaryStart = formatYMD(boundaryYear, boundaryMonth, 1);
+
+  // Kartu "Report Kreator" (portal F.2): gate mengikuti RLS insert creator_reports
+  // (0312) — hanya CreatorManagement + mgmt (Acquisition/BizDev/KOL tidak insert).
+  // Dropdown kreator: staff CM hanya kreator miliknya (RLS insert scope owner), Lead
+  // CM & mgmt lintas kreator.
+  const isLeadCM = div === "CreatorManagement" && me?.rank === "lead";
+  const canReportCreator = mgmt || div === "CreatorManagement";
+  const reportCreators = mgmt || isLeadCM ? creators : creators.filter((c) => c.owner_cpm_id === me?.id);
+  const creatorNameById = new Map(
+    creators.map((c) => [c.id, `${c.code ?? "(draft)"} · ${c.name}`])
+  );
+  let reports: ReportRow[] = [];
+  if (canReportCreator) {
+    const { data: reportsRaw } = await supabase
+      .from("creator_reports")
+      .select("id, mcn_creator_id, title, created_at")
+      .order("created_at", { ascending: false })
+      .limit(30);
+    reports = (reportsRaw as ReportRow[] | null) ?? [];
+  }
 
   const averagesByCreator = new Map<string, MonthlyMetricAverages>();
   if (creatorIds.length > 0) {
@@ -496,6 +520,49 @@ export default async function McnCreatorsPage() {
                   <tr>
                     <td colSpan={6} className="muted">
                       Tidak ada kreator yang bisa Anda kelola.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {canReportCreator && (
+        <div className="card">
+          <h2>Report Kreator</h2>
+          <p className="section-sub">
+            Unggah file report untuk kreator (dibaca kreator ybs di portal /kreator/report).
+            Staff CM hanya bisa mengunggah untuk kreator miliknya; Lead CM &amp; management
+            lintas kreator.
+          </p>
+          <UploadReportForm creators={reportCreators} />
+          <div style={{ overflowX: "auto", marginTop: 16 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Kreator</th>
+                  <th>Judul</th>
+                  <th>Tanggal</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports.map((r) => (
+                  <tr key={r.id}>
+                    <td>{creatorNameById.get(r.mcn_creator_id) ?? "—"}</td>
+                    <td>{r.title}</td>
+                    <td className="muted">{tanggal(r.created_at)}</td>
+                    <td>
+                      <DeleteReportButton reportId={r.id} />
+                    </td>
+                  </tr>
+                ))}
+                {reports.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      Belum ada report diunggah.
                     </td>
                   </tr>
                 )}

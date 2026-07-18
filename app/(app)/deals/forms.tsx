@@ -5,6 +5,7 @@ import {
   registerDeal,
   importLegacyDeals,
   setPipelineStage,
+  updateDealExtras,
   type ActionResult,
 } from "@/lib/actions/deals";
 
@@ -105,6 +106,20 @@ export function RegisterDealForm({
       <label>Link Brand</label>
       <input name="brand_link" />
       <input type="hidden" name="sourced_by_role" value={sourcedByRole} />
+
+      <h3 style={{ fontSize: 13, margin: "14px 0 8px" }}>Kebutuhan Deal (opsional, info portal kreator)</h3>
+      <div className="row">
+        <div>
+          <label>Kreator dibutuhkan</label>
+          <input name="kreators_needed" inputMode="numeric" placeholder="mis. 5" />
+        </div>
+        <div>
+          <label>Jumlah video</label>
+          <input name="videos_needed" inputMode="numeric" placeholder="mis. 10" />
+        </div>
+      </div>
+      <label>Lokasi POI</label>
+      <input name="poi_location" placeholder="mis. Jakarta Selatan" />
 
       <h3 style={{ fontSize: 13, margin: "14px 0 8px" }}>Produk (opsional, mewarisi niche/exp/komisi deal)</h3>
       {productRows.map((rowId) => (
@@ -229,6 +244,59 @@ export function PipelineStageSelect({ dealId, current }: { dealId: string; curre
       {state && !state.ok && (
         <span className="badge red" title={state.message}>
           gagal
+        </span>
+      )}
+    </form>
+  );
+}
+
+// DealExtrasRow — "edit deal" untuk kebutuhan deal (kreator/video/POI, info-only 0312)
+// pada deal yang sudah terdaftar. Pola sama dengan PipelineStageSelect: satu form
+// inline per baris.
+export function DealExtrasRow({
+  dealId,
+  currentKreatorsNeeded,
+  currentVideosNeeded,
+  currentPoiLocation,
+}: {
+  dealId: string;
+  currentKreatorsNeeded: number | null;
+  currentVideosNeeded: number | null;
+  currentPoiLocation: string | null;
+}) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    updateDealExtras,
+    null
+  );
+  return (
+    <form action={action} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <input type="hidden" name="id" value={dealId} />
+      <input
+        name="kreators_needed"
+        defaultValue={currentKreatorsNeeded !== null ? String(currentKreatorsNeeded) : ""}
+        inputMode="numeric"
+        placeholder="Kreator dibutuhkan"
+        style={{ width: 110 }}
+      />
+      <input
+        name="videos_needed"
+        defaultValue={currentVideosNeeded !== null ? String(currentVideosNeeded) : ""}
+        inputMode="numeric"
+        placeholder="Jumlah video"
+        style={{ width: 100 }}
+      />
+      <input
+        name="poi_location"
+        defaultValue={currentPoiLocation ?? ""}
+        placeholder="Lokasi POI"
+        style={{ width: 140 }}
+      />
+      <button className="sm" type="submit" disabled={pending}>
+        {pending ? "…" : "Simpan"}
+      </button>
+      {state && (
+        <span className={state.ok ? "ok-msg" : "err"} style={{ fontSize: 11 }}>
+          {state.message}
         </span>
       )}
     </form>
