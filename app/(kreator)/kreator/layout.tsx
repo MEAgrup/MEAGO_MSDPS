@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, getCreator } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
 
 // Layout portal kreator — DI LUAR route group (app). Server-side gating: resolve
@@ -11,17 +11,10 @@ export default async function KreatorLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: creator } = await supabase
-    .from("mcn_creators")
-    .select("code, name")
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
+  const creator = await getCreator();
 
   if (!creator) redirect("/dashboard");
 

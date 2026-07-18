@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -28,3 +29,39 @@ export async function createClient() {
     }
   );
 }
+
+// Request-level dedupe helpers: React cache() collapses these to one call per
+// request, so layout and page share the same client/session/profile lookups.
+export const getCachedClient = cache(createClient);
+
+export const getSessionUser = cache(async () => {
+  const supabase = await getCachedClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user;
+});
+
+export const getEmployee = cache(async () => {
+  const user = await getSessionUser();
+  if (!user) return null;
+  const supabase = await getCachedClient();
+  const { data } = await supabase
+    .from("employees")
+    .select("id, full_name, division, rank, is_od, is_director")
+    .eq("id", user.id)
+    .maybeSingle();
+  return data;
+});
+
+export const getCreator = cache(async () => {
+  const user = await getSessionUser();
+  if (!user) return null;
+  const supabase = await getCachedClient();
+  const { data } = await supabase
+    .from("mcn_creators")
+    .select("id, code, name")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+  return data;
+});

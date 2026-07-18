@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, getEmployee, getCreator, getCachedClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
 
 export default async function AppLayout({
@@ -8,27 +8,17 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const { data: me } = await supabase
-    .from("employees")
-    .select("full_name, division, rank, is_od, is_director")
-    .eq("id", user.id)
-    .maybeSingle();
+  const me = await getEmployee();
 
   // Cross-blocking identitas: sesi yang BUKAN karyawan tidak boleh masuk route (app).
   // Kreator → portal; akun tanpa identitas apa pun → sign-out + login.
   if (!me) {
-    const { data: creator } = await supabase
-      .from("mcn_creators")
-      .select("id")
-      .eq("auth_user_id", user.id)
-      .maybeSingle();
+    const creator = await getCreator();
     if (creator) redirect("/kreator/performa");
+    const supabase = await getCachedClient();
     await supabase.auth.signOut();
     redirect("/login");
   }
