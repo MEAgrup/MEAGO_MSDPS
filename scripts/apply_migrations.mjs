@@ -3,9 +3,21 @@
 // it never appears in the command line or logs.
 //
 // Usage:  node scripts/apply_migrations.mjs
+//   Default (no env override) -> PRODUCTION project (ref below).
+//   Override with SUPABASE_PROJECT_REF to target another project, e.g. staging:
+//     SUPABASE_PROJECT_REF=vgjzvdpxrdoefoncuazw node scripts/apply_migrations.mjs
+//   or via npm scripts: `npm run db:migrate:staging` / `npm run db:migrate:prod`
+//   (see package.json). Details: docs/STAGING.md
 import { readFileSync, readdirSync } from "node:fs";
 
-const ref = process.env.SUPABASE_PROJECT_REF || "mvcckptntrvzujqaoxxh";
+// PRODUCTION ref (fallback when SUPABASE_PROJECT_REF is not set).
+const PRODUCTION_PROJECT_REF = "mvcckptntrvzujqaoxxh";
+// STAGING ref (copy of production, for testing migrations before prod). Not used as a
+// default — always select it explicitly via SUPABASE_PROJECT_REF env or
+// `npm run db:migrate:staging`, so production stays the safe default.
+const STAGING_PROJECT_REF = "vgjzvdpxrdoefoncuazw"; // eslint-disable-line no-unused-vars
+
+const ref = process.env.SUPABASE_PROJECT_REF || PRODUCTION_PROJECT_REF;
 const tokenUrl = new URL("../.supabase-token", import.meta.url);
 
 let token;

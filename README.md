@@ -33,6 +33,15 @@ supabase db push
 Enable `pg_cron` from the Supabase Dashboard (Database > Extensions) before the
 Module 13/14 scheduled-snapshot migrations.
 
+## Environments
+- **Production** — Supabase project `mvcckptntrvzujqaoxxh`; Vercel branch `main`.
+- **Staging** — Supabase project `vgjzvdpxrdoefoncuazw` ("MSDPS Staging", copy of
+  production); Vercel branch `staging`
+  (`https://meago-msdps-git-staging-meagency.vercel.app`). New migrations must be
+  applied and tested on staging before production.
+
+Full setup, env vars, and migration commands: see `docs/STAGING.md`.
+
 ## Enforcement model (why the DB does the heavy lifting)
 Supabase exposes every table over PostgREST, so business rules live in Postgres
 where they cannot be bypassed:

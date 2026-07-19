@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "seed": "node --env-file=.env.local scripts/seed_employees.mjs"
+    "seed": "node --env-file=.env.local scripts/seed_employees.mjs",
+    "db:migrate:prod": "SUPABASE_PROJECT_REF=mvcckptntrvzujqaoxxh node scripts/apply_migrations.mjs",
+    "db:migrate:staging": "SUPABASE_PROJECT_REF=vgjzvdpxrdoefoncuazw node scripts/apply_migrations.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.1",
