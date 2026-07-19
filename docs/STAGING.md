@@ -27,6 +27,27 @@ Catatan:
   kalau dibutuhkan untuk testing. **Auth users IKUT ter-copy**, jadi akun
   login staging = akun login production (password sama).
 
+### Anti-campur: MSDPS vs MCN MEA adalah dua app TERPISAH
+
+Empat project Supabase di atas milik **dua aplikasi berbeda** yang tidak boleh
+saling silang. Pegangan cepat:
+
+| Project | Milik app | Boleh diakses oleh |
+|---|---|---|
+| `mvcckptntrvzujqaoxxh` (prod) & `vgjzvdpxrdoefoncuazw` (staging) | **MSDPS/MEAGO!** | repo ini: env Vercel `meago-msdps`, `scripts/apply_migrations.mjs`, `supabase link` |
+| `bqknstylbpwsnlgnzayw` (prod) & `fomlangoiiywhexwoqom` (staging) | **MCN MEA standalone** | hanya repo/Vercel project milik app MCN MEA |
+
+Aturan:
+
+1. **Migrasi `supabase/migrations/` repo ini hanya untuk project MSDPS.**
+   `scripts/apply_migrations.mjs` sudah punya guard yang menolak ref di luar
+   MSDPS prod/staging (bypass sadar: `ALLOW_ANY_REF=1`).
+2. **Env var Vercel `meago-msdps` tidak boleh diisi URL/key project MCN MEA**, dan
+   sebaliknya. Cek ref di URL (`https://<ref>.supabase.co`) sebelum menyimpan.
+3. Saat `supabase link` manual, pastikan `--project-ref` sesuai tabel di atas.
+4. Kalau ragu project mana yang sedang dituju: `select current_database();` tidak
+   membantu — cek nama project di dashboard atau cocokkan ref-nya dengan tabel ini.
+
 ---
 
 ## 2. Cara kerja staging untuk MEAGO!/MSDPS (repo ini)
