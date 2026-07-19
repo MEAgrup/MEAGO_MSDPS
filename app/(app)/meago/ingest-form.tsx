@@ -27,6 +27,10 @@ export function IngestForm() {
       <label>File Performa (CSV/XLSX) *</label>
       <input type="file" name="file" accept=".csv,.xlsx,.xls" required />
       <input type="hidden" name="source_type" value="tiktok" />
+      <label>
+        <input type="checkbox" name="force_reprocess" value="1" /> Proses ulang jika file
+        duplikat (timpa data periode yang sama)
+      </label>
       <button type="submit" disabled={pending}>
         {pending ? "Memproses…" : "Upload & Proses"}
       </button>

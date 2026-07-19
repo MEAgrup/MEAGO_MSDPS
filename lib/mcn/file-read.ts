@@ -124,6 +124,13 @@ export function fileHash8(buf: Buffer | Uint8Array): string {
   return createHash("sha256").update(buf).digest("hex").slice(0, 8);
 }
 
+// sha256 hex penuh (64 char) — dipakai deteksi file duplikat (upload_batches.file_hash_full).
+// hash8 (dipakai batch_id) sebaiknya diturunkan dari nilai ini via .slice(0, 8) supaya
+// hashing file cukup sekali per ingest.
+export function fileHashFull(buf: Buffer | Uint8Array): string {
+  return createHash("sha256").update(buf).digest("hex");
+}
+
 export function buildBatchId(periodStart: string, hash8: string): string {
   return `ingest:${periodStart}:${hash8}`;
 }
