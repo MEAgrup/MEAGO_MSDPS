@@ -37,6 +37,9 @@ export default async function KreatorLayout({
           {creator.code && (
             <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}>{creator.code}</div>
           )}
+          <Link href="/kreator/ganti-password" style={{ display: "block", marginTop: 8 }}>
+            Ganti Password
+          </Link>
           <form action={signOut} style={{ marginTop: 10 }}>
             <button className="btn-ghost" style={{ width: "100%" }}>
               Keluar

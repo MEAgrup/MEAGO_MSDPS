@@ -113,6 +113,9 @@ export default async function AppLayout({
           ) : (
             <div>{user.email}</div>
           )}
+          <Link href="/ganti-password" style={{ display: "block", marginTop: 8 }}>
+            Ganti Password
+          </Link>
           <form action={signOut} style={{ marginTop: 10 }}>
             <button className="btn-ghost" style={{ width: "100%" }}>
               Keluar
