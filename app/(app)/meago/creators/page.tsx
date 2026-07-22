@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
+import { AssignOwnerRow, BudgetCapRow, MasterCreatorRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
 import { UploadReportForm, DeleteReportButton } from "./report-forms";
 import { IngestForm } from "../ingest-form";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -16,16 +16,12 @@ type Creator = {
   jenis_creator: string | null;
   creator_level: string | null;
   binding_status: string | null;
+  contract_status: string | null;
   commission_share: number | null;
   owner_cpm_id: string | null;
   live_roster: boolean;
   ads_budget_cap: number | null;
   auth_user_id: string | null;
-};
-
-const BINDING_BADGE: Record<string, { cls: string; label: string }> = {
-  "Bound creators": { cls: "green", label: "Bounded" },
-  "Previously bound creators": { cls: "red", label: "Prev. Bounded" },
 };
 
 // creator_period_summary — kolom yang dipakai utk rata-rata bulanan 3 bulan terakhir.
@@ -194,7 +190,7 @@ export default async function McnCreatorsPage() {
     supabase
       .from("mcn_creators")
       .select(
-        "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id"
+        "id, code, name, username, niche, jenis_creator, creator_level, binding_status, contract_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id"
       )
       .order("name", { ascending: true }),
     supabase.from("employees").select("id, full_name"),
@@ -319,6 +315,7 @@ export default async function McnCreatorsPage() {
                 <th>Username</th>
                 <th>CM</th>
                 <th>Status</th>
+                <th>Status Kontrak</th>
                 <th>Industry</th>
                 <th>Jenis</th>
                 <th>Level</th>
@@ -330,60 +327,47 @@ export default async function McnCreatorsPage() {
                 <th className="right">Live stream</th>
                 <th className="right">Valid live stream</th>
                 <th>Roster Live</th>
+                <th>Aksi</th>
               </tr>
             </thead>
             <tbody>
               {creators.map((c) => {
                 const avg = averagesByCreator.get(c.id) ?? EMPTY_AVERAGES;
-                const binding = c.binding_status ? BINDING_BADGE[c.binding_status] : null;
                 return (
-                  <tr key={c.id}>
-                    <td>
-                      {c.name}
-                      {c.code && <div className="mono muted" style={{ fontSize: 11 }}>{c.code}</div>}
-                    </td>
-                    <td className="mono">{c.username ?? "—"}</td>
-                    <td>{empName.get(c.owner_cpm_id ?? "") ?? <span className="muted">—</span>}</td>
-                    <td>
-                      {c.binding_status ? (
-                        <span className={`badge ${binding?.cls ?? "gray"}`}>
-                          {binding?.label ?? c.binding_status}
-                        </span>
-                      ) : (
-                        <span className="muted">Unbounded</span>
-                      )}
-                    </td>
-                    <td className="muted">{c.niche ?? "—"}</td>
-                    <td className="muted">{c.jenis_creator ?? "—"}</td>
-                    <td>
-                      {c.creator_level ? (
-                        <span className="badge slate">{c.creator_level}</span>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td className="right">{rupiah(avg.avgPayGmv)}</td>
-                    <td className="right">{rupiah(avg.redeemedGmv)}</td>
-                    <td className="muted">
-                      {c.commission_share !== null ? `${c.commission_share}%` : "—"}
-                    </td>
-                    <td className="right">{num1(avg.totalPost)}</td>
-                    <td className="right">{num1(avg.postsWithSales)}</td>
-                    <td className="right">{num1(avg.liveStream)}</td>
-                    <td className="right">{num1(avg.validLiveStream)}</td>
-                    <td>
-                      {c.live_roster ? (
-                        <span className="badge green">Roster</span>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                  </tr>
+                  <MasterCreatorRow
+                    key={c.id}
+                    creator={{
+                      id: c.id,
+                      name: c.name,
+                      username: c.username,
+                      binding_status: c.binding_status,
+                      contract_status: c.contract_status,
+                      niche: c.niche,
+                      jenis_creator: c.jenis_creator,
+                      creator_level: c.creator_level,
+                      live_roster: c.live_roster,
+                      owner_cpm_id: c.owner_cpm_id,
+                    }}
+                    code={c.code}
+                    cmName={empName.get(c.owner_cpm_id ?? "") ?? null}
+                    derived={{
+                      avgPayGmv: rupiah(avg.avgPayGmv),
+                      redeemedGmv: rupiah(avg.redeemedGmv),
+                      totalPost: num1(avg.totalPost),
+                      postsWithSales: num1(avg.postsWithSales),
+                      liveStream: num1(avg.liveStream),
+                      validLiveStream: num1(avg.validLiveStream),
+                    }}
+                    komisi={c.commission_share !== null ? `${c.commission_share}%` : "—"}
+                    cmOptions={cmEmployees}
+                    canEditOwner={canAssignOwner}
+                    colSpan={17}
+                  />
                 );
               })}
               {creators.length === 0 && (
                 <tr>
-                  <td colSpan={15} className="muted">
+                  <td colSpan={17} className="muted">
                     Belum ada kreator terdaftar.
                   </td>
                 </tr>

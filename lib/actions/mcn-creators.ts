@@ -7,6 +7,10 @@ import { INDUSTRIES } from "@/lib/mcn/industries";
 
 const JENIS_CREATOR_VALUES = ["live", "video", "mixed"] as const;
 
+// binding_status di-sync dari ingest sebagai info; nilai kanonik yang dikenal badge
+// tabel. Kosong = Unbounded. Diizinkan diedit manual (bisa ditimpa ingest berikutnya).
+const BINDING_STATUS_VALUES = ["Bound creators", "Previously bound creators"] as const;
+
 export type ActionResult = { ok: boolean; message: string };
 
 async function ctx() {
@@ -180,6 +184,104 @@ export async function setCreatorStatus(
 
   revalidatePath("/meago/creators");
   return { ok: true, message: `Status kreator diubah ke ${status}.` };
+}
+
+// updateCreator: edit terpadu satu baris kreator dari tabel "Master Kreator".
+// Mencakup semua kolom yang dikelola manual: name, username, binding_status (Status),
+// contract_status (Status Kontrak), niche (Industry), jenis_creator (Jenis),
+// creator_level (Level), live_roster (Roster Live), dan owner_cpm_id (CM).
+//
+// Kolom TURUNAN (Avg Pay GMV, Redeemed GMV, Komisi/commission_share, Total post,
+// Posts with sales, Live stream, Valid live stream) SENGAJA tidak ada di sini —
+// nilainya rata-rata dari ingest mingguan / sync platform dan tidak boleh ditulis
+// manual (prinsip "derived fields never writable").
+//
+// owner_cpm_id hanya diterapkan bila user CM Lead / management (sama seperti
+// assignOwner). Untuk user lain field ini diabaikan agar staff CM tidak bisa
+// memindah kepemilikan lewat form edit.
+export async function updateCreator(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+
+  const creator_id = String(formData.get("creator_id") || "");
+  if (!creator_id) return { ok: false, message: "Kreator tidak valid." };
+
+  // --- Nama (wajib) ---
+  const name = String(formData.get("name") || "").trim();
+  if (!name) {
+    return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
+  }
+
+  // --- Username (opsional) ---
+  const username = String(formData.get("username") || "").trim() || null;
+
+  // --- Status (binding_status) ---
+  const bindingRaw = String(formData.get("binding_status") || "").trim();
+  if (
+    bindingRaw !== "" &&
+    !BINDING_STATUS_VALUES.includes(bindingRaw as (typeof BINDING_STATUS_VALUES)[number])
+  ) {
+    return { ok: false, message: "Status kreator tidak dikenali." };
+  }
+  const binding_status = bindingRaw === "" ? null : bindingRaw;
+
+  // --- Status Kontrak (contract_status) — teks bebas, default '-' bila dikosongkan ---
+  const contractRaw = String(formData.get("contract_status") || "").trim();
+  const contract_status = contractRaw === "" ? "-" : contractRaw;
+
+  // --- Industry (niche) ---
+  const nicheRaw = String(formData.get("niche") || "").trim();
+  if (nicheRaw !== "" && !INDUSTRIES.includes(nicheRaw as (typeof INDUSTRIES)[number])) {
+    return { ok: false, message: "Industry tidak dikenali." };
+  }
+  const niche = nicheRaw === "" ? null : nicheRaw;
+
+  // --- Jenis (jenis_creator) ---
+  const jenisRaw = String(formData.get("jenis_creator") || "").trim();
+  if (
+    jenisRaw !== "" &&
+    !JENIS_CREATOR_VALUES.includes(jenisRaw as (typeof JENIS_CREATOR_VALUES)[number])
+  ) {
+    return { ok: false, message: "Jenis kreator tidak dikenali." };
+  }
+  const jenis_creator = jenisRaw === "" ? null : jenisRaw;
+
+  // --- Level (creator_level) — teks bebas ---
+  const creator_level = String(formData.get("creator_level") || "").trim() || null;
+
+  // --- Roster Live ---
+  const live_roster = String(formData.get("live_roster") || "") === "true";
+
+  const patch: Record<string, unknown> = {
+    name,
+    username,
+    binding_status,
+    contract_status,
+    niche,
+    jenis_creator,
+    creator_level,
+    live_roster,
+  };
+
+  // owner_cpm_id: hanya CM Lead / management yang boleh mengubah kepemilikan.
+  if (isCmLeadOrMgmt(me)) {
+    patch.owner_cpm_id = String(formData.get("owner_cpm_id") || "") || null;
+  }
+
+  const { error } = await supabase.from("mcn_creators").update(patch).eq("id", creator_id);
+  if (error) {
+    if (error.code === "23505") {
+      return { ok: false, message: "[username sudah dipakai kreator lain di platform ini]" };
+    }
+    return { ok: false, message: `Gagal menyimpan perubahan: ${error.message}` };
+  }
+
+  revalidatePath("/meago/creators");
+  revalidatePath("/acquisition");
+  return { ok: true, message: `Data kreator "${name}" berhasil diperbarui.` };
 }
 
 // setCreatorProfile: update jenis_creator & niche. Fase "export list konten video" (yang
