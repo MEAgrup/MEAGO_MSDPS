@@ -73,6 +73,7 @@ Semua sudah **applied ke project live** `mvcckptntrvzujqaoxxh`.
 |---|---|
 | 0300–0308 | Fondasi MCN: enum divisi, master kreator, ingest drop-raw, jadwal live, deals, routing campaign, acquisition, special project. (Smoke test 6/6 PASS.) |
 | **0309** | Creator Analysis: `mcn_creators` +username/city/creator_level/binding_status (unik pindah ke username); `creator_period_summary` +aov/redemption_amount/redeemed_orders/new_posts/posts_with_sales/live_streams/valid_live_streams; `platform_alerts` +`binding_lost`. Di-apply 2026-07-16 via SQL Editor. |
+| **0316** | Data Kreator — edit penuh: `mcn_creators` +`status_kontrak` (`'-'`/`'kontrak'`/`'non_kontrak'`, default `'-'` utk semua baris lama) +`manual_avg_pay_gmv`/`manual_redeemed_gmv`/`manual_total_post`/`manual_posts_with_sales`/`manual_live_stream`/`manual_valid_live_stream` (override manual metrik; null = pakai hitungan otomatis). **Belum di-apply ke DB** — file migration saja, jalankan `npm run db:migrate:staging` lalu `:prod`. |
 
 > **Dorman** (menunggu fase berikutnya): kolom `jenis_creator`/`gmv_live`/`gmv_video`, `ctr`/`ctor`/`live_pct`, dan tabel `creator_subcat_segment_gmv` / `creator_top_products` — dipakai lagi setelah export "list konten video" tersedia.
 
@@ -121,6 +122,10 @@ _Update 2026-07-17 sore — PR #5 **merged ke production**; fase berikutnya:_
 
 8. **Fase F — Creator Portal**: **F.1 LIVE di production** (2026-07-17: migrasi 0311 applied, uji RLS PASS, PR #7 merged; QA Yohan OK + rename menu "Merchant Deals" PR #8). **F.2 dikerjakan** (2026-07-18): keputusan interview terjawab semua, migrasi **0312** (Merchant Deals `brand_deals` + kebutuhan, Report Saya `creator_reports` + bucket privat, Komplain `creator_complaints` routing CM owner, form request CM +4 jenis) — status lengkap di **`docs/CREATOR_PORTAL_PLAN.md`** §5–7. **F.2 LIVE di production** (2026-07-18: 0312 applied via SQL Editor + diverifikasi 16 objek, PR #9 merged, **QA Yohan PASS**). Akun QA dev: `kreator.qa@meago.dev` (hapus pra-produksi). **Merchant Portal TIDAK akan dibuat** (keputusan Yohan 2026-07-18 — lihat item 7). Creator Portal = portal eksternal TERAKHIR di scope platform.
 9. **Advisor keamanan (opsional, pra-produksi)**: 5 view `SECURITY DEFINER` flag ERROR (`v_merchant_board`, `v_management_dashboard`, `v_okr_attainment`, `v_speed_score`, `v_team_portal_tasks`) — sebagian disengaja (role-gate WHERE), `v_team_portal_tasks` dicurigai tidak sengaja (2 saudaranya invoker); tinjau satu-per-satu sebelum flip. WARN fungsi definer & INFO deny-all = by design.
+
+_Update 2026-07-22 (Data Kreator — Status Kontrak + edit penuh, branch `claude/kreator-table-status-kontrak-edit-aye0yd`):_
+
+10. **Data Kreator — kolom "Status Kontrak" + edit baris** ✅ (kode; migrasi **0316** belum di-apply): tabel **Master Kreator** `/meago/creators` kini punya kolom **Status Kontrak** (setelah "Status"; badge Kontrak/Non Kontrak, default `-`) dan kolom **Aksi** dgn tombol **Edit** per baris → modal edit seluruh kolom sekaligus (server action `updateCreator`). Metrik GMV/post/live bisa di-override manual (kolom `manual_*`; kosong = tetap pakai rata-rata otomatis 3 bulan, ditandai `✎` bila override aktif). Gate tombol Edit = RLS `mcn_creators_update` (mgmt + Acquisition + CM lead/owner); pemindahan owner CM hanya untuk CM Lead/management. Validasi + feedback sukses/error di modal. **Langkah apply DB**: `npm run db:migrate:staging` → verifikasi → `npm run db:migrate:prod`.
 
 ---
 _Dokumen ini ringkasan status implementasi; detail keputusan interview ada di `docs/MCN_MEA_CONCEPT.md` (§7–8) dan `docs/BUILD_PLAN.md` (baris Fase E / E.1)._

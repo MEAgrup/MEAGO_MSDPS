@@ -2,7 +2,15 @@ import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
+import {
+  AssignOwnerRow,
+  BudgetCapRow,
+  EditCreatorRow,
+  PortalAccountRow,
+  ProfileRow,
+  RosterToggleRow,
+  type ComputedPlaceholders,
+} from "./forms";
 import { UploadReportForm, DeleteReportButton } from "./report-forms";
 import { IngestForm } from "../ingest-form";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -16,11 +24,23 @@ type Creator = {
   jenis_creator: string | null;
   creator_level: string | null;
   binding_status: string | null;
+  status_kontrak: string;
   commission_share: number | null;
   owner_cpm_id: string | null;
   live_roster: boolean;
   ads_budget_cap: number | null;
   auth_user_id: string | null;
+  manual_avg_pay_gmv: number | null;
+  manual_redeemed_gmv: number | null;
+  manual_total_post: number | null;
+  manual_posts_with_sales: number | null;
+  manual_live_stream: number | null;
+  manual_valid_live_stream: number | null;
+};
+
+const STATUS_KONTRAK_BADGE: Record<string, { cls: string; label: string }> = {
+  kontrak: { cls: "green", label: "Kontrak" },
+  non_kontrak: { cls: "slate", label: "Non Kontrak" },
 };
 
 const BINDING_BADGE: Record<string, { cls: string; label: string }> = {
@@ -137,6 +157,24 @@ function num1(n: number | null): string {
   return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 }).format(n);
 }
 
+// Sel metrik: bila override manual diisi (non-null) tampilkan nilai manual + penanda
+// "✎"; jika tidak, tampilkan hasil hitung otomatis. `fmt` memformat angka manual agar
+// konsisten dgn kolom (rupiah / num1).
+function metricCell(
+  manual: number | null,
+  computedFormatted: string,
+  fmt: (n: number | null) => string
+) {
+  if (manual !== null) {
+    return (
+      <span title="nilai manual (override)">
+        {fmt(manual)} <span className="muted" style={{ fontSize: 10 }}>✎</span>
+      </span>
+    );
+  }
+  return <>{computedFormatted}</>;
+}
+
 // creator_reports (portal F.2) — daftar report terbaru utk kartu "Report Kreator".
 type ReportRow = { id: string; mcn_creator_id: string; title: string; created_at: string };
 
@@ -156,6 +194,13 @@ export default async function McnCreatorsPage() {
   // Gate card "Budget Cap Ads & Roster Live" — mengikuti policy RLS mcn_creators_update.
   // BizDev & KOL tidak melihat card ini.
   const canManageOps = mgmt || div === "Acquisition" || div === "CreatorManagement";
+
+  // Edit baris Master Kreator (tombol Edit + modal). Cocokkan persis dgn RLS
+  // mcn_creators_update: mgmt + Acquisition + (CM lead ATAU owner baris tsb).
+  const canEditCreator = (c: Creator) =>
+    mgmt ||
+    div === "Acquisition" ||
+    (div === "CreatorManagement" && (me?.rank === "lead" || c.owner_cpm_id === me?.id));
 
   const supabase = await getCachedClient();
 
@@ -194,7 +239,7 @@ export default async function McnCreatorsPage() {
     supabase
       .from("mcn_creators")
       .select(
-        "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id"
+        "id, code, name, username, niche, jenis_creator, creator_level, binding_status, status_kontrak, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id, manual_avg_pay_gmv, manual_redeemed_gmv, manual_total_post, manual_posts_with_sales, manual_live_stream, manual_valid_live_stream"
       )
       .order("name", { ascending: true }),
     supabase.from("employees").select("id, full_name"),
@@ -319,6 +364,7 @@ export default async function McnCreatorsPage() {
                 <th>Username</th>
                 <th>CM</th>
                 <th>Status</th>
+                <th>Status Kontrak</th>
                 <th>Industry</th>
                 <th>Jenis</th>
                 <th>Level</th>
@@ -330,12 +376,22 @@ export default async function McnCreatorsPage() {
                 <th className="right">Live stream</th>
                 <th className="right">Valid live stream</th>
                 <th>Roster Live</th>
+                <th>Aksi</th>
               </tr>
             </thead>
             <tbody>
               {creators.map((c) => {
                 const avg = averagesByCreator.get(c.id) ?? EMPTY_AVERAGES;
                 const binding = c.binding_status ? BINDING_BADGE[c.binding_status] : null;
+                const kontrak = STATUS_KONTRAK_BADGE[c.status_kontrak];
+                const computed: ComputedPlaceholders = {
+                  manual_avg_pay_gmv: rupiah(avg.avgPayGmv),
+                  manual_redeemed_gmv: rupiah(avg.redeemedGmv),
+                  manual_total_post: num1(avg.totalPost),
+                  manual_posts_with_sales: num1(avg.postsWithSales),
+                  manual_live_stream: num1(avg.liveStream),
+                  manual_valid_live_stream: num1(avg.validLiveStream),
+                };
                 return (
                   <tr key={c.id}>
                     <td>
@@ -353,6 +409,13 @@ export default async function McnCreatorsPage() {
                         <span className="muted">Unbounded</span>
                       )}
                     </td>
+                    <td>
+                      {kontrak ? (
+                        <span className={`badge ${kontrak.cls}`}>{kontrak.label}</span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
                     <td className="muted">{c.niche ?? "—"}</td>
                     <td className="muted">{c.jenis_creator ?? "—"}</td>
                     <td>
@@ -362,18 +425,50 @@ export default async function McnCreatorsPage() {
                         <span className="muted">—</span>
                       )}
                     </td>
-                    <td className="right">{rupiah(avg.avgPayGmv)}</td>
-                    <td className="right">{rupiah(avg.redeemedGmv)}</td>
+                    <td className="right">{metricCell(c.manual_avg_pay_gmv, computed.manual_avg_pay_gmv, rupiah)}</td>
+                    <td className="right">{metricCell(c.manual_redeemed_gmv, computed.manual_redeemed_gmv, rupiah)}</td>
                     <td className="muted">
                       {c.commission_share !== null ? `${c.commission_share}%` : "—"}
                     </td>
-                    <td className="right">{num1(avg.totalPost)}</td>
-                    <td className="right">{num1(avg.postsWithSales)}</td>
-                    <td className="right">{num1(avg.liveStream)}</td>
-                    <td className="right">{num1(avg.validLiveStream)}</td>
+                    <td className="right">{metricCell(c.manual_total_post, computed.manual_total_post, num1)}</td>
+                    <td className="right">{metricCell(c.manual_posts_with_sales, computed.manual_posts_with_sales, num1)}</td>
+                    <td className="right">{metricCell(c.manual_live_stream, computed.manual_live_stream, num1)}</td>
+                    <td className="right">{metricCell(c.manual_valid_live_stream, computed.manual_valid_live_stream, num1)}</td>
                     <td>
                       {c.live_roster ? (
                         <span className="badge green">Roster</span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {canEditCreator(c) ? (
+                        <EditCreatorRow
+                          creator={{
+                            id: c.id,
+                            code: c.code,
+                            name: c.name,
+                            username: c.username,
+                            owner_cpm_id: c.owner_cpm_id,
+                            binding_status: c.binding_status,
+                            status_kontrak: c.status_kontrak,
+                            niche: c.niche,
+                            jenis_creator: c.jenis_creator,
+                            creator_level: c.creator_level,
+                            commission_share: c.commission_share,
+                            live_roster: c.live_roster,
+                            manual_avg_pay_gmv: c.manual_avg_pay_gmv,
+                            manual_redeemed_gmv: c.manual_redeemed_gmv,
+                            manual_total_post: c.manual_total_post,
+                            manual_posts_with_sales: c.manual_posts_with_sales,
+                            manual_live_stream: c.manual_live_stream,
+                            manual_valid_live_stream: c.manual_valid_live_stream,
+                          }}
+                          cmName={empName.get(c.owner_cpm_id ?? "") ?? "—"}
+                          cmOptions={cmEmployees}
+                          canAssignOwner={canAssignOwner}
+                          computed={computed}
+                        />
                       ) : (
                         <span className="muted">—</span>
                       )}
@@ -383,7 +478,7 @@ export default async function McnCreatorsPage() {
               })}
               {creators.length === 0 && (
                 <tr>
-                  <td colSpan={15} className="muted">
+                  <td colSpan={17} className="muted">
                     Belum ada kreator terdaftar.
                   </td>
                 </tr>
