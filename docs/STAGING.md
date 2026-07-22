@@ -72,8 +72,10 @@ Vercel untuk Preview environment):
 | Key | Value |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://vgjzvdpxrdoefoncuazw.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ambil dari dashboard Supabase project **"MSDPS Staging"** → Settings → API → `anon` `public` key |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZnanp2ZHB4cmRvZWZvbmN1YXp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0NDA0ODMsImV4cCI6MjEwMDAxNjQ4M30.EY-_MIGkFAnergOkKdg8MyH-Pu36brF_k9fpka83I6o` (anon `public`, RLS-bound — aman di client) |
 | `SUPABASE_SERVICE_ROLE_KEY` | ambil dari dashboard Supabase project **"MSDPS Staging"** → Settings → API → `service_role` key (rahasia, jangan expose ke client) |
+
+> **Troubleshooting — "Invalid API key" saat login di preview staging:** artinya `NEXT_PUBLIC_SUPABASE_ANON_KEY` yang ter-deploy **kosong / salah / tidak cocok** dengan `NEXT_PUBLIC_SUPABASE_URL`. Penyebab tersering: variable belum diisi untuk scope Preview→branch `staging`, atau URL staging dipasangkan dengan anon key production (atau sebaliknya). Perbaikan: set kedua nilai di atas (dari **project yang sama**) di Vercel → Settings → Environment Variables (scope **Preview**, branch **`staging`**), lalu **redeploy** branch `staging` (env var baru hanya berlaku pada deployment berikutnya, bukan yang sudah jalan). Anon key produksi terkonfirmasi sehat, jadi domain production tidak terpengaruh.
 
 **Penting — gap yang harus diperhatikan:** branch Preview *lain* (semua feature branch
 selain `staging`) akan tetap memakai environment variable Preview **default**, yang
