@@ -6,12 +6,29 @@ import { parseRupiah } from "@/lib/mcn/parsers";
 import { INDUSTRIES } from "@/lib/mcn/industries";
 
 const JENIS_CREATOR_VALUES = ["live", "video", "mixed"] as const;
-
-// binding_status di-sync dari ingest sebagai info; nilai kanonik yang dikenal badge
-// tabel. Kosong = Unbounded. Diizinkan diedit manual (bisa ditimpa ingest berikutnya).
-const BINDING_STATUS_VALUES = ["Bound creators", "Previously bound creators"] as const;
+const STATUS_VALUES = ["prospek", "binding", "aktif", "nonaktif"] as const;
+const STATUS_KONTRAK_VALUES = ["kontrak", "non kontrak"] as const;
 
 export type ActionResult = { ok: boolean; message: string };
+
+// Trim string form field → null bila kosong (kolom text nullable di mcn_creators).
+function strOrNull(v: FormDataEntryValue | null): string | null {
+  const s = String(v ?? "").trim();
+  return s === "" ? null : s;
+}
+
+// Field uang (numeric): "" → null; selain itu parseRupiah. Kembalikan ok:false
+// bila format tak dikenali agar bisa disurfacekan ke user (parseRupiah mengembalikan
+// null baik untuk kosong maupun tak-valid, jadi keduanya dibedakan di sini).
+function parseMoneyField(
+  v: FormDataEntryValue | null
+): { ok: true; value: number | null } | { ok: false } {
+  const s = String(v ?? "").trim();
+  if (s === "") return { ok: true, value: null };
+  const n = parseRupiah(s);
+  if (n === null) return { ok: false };
+  return { ok: true, value: n };
+}
 
 async function ctx() {
   const supabase = await createClient();
@@ -186,104 +203,6 @@ export async function setCreatorStatus(
   return { ok: true, message: `Status kreator diubah ke ${status}.` };
 }
 
-// updateCreator: edit terpadu satu baris kreator dari tabel "Master Kreator".
-// Mencakup semua kolom yang dikelola manual: name, username, binding_status (Status),
-// contract_status (Status Kontrak), niche (Industry), jenis_creator (Jenis),
-// creator_level (Level), live_roster (Roster Live), dan owner_cpm_id (CM).
-//
-// Kolom TURUNAN (Avg Pay GMV, Redeemed GMV, Komisi/commission_share, Total post,
-// Posts with sales, Live stream, Valid live stream) SENGAJA tidak ada di sini —
-// nilainya rata-rata dari ingest mingguan / sync platform dan tidak boleh ditulis
-// manual (prinsip "derived fields never writable").
-//
-// owner_cpm_id hanya diterapkan bila user CM Lead / management (sama seperti
-// assignOwner). Untuk user lain field ini diabaikan agar staff CM tidak bisa
-// memindah kepemilikan lewat form edit.
-export async function updateCreator(
-  _prev: ActionResult | null,
-  formData: FormData
-): Promise<ActionResult> {
-  const { supabase, user, me } = await ctx();
-  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
-
-  const creator_id = String(formData.get("creator_id") || "");
-  if (!creator_id) return { ok: false, message: "Kreator tidak valid." };
-
-  // --- Nama (wajib) ---
-  const name = String(formData.get("name") || "").trim();
-  if (!name) {
-    return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
-  }
-
-  // --- Username (opsional) ---
-  const username = String(formData.get("username") || "").trim() || null;
-
-  // --- Status (binding_status) ---
-  const bindingRaw = String(formData.get("binding_status") || "").trim();
-  if (
-    bindingRaw !== "" &&
-    !BINDING_STATUS_VALUES.includes(bindingRaw as (typeof BINDING_STATUS_VALUES)[number])
-  ) {
-    return { ok: false, message: "Status kreator tidak dikenali." };
-  }
-  const binding_status = bindingRaw === "" ? null : bindingRaw;
-
-  // --- Status Kontrak (contract_status) — teks bebas, default '-' bila dikosongkan ---
-  const contractRaw = String(formData.get("contract_status") || "").trim();
-  const contract_status = contractRaw === "" ? "-" : contractRaw;
-
-  // --- Industry (niche) ---
-  const nicheRaw = String(formData.get("niche") || "").trim();
-  if (nicheRaw !== "" && !INDUSTRIES.includes(nicheRaw as (typeof INDUSTRIES)[number])) {
-    return { ok: false, message: "Industry tidak dikenali." };
-  }
-  const niche = nicheRaw === "" ? null : nicheRaw;
-
-  // --- Jenis (jenis_creator) ---
-  const jenisRaw = String(formData.get("jenis_creator") || "").trim();
-  if (
-    jenisRaw !== "" &&
-    !JENIS_CREATOR_VALUES.includes(jenisRaw as (typeof JENIS_CREATOR_VALUES)[number])
-  ) {
-    return { ok: false, message: "Jenis kreator tidak dikenali." };
-  }
-  const jenis_creator = jenisRaw === "" ? null : jenisRaw;
-
-  // --- Level (creator_level) — teks bebas ---
-  const creator_level = String(formData.get("creator_level") || "").trim() || null;
-
-  // --- Roster Live ---
-  const live_roster = String(formData.get("live_roster") || "") === "true";
-
-  const patch: Record<string, unknown> = {
-    name,
-    username,
-    binding_status,
-    contract_status,
-    niche,
-    jenis_creator,
-    creator_level,
-    live_roster,
-  };
-
-  // owner_cpm_id: hanya CM Lead / management yang boleh mengubah kepemilikan.
-  if (isCmLeadOrMgmt(me)) {
-    patch.owner_cpm_id = String(formData.get("owner_cpm_id") || "") || null;
-  }
-
-  const { error } = await supabase.from("mcn_creators").update(patch).eq("id", creator_id);
-  if (error) {
-    if (error.code === "23505") {
-      return { ok: false, message: "[username sudah dipakai kreator lain di platform ini]" };
-    }
-    return { ok: false, message: `Gagal menyimpan perubahan: ${error.message}` };
-  }
-
-  revalidatePath("/meago/creators");
-  revalidatePath("/acquisition");
-  return { ok: true, message: `Data kreator "${name}" berhasil diperbarui.` };
-}
-
 // setCreatorProfile: update jenis_creator & niche. Fase "export list konten video" (yang
 // tadinya akan auto-fill dua kolom ini dari data ingest) DIBATALKAN (keputusan
 // 2026-07-16) — ini satu-satunya jalur pengisian, diisi manual per kreator di sini.
@@ -318,4 +237,112 @@ export async function setCreatorProfile(
   revalidatePath("/meago/creators");
   revalidatePath("/acquisition");
   return { ok: true, message: "Profil kreator diperbarui." };
+}
+
+// updateCreator: edit menyeluruh satu baris kreator dari modal "Edit". Menulis semua
+// kolom bisnis yang boleh diedit sekaligus (termasuk kolom baru status_kontrak).
+// Kolom identitas/sistem (code, commission_share sync, audit) TIDAK ditulis — di UI
+// hanya ditampilkan read-only. `status` melewati state machine DB: transisi ilegal
+// ditolak trigger dan pesannya diteruskan apa adanya; mengirim status yang sama
+// tidak memicu apa-apa (trigger hanya bereaksi saat status berubah).
+export async function updateCreator(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user } = await ctx();
+  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+  const creator_id = String(formData.get("creator_id") || "");
+  if (!creator_id) return { ok: false, message: "Kreator tidak valid." };
+
+  const name = String(formData.get("name") || "").trim();
+  if (!name) {
+    return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
+  }
+  const platform = String(formData.get("platform") || "").trim() || "tiktok";
+
+  // niche & jenis_creator — validasi domain yang sama dengan setCreatorProfile.
+  const nicheRaw = String(formData.get("niche") || "").trim();
+  if (nicheRaw !== "" && !INDUSTRIES.includes(nicheRaw as (typeof INDUSTRIES)[number])) {
+    return { ok: false, message: "Industry tidak dikenali." };
+  }
+  const niche = nicheRaw === "" ? null : nicheRaw;
+
+  const jenisRaw = String(formData.get("jenis_creator") || "").trim();
+  if (jenisRaw !== "" && !JENIS_CREATOR_VALUES.includes(jenisRaw as (typeof JENIS_CREATOR_VALUES)[number])) {
+    return { ok: false, message: "Jenis kreator tidak dikenali." };
+  }
+  const jenis_creator = jenisRaw === "" ? null : jenisRaw;
+
+  const status = String(formData.get("status") || "").trim();
+  if (!STATUS_VALUES.includes(status as (typeof STATUS_VALUES)[number])) {
+    return { ok: false, message: "Status tidak dikenali." };
+  }
+
+  const statusKontrakRaw = String(formData.get("status_kontrak") || "").trim();
+  if (
+    statusKontrakRaw !== "" &&
+    !STATUS_KONTRAK_VALUES.includes(statusKontrakRaw as (typeof STATUS_KONTRAK_VALUES)[number])
+  ) {
+    return { ok: false, message: "Status kontrak tidak dikenali." };
+  }
+  const status_kontrak = statusKontrakRaw === "" ? null : statusKontrakRaw;
+
+  const owner_cpm_id = String(formData.get("owner_cpm_id") || "") || null;
+  const live_roster = String(formData.get("live_roster") || "") === "true";
+
+  // Kolom numeric uang.
+  const gmvP = parseMoneyField(formData.get("gmv"));
+  const gmvLiveP = parseMoneyField(formData.get("gmv_live"));
+  const gmvVideoP = parseMoneyField(formData.get("gmv_video"));
+  const capP = parseMoneyField(formData.get("ads_budget_cap"));
+  if (!gmvP.ok || !gmvLiveP.ok || !gmvVideoP.ok || !capP.ok) {
+    return { ok: false, message: "Nominal angka tidak dikenali — periksa formatnya." };
+  }
+
+  // top_niches (jsonb) — kosong → null; selain itu wajib JSON valid.
+  const topRaw = String(formData.get("top_niches") || "").trim();
+  let top_niches: unknown = null;
+  if (topRaw !== "") {
+    try {
+      top_niches = JSON.parse(topRaw);
+    } catch {
+      return { ok: false, message: "Format JSON pada Top Niches tidak valid." };
+    }
+  }
+
+  const { error } = await supabase
+    .from("mcn_creators")
+    .update({
+      name,
+      platform,
+      username: strOrNull(formData.get("username")),
+      city: strOrNull(formData.get("city")),
+      niche,
+      jenis_creator,
+      creator_level: strOrNull(formData.get("creator_level")),
+      binding_status: strOrNull(formData.get("binding_status")),
+      status,
+      status_kontrak,
+      owner_cpm_id,
+      live_roster,
+      gmv: gmvP.value,
+      gmv_live: gmvLiveP.value,
+      gmv_video: gmvVideoP.value,
+      ads_budget_cap: capP.value,
+      notes: strOrNull(formData.get("notes")),
+      top_niches,
+    })
+    .eq("id", creator_id);
+
+  if (error) {
+    if (error.code === "23505") {
+      return { ok: false, message: "Username/nama bentrok dengan kreator lain di platform yang sama." };
+    }
+    return { ok: false, message: `Gagal menyimpan perubahan: ${error.message}` };
+  }
+
+  revalidatePath("/meago/creators");
+  revalidatePath("/acquisition");
+  return { ok: true, message: `Data kreator "${name}" diperbarui.` };
 }
