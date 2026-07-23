@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
+import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow, EditCreatorButton } from "./forms";
 import { UploadReportForm, DeleteReportButton } from "./report-forms";
 import { IngestForm } from "../ingest-form";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -21,6 +21,9 @@ type Creator = {
   live_roster: boolean;
   ads_budget_cap: number | null;
   auth_user_id: string | null;
+  city: string | null;
+  notes: string | null;
+  status_kontrak: string;
 };
 
 const BINDING_BADGE: Record<string, { cls: string; label: string }> = {
@@ -194,7 +197,7 @@ export default async function McnCreatorsPage() {
     supabase
       .from("mcn_creators")
       .select(
-        "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id"
+        "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id, city, notes, status_kontrak"
       )
       .order("name", { ascending: true }),
     supabase.from("employees").select("id, full_name"),
@@ -330,6 +333,7 @@ export default async function McnCreatorsPage() {
                 <th className="right">Live stream</th>
                 <th className="right">Valid live stream</th>
                 <th>Roster Live</th>
+                <th>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -378,12 +382,15 @@ export default async function McnCreatorsPage() {
                         <span className="muted">—</span>
                       )}
                     </td>
+                    <td>
+                      <EditCreatorButton creator={c} />
+                    </td>
                   </tr>
                 );
               })}
               {creators.length === 0 && (
                 <tr>
-                  <td colSpan={15} className="muted">
+                  <td colSpan={16} className="muted">
                     Belum ada kreator terdaftar.
                   </td>
                 </tr>

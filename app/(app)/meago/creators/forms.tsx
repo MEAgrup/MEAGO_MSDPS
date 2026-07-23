@@ -1,17 +1,19 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState, useRef, useEffect } from "react";
 import {
   assignOwner,
   setAdsBudgetCap,
   setCreatorProfile,
   toggleRoster,
+  editCreator,
   type ActionResult,
 } from "@/lib/actions/mcn-creators";
 import { createCreatorAccount } from "@/lib/actions/portal";
 import { INDUSTRIES } from "@/lib/mcn/industries";
 
 const JENIS_CREATOR_OPTIONS = ["live", "video", "mixed"] as const;
+const STATUS_KONTRAK_OPTIONS = ["kontrak", "non kontrak"] as const;
 
 type CmOption = { id: string; full_name: string; rank: string };
 
@@ -194,5 +196,189 @@ export function RosterToggleRow({
         </span>
       )}
     </form>
+  );
+}
+
+type CreatorData = {
+  id: string;
+  name: string;
+  username: string | null;
+  city: string | null;
+  jenis_creator: string | null;
+  niche: string | null;
+  status_kontrak: string;
+  notes: string | null;
+  ads_budget_cap: number | null;
+  owner_cpm_id: string | null;
+};
+
+// EditCreatorModal — modal untuk edit full data kreator. Open/close dikontrol dari parent.
+// onClose dipanggil ketika modal ditutup (baik via close button atau after save).
+export function EditCreatorModal({
+  creator,
+  isOpen,
+  onClose,
+}: {
+  creator: CreatorData;
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    editCreator,
+    null
+  );
+
+  useEffect(() => {
+    if (state?.ok) {
+      onClose();
+    }
+  }, [state?.ok, onClose]);
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("keydown", handleEscape);
+      return () => document.removeEventListener("keydown", handleEscape);
+    }
+  }, [isOpen, onClose]);
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === modalRef.current) {
+      onClose();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-backdrop" ref={modalRef} onClick={handleBackdropClick}>
+      <div className="modal-content">
+        <div className="modal-header">
+          <h2>Edit Kreator: {creator.name}</h2>
+          <button className="modal-close-btn" onClick={onClose} type="button">
+            ✕
+          </button>
+        </div>
+
+        <form action={action}>
+          <input type="hidden" name="creator_id" value={creator.id} />
+          <input type="hidden" name="current_owner_id" value={creator.owner_cpm_id || ""} />
+
+          <label>Nama <span style={{ color: "var(--danger)" }}>*</span></label>
+          <input
+            type="text"
+            name="name"
+            defaultValue={creator.name}
+            required
+            disabled={pending}
+          />
+
+          <label>Username</label>
+          <input
+            type="text"
+            name="username"
+            defaultValue={creator.username ?? ""}
+            disabled={pending}
+          />
+
+          <label>Kota</label>
+          <input
+            type="text"
+            name="city"
+            defaultValue={creator.city ?? ""}
+            disabled={pending}
+          />
+
+          <label>Jenis Kreator</label>
+          <select name="jenis_creator" defaultValue={creator.jenis_creator ?? ""} disabled={pending}>
+            <option value="">— pilih jenis —</option>
+            {JENIS_CREATOR_OPTIONS.map((j) => (
+              <option key={j} value={j}>
+                {j}
+              </option>
+            ))}
+          </select>
+
+          <label>Industry</label>
+          <select name="niche" defaultValue={creator.niche ?? ""} disabled={pending}>
+            <option value="">— pilih industry —</option>
+            {INDUSTRIES.map((i) => (
+              <option key={i} value={i}>
+                {i}
+              </option>
+            ))}
+          </select>
+
+          <label>Status Kontrak</label>
+          <select
+            name="status_kontrak"
+            defaultValue={creator.status_kontrak}
+            disabled={pending}
+          >
+            {STATUS_KONTRAK_OPTIONS.map((s) => (
+              <option key={s} value={s}>
+                {s.charAt(0).toUpperCase() + s.slice(1)}
+              </option>
+            ))}
+          </select>
+
+          <label>Budget Cap Ads (Rp)</label>
+          <input
+            type="text"
+            name="ads_budget_cap"
+            defaultValue={creator.ads_budget_cap ? String(creator.ads_budget_cap) : ""}
+            placeholder="mis. 1.500.000"
+            inputMode="numeric"
+            disabled={pending}
+          />
+
+          <label>Catatan</label>
+          <textarea
+            name="notes"
+            defaultValue={creator.notes ?? ""}
+            rows={3}
+            disabled={pending}
+          />
+
+          {state && (
+            <div className={state.ok ? "ok-msg" : "err"}>
+              {state.message}
+            </div>
+          )}
+
+          <div className="modal-footer">
+            <button type="button" onClick={onClose} disabled={pending}>
+              Batal
+            </button>
+            <button type="submit" disabled={pending}>
+              {pending ? "…" : "Simpan"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// EditCreatorButton — button yang membuka modal edit. Manage modal state internally.
+export function EditCreatorButton({ creator }: { creator: CreatorData }) {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  return (
+    <>
+      <button className="sm" type="button" onClick={() => setIsModalOpen(true)}>
+        Edit
+      </button>
+      <EditCreatorModal
+        creator={creator}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
+    </>
   );
 }

@@ -217,3 +217,88 @@ export async function setCreatorProfile(
   revalidatePath("/acquisition");
   return { ok: true, message: "Profil kreator diperbarui." };
 }
+
+const STATUS_KONTRAK_VALUES = ["kontrak", "non kontrak"] as const;
+
+// editCreator: update multiple fields di modal edit. Update name, username, city,
+// jenis_creator, niche, status_kontrak, notes, ads_budget_cap. Validasi nama wajib.
+// Follow RLS policy mcn_creators_update: management (OD/Director) + Acquisition
+// + CreatorManagement (Lead lintas, staff hanya kreator miliknya).
+export async function editCreator(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+
+  const creator_id = String(formData.get("creator_id") || "");
+  if (!creator_id) return { ok: false, message: "Kreator tidak valid." };
+
+  // Check RLS policy: management + Acquisition + (CreatorManagement & (lead atau owner))
+  const isManagement = me.is_od || me.is_director;
+  const isAcquisition = me.division === "Acquisition";
+  const isCmLeadOrOwner =
+    me.division === "CreatorManagement" &&
+    (me.rank === "lead" || me.id === String(formData.get("current_owner_id")));
+
+  if (!isManagement && !isAcquisition && !isCmLeadOrOwner) {
+    return {
+      ok: false,
+      message: "Anda tidak memiliki akses untuk mengedit kreator ini.",
+    };
+  }
+
+  const name = String(formData.get("name") || "").trim();
+  if (!name) {
+    return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
+  }
+
+  const username = String(formData.get("username") || "").trim() || null;
+  const city = String(formData.get("city") || "").trim() || null;
+
+  const jenisRaw = String(formData.get("jenis_creator") || "").trim();
+  if (jenisRaw !== "" && !JENIS_CREATOR_VALUES.includes(jenisRaw as (typeof JENIS_CREATOR_VALUES)[number])) {
+    return { ok: false, message: "Jenis kreator tidak dikenali." };
+  }
+  const jenis_creator = jenisRaw === "" ? null : jenisRaw;
+
+  const nicheRaw = String(formData.get("niche") || "").trim();
+  if (nicheRaw !== "" && !INDUSTRIES.includes(nicheRaw as (typeof INDUSTRIES)[number])) {
+    return { ok: false, message: "Industry tidak dikenali." };
+  }
+  const niche = nicheRaw === "" ? null : nicheRaw;
+
+  const statusKontrakRaw = String(formData.get("status_kontrak") || "").trim();
+  if (!STATUS_KONTRAK_VALUES.includes(statusKontrakRaw as (typeof STATUS_KONTRAK_VALUES)[number])) {
+    return { ok: false, message: "Status kontrak tidak dikenali." };
+  }
+  const status_kontrak = statusKontrakRaw as (typeof STATUS_KONTRAK_VALUES)[number];
+
+  const notes = String(formData.get("notes") || "").trim() || null;
+
+  const capRaw = String(formData.get("ads_budget_cap") || "").trim();
+  const ads_budget_cap = capRaw === "" ? null : parseRupiah(capRaw);
+  if (capRaw !== "" && ads_budget_cap === null) {
+    return { ok: false, message: "Nominal budget cap tidak dikenali — periksa formatnya." };
+  }
+
+  const { error } = await supabase
+    .from("mcn_creators")
+    .update({
+      name,
+      username,
+      city,
+      jenis_creator,
+      niche,
+      status_kontrak,
+      notes,
+      ads_budget_cap,
+    })
+    .eq("id", creator_id);
+
+  if (error) return { ok: false, message: `Gagal menyimpan kreator: ${error.message}` };
+
+  revalidatePath("/meago/creators");
+  revalidatePath("/acquisition");
+  return { ok: true, message: "Data kreator diperbarui." };
+}

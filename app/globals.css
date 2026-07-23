@@ -122,3 +122,34 @@ details.disclose > summary { cursor: pointer; font-weight: 600; font-size: 13px;
 .inline-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 details > summary { cursor: pointer; color: var(--brand); font-weight: 600; margin: 6px 0; }
 details[open] > summary { margin-bottom: 10px; }
+
+/* Dialog/Modal */
+.modal-backdrop {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.5); display: flex; align-items: center;
+  justify-content: center; z-index: 1000;
+}
+.modal-content {
+  background: var(--panel); border-radius: 12px; padding: 28px;
+  max-width: 500px; width: 90%; max-height: 85vh; overflow-y: auto;
+  box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
+}
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+.modal-header h2 {
+  margin: 0; font-size: 16px; font-weight: 700;
+}
+.modal-close-btn {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 20px; padding: 0; width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-close-btn:hover {
+  color: #0f172a;
+}
+.modal-footer {
+  display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;
+  padding-top: 12px; border-top: 1px solid var(--border);
+}
