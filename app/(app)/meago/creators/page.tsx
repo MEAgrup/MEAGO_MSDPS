@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
+import { AssignOwnerRow, BudgetCapRow, EditCreatorModal, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
 import { UploadReportForm, DeleteReportButton } from "./report-forms";
 import { IngestForm } from "../ingest-form";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -11,16 +11,33 @@ type Creator = {
   id: string;
   code: string | null;
   name: string;
+  platform: string | null;
   username: string | null;
+  city: string | null;
   niche: string | null;
   jenis_creator: string | null;
   creator_level: string | null;
   binding_status: string | null;
+  status: string;
+  status_kontrak: string | null;
+  gmv: number | null;
+  gmv_live: number | null;
+  gmv_video: number | null;
   commission_share: number | null;
   owner_cpm_id: string | null;
   live_roster: boolean;
   ads_budget_cap: number | null;
+  notes: string | null;
+  top_niches: unknown;
   auth_user_id: string | null;
+  created_at: string | null;
+  status_changed_by: string | null;
+  status_changed_at: string | null;
+};
+
+const STATUS_KONTRAK_BADGE: Record<string, { cls: string; label: string }> = {
+  kontrak: { cls: "green", label: "Kontrak" },
+  "non kontrak": { cls: "slate", label: "Non Kontrak" },
 };
 
 const BINDING_BADGE: Record<string, { cls: string; label: string }> = {
@@ -166,14 +183,15 @@ export default async function McnCreatorsPage() {
 
   // Daftar CM aktif (divisi CreatorManagement) — dipakai di dropdown assign owner.
   // Hanya di-fetch bila section-nya bakal dirender (canAssignOwner).
-  const cmEmployeesQuery = canAssignOwner
-    ? supabase
-        .from("employees")
-        .select("id, full_name, rank")
-        .eq("division", "CreatorManagement")
-        .eq("active", true)
-        .order("full_name", { ascending: true })
-    : Promise.resolve({ data: [] as { id: string; full_name: string; rank: string }[] });
+  const cmEmployeesQuery =
+    canAssignOwner || canManageOps
+      ? supabase
+          .from("employees")
+          .select("id, full_name, rank")
+          .eq("division", "CreatorManagement")
+          .eq("active", true)
+          .order("full_name", { ascending: true })
+      : Promise.resolve({ data: [] as { id: string; full_name: string; rank: string }[] });
 
   // Kartu report hanya di-fetch bila bakal dirender (canReportCreator).
   const reportsQuery = canReportCreator
@@ -194,7 +212,7 @@ export default async function McnCreatorsPage() {
     supabase
       .from("mcn_creators")
       .select(
-        "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id"
+        "id, code, name, platform, username, city, niche, jenis_creator, creator_level, binding_status, status, status_kontrak, gmv, gmv_live, gmv_video, commission_share, owner_cpm_id, live_roster, ads_budget_cap, notes, top_niches, auth_user_id, created_at, status_changed_by, status_changed_at"
       )
       .order("name", { ascending: true }),
     supabase.from("employees").select("id, full_name"),
@@ -330,6 +348,8 @@ export default async function McnCreatorsPage() {
                 <th className="right">Live stream</th>
                 <th className="right">Valid live stream</th>
                 <th>Roster Live</th>
+                <th>Kontrak</th>
+                {canManageOps && <th>Aksi</th>}
               </tr>
             </thead>
             <tbody>
@@ -378,12 +398,26 @@ export default async function McnCreatorsPage() {
                         <span className="muted">—</span>
                       )}
                     </td>
+                    <td>
+                      {c.status_kontrak ? (
+                        <span className={`badge ${STATUS_KONTRAK_BADGE[c.status_kontrak]?.cls ?? "gray"}`}>
+                          {STATUS_KONTRAK_BADGE[c.status_kontrak]?.label ?? c.status_kontrak}
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    {canManageOps && (
+                      <td>
+                        <EditCreatorModal creator={c} cmOptions={cmEmployees} />
+                      </td>
+                    )}
                   </tr>
                 );
               })}
               {creators.length === 0 && (
                 <tr>
-                  <td colSpan={15} className="muted">
+                  <td colSpan={canManageOps ? 17 : 16} className="muted">
                     Belum ada kreator terdaftar.
                   </td>
                 </tr>
