@@ -118,8 +118,6 @@ export default async function AcquisitionPage() {
           created_at: string;
         }[]
       | null) ?? [];
-  const creatorMap = new Map(creators.map((c) => [c.id, c]));
-
   // Sumber tunggal untuk daftar & dropdown prospek: hasil query berfilter status
   // (bukan hasil filter array `creators` yang terpotong 1000 baris). `prospekRaw`
   // sudah ter-order created_at desc dari DB.
@@ -140,6 +138,34 @@ export default async function AcquisitionPage() {
   const acquisitions = (acqRaw as Acquisition[] | null) ?? [];
 
   const referrals = (refRaw as Referral[] | null) ?? [];
+
+  // creatorMap dipakai untuk resolusi nama kreator di Daftar Akuisisi & Daftar
+  // Referral. Query `creators` di atas ter-order nama & dibatasi 1000 baris (cap
+  // PostgREST), sehingga kreator yang sudah binding / berada di luar 1000 nama
+  // teratas TIDAK ikut → nama tampil "—". Ambil eksplisit kreator yang
+  // direferensikan baris akuisisi/referral berdasarkan id lalu gabung ke map
+  // (pola yang sama dengan query prospek terpisah di atas).
+  const referencedCreatorIds = Array.from(
+    new Set(
+      [
+        ...acquisitions.map((a) => a.mcn_creator_id),
+        ...referrals.map((r) => r.new_creator_id),
+        ...referrals.map((r) => r.referrer_creator_id),
+      ].filter((id): id is string => !!id)
+    )
+  );
+
+  const creatorMap = new Map(creators.map((c) => [c.id, c]));
+
+  if (referencedCreatorIds.length > 0) {
+    const { data: refCreatorsRaw } = await supabase
+      .from("mcn_creators")
+      .select("id, name, code, status, owner_cpm_id, username, niche, city, created_at")
+      .in("id", referencedCreatorIds);
+    for (const c of ((refCreatorsRaw as typeof creators | null) ?? [])) {
+      creatorMap.set(c.id, c);
+    }
+  }
 
   const empName = new Map(((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name]));
 
