@@ -69,6 +69,7 @@ export function RecordAcquisitionForm({ prospects }: { prospects: CreatorOpt[] }
     recordAcquisition,
     null
   );
+  const [bindingStart, setBindingStart] = useState("");
   return (
     <form action={action}>
       <Msg state={state} />
@@ -87,8 +88,40 @@ export function RecordAcquisitionForm({ prospects }: { prospects: CreatorOpt[] }
           </select>
         </div>
         <div>
-          <label>Tanggal Binding *</label>
-          <input type="date" name="binding_date" required />
+          <label>Tanggal Binding Mulai *</label>
+          <input
+            type="date"
+            name="binding_date"
+            required
+            value={bindingStart}
+            onChange={(e) => setBindingStart(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="row">
+        <div>
+          <label>Tanggal Binding Berakhir *</label>
+          <input type="date" name="binding_end_date" required min={bindingStart || undefined} />
+        </div>
+        <div>
+          <label>Nomor Telepon *</label>
+          <input type="tel" name="phone" placeholder="0812… atau +62…" required />
+        </div>
+      </div>
+      <div className="row">
+        <div>
+          <label>UID *</label>
+          <input name="uid" placeholder="UID pelanggan" required />
+        </div>
+        <div>
+          <label>Kreator Kontrak *</label>
+          <select name="kreator_kontrak" defaultValue="" required>
+            <option value="" disabled>
+              — pilih —
+            </option>
+            <option value="kontrak">Kontrak</option>
+            <option value="non kontrak">Non Kontrak</option>
+          </select>
         </div>
       </div>
       <label>Sumber Lead</label>

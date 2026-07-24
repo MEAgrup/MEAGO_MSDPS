@@ -44,6 +44,15 @@ function sumGmv(
   return total;
 }
 
+// Mirror JS dari normalize_phone_id (validasi format nomor ID; DB tetap autoritatif
+// untuk modul leads). Return null bila kosong / tak ada digit yang tersisa.
+function jsNormalizePhone(p: string): string | null {
+  if (!p || !p.trim()) return null;
+  const digits = p.replace(/[^0-9]/g, "").replace(/^0/, "").replace(/^62/, "");
+  if (!digits) return null;
+  return "+62" + digits;
+}
+
 // Akhir kuartal kalender dari sebuah tanggal binding (string math, tanpa Date object).
 function quarterEndOf(dateStr: string): string | null {
   const p = parseYMD(dateStr);
@@ -63,14 +72,32 @@ export async function recordAcquisition(
 
   const mcn_creator_id = String(formData.get("mcn_creator_id") || "");
   const bindingRaw = String(formData.get("binding_date") || "").trim();
+  const bindingEndRaw = String(formData.get("binding_end_date") || "").trim();
+  const phoneRaw = String(formData.get("phone") || "").trim();
+  const uid = String(formData.get("uid") || "").trim();
+  const kreatorKontrak = String(formData.get("kreator_kontrak") || "").trim();
   const lead_source = String(formData.get("lead_source") || "").trim() || null;
   const notes = String(formData.get("notes") || "").trim() || null;
-  if (!mcn_creator_id || !bindingRaw) {
+  if (!mcn_creator_id || !bindingRaw || !bindingEndRaw || !phoneRaw || !uid || !kreatorKontrak) {
     return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
   }
 
   const binding_date = parseFlexibleDate(bindingRaw);
-  if (!binding_date) return { ok: false, message: "Tanggal binding tidak valid." };
+  if (!binding_date) return { ok: false, message: "Tanggal binding mulai tidak valid." };
+
+  const binding_end_date = parseFlexibleDate(bindingEndRaw);
+  if (!binding_end_date) return { ok: false, message: "Tanggal binding berakhir tidak valid." };
+  if (binding_end_date < binding_date) {
+    return { ok: false, message: "Tanggal binding berakhir tidak boleh lebih awal dari tanggal mulai." };
+  }
+
+  const phone = jsNormalizePhone(phoneRaw);
+  if (!phone) return { ok: false, message: "Nomor telepon tidak valid." };
+
+  if (!(["kontrak", "non kontrak"] as const).includes(kreatorKontrak as "kontrak" | "non kontrak")) {
+    return { ok: false, message: "Kreator kontrak tidak valid." };
+  }
+  const kreator_kontrak = kreatorKontrak;
 
   const quarter_end = quarterEndOf(binding_date);
 
@@ -97,12 +124,21 @@ export async function recordAcquisition(
     mcn_creator_id,
     lead_source,
     binding_date,
+    binding_end_date,
+    phone,
+    uid,
+    kreator_kontrak,
     commission_share_at_binding,
     gmv_last_30d,
     quarter_end,
     notes,
   });
-  if (error) return { ok: false, message: `Gagal mencatat akuisisi: ${error.message}` };
+  if (error) {
+    if (error.code === "23505") {
+      return { ok: false, message: "[UID sudah terdaftar pada akuisisi lain]" };
+    }
+    return { ok: false, message: `Gagal mencatat akuisisi: ${error.message}` };
+  }
 
   // Kreator prospek → binding (hanya bila masih prospek; abaikan pesan transisi lain).
   if (creator?.status === "prospek") {
