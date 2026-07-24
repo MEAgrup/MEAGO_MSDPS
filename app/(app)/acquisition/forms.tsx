@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import {
   recordAcquisition,
   recordReferral,
   markReferralPaid,
   markHandoffDone,
   refreshGmvPostJoin,
+  updateAcquisition,
+  deleteAcquisition,
   type ActionResult,
 } from "@/lib/actions/acquisition";
 import { addCreator, type ActionResult as McnActionResult } from "@/lib/actions/mcn-creators";
@@ -254,6 +256,189 @@ export function MarkReferralPaidButton({ id }: { id: string }) {
       <input type="hidden" name="id" value={id} />
       <button className="sm" disabled={pending}>
         {pending ? "…" : "Tandai Dibayar"}
+      </button>
+      {state && !state.ok && (
+        <span className="badge red" title={state.message}>
+          gagal
+        </span>
+      )}
+    </form>
+  );
+}
+
+// Baris akuisisi yang bisa diedit — kolom read-only (kreator/specialist/GMV/handoff)
+// hanya ditampilkan, kolom editable mirror recordAcquisition.
+export type AcquisitionEditable = {
+  id: string;
+  code: string | null;
+  creator_label: string;
+  specialist_label: string;
+  binding_date: string;
+  binding_end_date: string | null;
+  phone: string | null;
+  uid: string | null;
+  kreator_kontrak: string | null;
+  lead_source: string | null;
+  notes: string | null;
+};
+
+// EditAcquisitionModal — tombol "Edit" per baris membuka modal berisi form kolom
+// akuisisi yang bisa diubah. Submit memanggil updateAcquisition; sukses → modal
+// tertutup & tabel di-refresh via revalidatePath. Validasi tanggal berakhir >= mulai
+// ditegakkan di client (min) dan server.
+export function EditAcquisitionModal({ acq }: { acq: AcquisitionEditable }) {
+  const [open, setOpen] = useState(false);
+  const [bindingStart, setBindingStart] = useState(acq.binding_date ?? "");
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    updateAcquisition,
+    null
+  );
+
+  useEffect(() => {
+    if (state?.ok) setOpen(false);
+  }, [state]);
+
+  return (
+    <>
+      <button className="sm ghost2" type="button" onClick={() => setOpen(true)}>
+        Edit
+      </button>
+      {open && (
+        <div className="modal-backdrop" onClick={() => setOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>Edit Akuisisi{acq.code ? ` · ${acq.code}` : ""}</h3>
+              <button type="button" className="sm ghost2" onClick={() => setOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <form action={action}>
+              <div className="modal-body">
+                {state && !state.ok && <div className="err">{state.message}</div>}
+                <input type="hidden" name="id" value={acq.id} />
+
+                <div className="row">
+                  <div>
+                    <label>Kreator — read-only</label>
+                    <input value={acq.creator_label} disabled />
+                  </div>
+                  <div>
+                    <label>Specialist — read-only</label>
+                    <input value={acq.specialist_label} disabled />
+                  </div>
+                </div>
+
+                <div className="row">
+                  <div>
+                    <label>Tanggal Binding Mulai *</label>
+                    <input
+                      type="date"
+                      name="binding_date"
+                      required
+                      value={bindingStart}
+                      onChange={(e) => setBindingStart(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label>Tanggal Binding Berakhir *</label>
+                    <input
+                      type="date"
+                      name="binding_end_date"
+                      required
+                      defaultValue={acq.binding_end_date ?? ""}
+                      min={bindingStart || undefined}
+                    />
+                  </div>
+                </div>
+
+                <div className="row">
+                  <div>
+                    <label>Nomor Telepon *</label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      required
+                      defaultValue={acq.phone ?? ""}
+                      placeholder="0812… atau +62…"
+                    />
+                  </div>
+                  <div>
+                    <label>UID *</label>
+                    <input name="uid" required defaultValue={acq.uid ?? ""} placeholder="UID pelanggan" />
+                  </div>
+                </div>
+
+                <div className="row">
+                  <div>
+                    <label>Kreator Kontrak *</label>
+                    <select name="kreator_kontrak" defaultValue={acq.kreator_kontrak ?? ""} required>
+                      <option value="" disabled>
+                        — pilih —
+                      </option>
+                      <option value="kontrak">Kontrak</option>
+                      <option value="non kontrak">Non Kontrak</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Sumber Lead</label>
+                    <select name="lead_source" defaultValue={acq.lead_source ?? ""}>
+                      <option value="">— pilih —</option>
+                      <option value="inbound">inbound</option>
+                      <option value="outbound">outbound</option>
+                      <option value="platform">platform</option>
+                    </select>
+                  </div>
+                </div>
+
+                <label>Catatan</label>
+                <textarea
+                  name="notes"
+                  defaultValue={acq.notes ?? ""}
+                  rows={2}
+                  style={{ fontFamily: "inherit" }}
+                />
+              </div>
+              <div className="modal-foot">
+                <button
+                  type="button"
+                  className="ghost2"
+                  onClick={() => setOpen(false)}
+                  disabled={pending}
+                >
+                  Batal
+                </button>
+                <button type="submit" disabled={pending}>
+                  {pending ? "Menyimpan…" : "Simpan Perubahan"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// DeleteAcquisitionButton — hard-delete satu baris akuisisi. Konfirmasi lewat
+// confirm() sebelum submit (pola dangerbtn seperti modul lain).
+export function DeleteAcquisitionButton({ id, label }: { id: string; label: string }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    deleteAcquisition,
+    null
+  );
+  return (
+    <form
+      action={action}
+      style={{ display: "inline-block" }}
+      onSubmit={(e) => {
+        if (!confirm(`Hapus akuisisi ${label}? Tindakan ini tidak dapat dibatalkan.`)) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="id" value={id} />
+      <button className="sm dangerbtn" disabled={pending}>
+        {pending ? "…" : "Hapus"}
       </button>
       {state && !state.ok && (
         <span className="badge red" title={state.message}>

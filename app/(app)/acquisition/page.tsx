@@ -9,6 +9,8 @@ import {
   HandoffButton,
   RecordReferralForm,
   MarkReferralPaidButton,
+  EditAcquisitionModal,
+  DeleteAcquisitionButton,
 } from "./forms";
 
 type Acquisition = {
@@ -18,6 +20,11 @@ type Acquisition = {
   specialist_id: string;
   lead_source: string | null;
   binding_date: string;
+  binding_end_date: string | null;
+  phone: string | null;
+  uid: string | null;
+  kreator_kontrak: string | null;
+  notes: string | null;
   commission_share_at_binding: number | null;
   gmv_last_30d: number | null;
   gmv_post_join: number | null;
@@ -86,7 +93,7 @@ export default async function AcquisitionPage() {
       supabase
         .from("acquisitions")
         .select(
-          "id, code, mcn_creator_id, specialist_id, lead_source, binding_date, commission_share_at_binding, gmv_last_30d, gmv_post_join, gmv_quarter_actual, handoff_done"
+          "id, code, mcn_creator_id, specialist_id, lead_source, binding_date, binding_end_date, phone, uid, kreator_kontrak, notes, commission_share_at_binding, gmv_last_30d, gmv_post_join, gmv_quarter_actual, handoff_done"
         )
         .order("binding_date", { ascending: false }),
       supabase
@@ -249,6 +256,7 @@ export default async function AcquisitionPage() {
                 <th className="right">GMV 30d Pre</th>
                 <th className="right">GMV Post-Join</th>
                 <th>Handoff</th>
+                {canWrite && <th>Aksi</th>}
               </tr>
             </thead>
             <tbody>
@@ -280,12 +288,34 @@ export default async function AcquisitionPage() {
                         <span className="badge amber">pending</span>
                       )}
                     </td>
+                    {canWrite && (
+                      <td>
+                        <div className="actions-row">
+                          <EditAcquisitionModal
+                            acq={{
+                              id: a.id,
+                              code: a.code,
+                              creator_label: creatorName(a.mcn_creator_id),
+                              specialist_label: empName.get(a.specialist_id) ?? "—",
+                              binding_date: a.binding_date,
+                              binding_end_date: a.binding_end_date,
+                              phone: a.phone,
+                              uid: a.uid,
+                              kreator_kontrak: a.kreator_kontrak,
+                              lead_source: a.lead_source,
+                              notes: a.notes,
+                            }}
+                          />
+                          <DeleteAcquisitionButton id={a.id} label={a.code ?? creatorName(a.mcn_creator_id)} />
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
               {acquisitions.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="muted">
+                  <td colSpan={canWrite ? 9 : 8} className="muted">
                     Belum ada akuisisi tercatat.
                   </td>
                 </tr>

@@ -149,6 +149,99 @@ export async function recordAcquisition(
   return { ok: true, message: "Akuisisi (binding) tercatat." };
 }
 
+// updateAcquisition: edit baris akuisisi dari Daftar Akuisisi. Field yang bisa diubah
+// = binding_date, binding_end_date, phone, uid, kreator_kontrak, lead_source, notes
+// (kreator/specialist/GMV/handoff read-only di modal). quarter_end di-recompute bila
+// binding_date berubah. Validasi mirror recordAcquisition; UID unik → pesan ramah.
+export async function updateAcquisition(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user } = await ctx();
+  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+  const id = String(formData.get("id") || "");
+  if (!id) return { ok: false, message: "Akuisisi tidak valid." };
+
+  const bindingRaw = String(formData.get("binding_date") || "").trim();
+  const bindingEndRaw = String(formData.get("binding_end_date") || "").trim();
+  const phoneRaw = String(formData.get("phone") || "").trim();
+  const uid = String(formData.get("uid") || "").trim();
+  const kreatorKontrak = String(formData.get("kreator_kontrak") || "").trim();
+  const lead_source = String(formData.get("lead_source") || "").trim() || null;
+  const notes = String(formData.get("notes") || "").trim() || null;
+  if (!bindingRaw || !bindingEndRaw || !phoneRaw || !uid || !kreatorKontrak) {
+    return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
+  }
+
+  const binding_date = parseFlexibleDate(bindingRaw);
+  if (!binding_date) return { ok: false, message: "Tanggal binding mulai tidak valid." };
+
+  const binding_end_date = parseFlexibleDate(bindingEndRaw);
+  if (!binding_end_date) return { ok: false, message: "Tanggal binding berakhir tidak valid." };
+  if (binding_end_date < binding_date) {
+    return { ok: false, message: "Tanggal binding berakhir tidak boleh lebih awal dari tanggal mulai." };
+  }
+
+  const phone = jsNormalizePhone(phoneRaw);
+  if (!phone) return { ok: false, message: "Nomor telepon tidak valid." };
+
+  if (!(["kontrak", "non kontrak"] as const).includes(kreatorKontrak as "kontrak" | "non kontrak")) {
+    return { ok: false, message: "Kreator kontrak tidak valid." };
+  }
+  const kreator_kontrak = kreatorKontrak;
+
+  const quarter_end = quarterEndOf(binding_date);
+
+  const { error } = await supabase
+    .from("acquisitions")
+    .update({
+      binding_date,
+      binding_end_date,
+      phone,
+      uid,
+      kreator_kontrak,
+      lead_source,
+      notes,
+      quarter_end,
+    })
+    .eq("id", id);
+  if (error) {
+    if (error.code === "23505") {
+      return { ok: false, message: "[UID sudah terdaftar pada akuisisi lain]" };
+    }
+    return { ok: false, message: `Gagal memperbarui akuisisi: ${error.message}` };
+  }
+
+  revalidatePath("/acquisition");
+  return { ok: true, message: "Akuisisi diperbarui." };
+}
+
+// deleteAcquisition: hard-delete satu baris akuisisi (butuh policy DELETE migration
+// 0318). Konfirmasi dilakukan di client sebelum submit. RLS gate = Acquisition/mgmt.
+export async function deleteAcquisition(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user } = await ctx();
+  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+  const id = String(formData.get("id") || "");
+  if (!id) return { ok: false, message: "Akuisisi tidak valid." };
+
+  const { error, count } = await supabase
+    .from("acquisitions")
+    .delete({ count: "exact" })
+    .eq("id", id);
+  if (error) return { ok: false, message: `Gagal menghapus akuisisi: ${error.message}` };
+  if (!count) {
+    return { ok: false, message: "Tidak ada baris terhapus — mungkin tanpa izin atau sudah dihapus." };
+  }
+
+  revalidatePath("/acquisition");
+  return { ok: true, message: "Akuisisi dihapus." };
+}
+
 // recordReferral: validasi source↔referrer sebelum insert (pesan ramah); DB tetap guard.
 export async function recordReferral(
   _prev: ActionResult | null,
