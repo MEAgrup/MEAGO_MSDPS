@@ -279,6 +279,7 @@ export type AcquisitionEditable = {
   uid: string | null;
   kreator_kontrak: string | null;
   lead_source: string | null;
+  gmv_last_30d: number | null;
   notes: string | null;
 };
 
@@ -388,6 +389,19 @@ export function EditAcquisitionModal({ acq }: { acq: AcquisitionEditable }) {
                       <option value="platform">platform</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="row">
+                  <div>
+                    <label>GMV 30 Hari Terakhir (GMV 30d Pre)</label>
+                    <input
+                      name="gmv_last_30d"
+                      inputMode="numeric"
+                      defaultValue={acq.gmv_last_30d !== null ? String(acq.gmv_last_30d) : ""}
+                      placeholder="mis. 1.500.000 (kosongkan bila tidak ada)"
+                    />
+                  </div>
+                  <div />
                 </div>
 
                 <label>Catatan</label>

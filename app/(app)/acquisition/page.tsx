@@ -303,6 +303,7 @@ export default async function AcquisitionPage() {
                               uid: a.uid,
                               kreator_kontrak: a.kreator_kontrak,
                               lead_source: a.lead_source,
+                              gmv_last_30d: a.gmv_last_30d,
                               notes: a.notes,
                             }}
                           />

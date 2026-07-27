@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { parseFlexibleDate } from "@/lib/mcn/parsers";
+import { parseFlexibleDate, parseRupiah } from "@/lib/mcn/parsers";
 import { addDays, parseYMD, daysInMonth, formatYMD } from "@/lib/mcn/weeks";
 
 export type ActionResult = { ok: boolean; message: string };
@@ -174,6 +174,14 @@ export async function updateAcquisition(
     return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
   }
 
+  // GMV 30 hari terakhir (GMV 30d Pre) — opsional; kosong → null. Nilai non-kosong
+  // yang tak bisa diparse Rupiah ditolak (bukan diam-diam jadi null).
+  const gmvRaw = String(formData.get("gmv_last_30d") || "").trim();
+  const gmv_last_30d = gmvRaw ? parseRupiah(gmvRaw) : null;
+  if (gmvRaw && gmv_last_30d === null) {
+    return { ok: false, message: "GMV 30 hari terakhir tidak valid." };
+  }
+
   const binding_date = parseFlexibleDate(bindingRaw);
   if (!binding_date) return { ok: false, message: "Tanggal binding mulai tidak valid." };
 
@@ -202,6 +210,7 @@ export async function updateAcquisition(
       uid,
       kreator_kontrak,
       lead_source,
+      gmv_last_30d,
       notes,
       quarter_end,
     })
