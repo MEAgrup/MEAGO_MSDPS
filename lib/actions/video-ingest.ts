@@ -17,6 +17,13 @@ export type ActionResult = { ok: boolean; message: string };
 const ARCHIVE_BUCKET = "weekly-archives";
 const DEFAULT_RETENTION_MONTHS = 6;
 
+// Label source_type khusus jalur video di upload_batches — memisahkan batch video dari
+// batch "Upload Data Mingguan" (source_type 'tiktok') yang mengisi creator_period_summary,
+// supaya guard duplikat/overlap & sweep retensi tiap jalur tidak saling mengganggu.
+const VIDEO_SOURCE_TYPE = "tiktok_video";
+// Platform master kreator (mcn_creators.platform) — MEAGO TikTok-only.
+const CREATOR_PLATFORM = "tiktok";
+
 async function ctx() {
   const supabase = await createClient();
   const {
@@ -52,6 +59,7 @@ async function checkDuplicateGuard(
     .from("upload_batches")
     .select("batch_id, period_start, period_end, uploaded_at")
     .eq("file_hash_full", hashFull)
+    .eq("source_type", VIDEO_SOURCE_TYPE)
     .eq("status", "processed")
     .limit(1)
     .maybeSingle();
@@ -77,6 +85,7 @@ async function checkOverlapGuard(
   const { data: overlaps, error: ovErr } = await supabase
     .from("upload_batches")
     .select("batch_id, period_start, period_end")
+    .eq("source_type", VIDEO_SOURCE_TYPE)
     .eq("status", "processed")
     .neq("period_start", periodStart)
     .lte("period_start", periodEnd)
@@ -195,7 +204,9 @@ async function archiveVideoGmvRender(
     creators_count: args.creatorsCount,
     videos: args.videoRows,
   };
-  const archive_path = `${args.periodStart}/${args.hash8}.json`;
+  // Prefix "video-" memisahkan arsip jalur ini dari arsip jalur summary yang memakai
+  // bucket & skema path yang sama (`<period_start>/<hash8>.json`).
+  const archive_path = `${args.periodStart}/video-${args.hash8}.json`;
 
   const admin = createAdminClient();
   const { error: upErr } = await admin.storage
@@ -220,15 +231,17 @@ async function sweepExpiredWeeklyData(supabase: SupabaseClient): Promise<void> {
   const months = await getRetentionMonths(supabase);
   const cutoff = retentionCutoffDate(months);
 
-  // Hapus baris agregat DB (termasuk video_gmv).
-  for (const table of ["creator_video_gmv"]) {
-    await supabase.from(table).delete().lt("period_start", cutoff);
-  }
+  // Hapus baris agregat video kedaluwarsa. Tabel summary/subcat/top_products TIDAK
+  // disentuh di sini — itu tanggung jawab sweep jalur summary (mcn-ingest.ts).
+  await supabase.from("creator_video_gmv").delete().lt("period_start", cutoff);
 
-  // Hapus arsip Storage kedaluwarsa.
+  // Hapus arsip Storage kedaluwarsa MILIK JALUR VIDEO saja. Tanpa filter source_type,
+  // sweep ini akan menghapus arsip batch summary padahal baris agregatnya tidak ikut
+  // dipangkas di sini (audit trail jalur lain jadi hilang tanpa sebab).
   const { data: expiredRaw } = await supabase
     .from("upload_batches")
     .select("id, archive_path")
+    .eq("source_type", VIDEO_SOURCE_TYPE)
     .not("archive_path", "is", null)
     .lt("period_start", cutoff);
   const expired = (expiredRaw ?? []) as { id: string; archive_path: string | null }[];
@@ -273,8 +286,12 @@ export async function runVideoGmvIngest(
   }
   const file = fileEntry;
   if (file.size === 0) return { ok: false, message: "File kosong." };
-  const source_type = String(formData.get("source_type") || "").trim() || "tiktok";
-  const platform = source_type;
+  // source_type = LABEL batch (membedakan jalur video dari jalur summary di
+  // upload_batches). platform = kolom master kreator, TETAP 'tiktok' — jangan
+  // disamakan dengan source_type, kalau tidak lookup kreator tak akan pernah cocok
+  // dan semua kreator ter-auto-create sebagai duplikat.
+  const source_type = VIDEO_SOURCE_TYPE;
+  const platform = CREATOR_PLATFORM;
   const force = readForceReprocess(formData);
 
   let sheets: WorkbookSheet[];
@@ -300,7 +317,7 @@ export async function runVideoGmvIngest(
   // 2. Parse workbook. Gagal → pesan error (belum ada batch row).
   const parsed = parseVideoGmvWorkbook(sheets);
   if (!parsed.ok) return { ok: false, message: parsed.error };
-  const { periodStart, periodEnd, rows } = parsed;
+  const { periodStart, periodEnd, rows, skipped } = parsed;
 
   // 2b. Guard duplikat.
   const dupErr = await checkDuplicateGuard(supabase, hashFull, force);
@@ -393,9 +410,14 @@ export async function runVideoGmvIngest(
   const failBatch = makeFailBatch(supabase, staging.batchRowId);
 
   // 7. Build video_gmv insert rows (delete-then-insert per creator+period).
-  const videoRowsToInsert: Record<string, unknown>[] = [];
+  // Dedup per (kreator, video): export kadang mengulang baris video yang sama. Tanpa
+  // dedup, insert menabrak unique (creator_id, video_id, period_start) dan MENGGAGALKAN
+  // seluruh batch dengan error Postgres mentah. Occurrence terakhir menang (bukan
+  // dijumlahkan — baris berulang adalah pengulangan data yang sama, bukan tambahan).
+  const byCreatorVideo = new Map<string, Record<string, unknown>>();
   const creatorIds = new Set<string>();
   let unmatchedCount = 0;
+  let dedupedCount = 0;
 
   for (const row of rows) {
     const master = byUsername.get(row.username.toLowerCase());
@@ -405,7 +427,9 @@ export async function runVideoGmvIngest(
     }
 
     creatorIds.add(master.id);
-    videoRowsToInsert.push({
+    const key = `${master.id}|${row.videoId}`;
+    if (byCreatorVideo.has(key)) dedupedCount++;
+    byCreatorVideo.set(key, {
       creator_id: master.id,
       batch_id,
       video_id: row.videoId,
@@ -422,6 +446,7 @@ export async function runVideoGmvIngest(
     });
   }
 
+  const videoRowsToInsert = [...byCreatorVideo.values()];
   if (videoRowsToInsert.length === 0) {
     return failBatch(`Tidak ada video ter-resolve dari file (${unmatchedCount} unmatched kreator).`);
   }
@@ -483,13 +508,24 @@ export async function runVideoGmvIngest(
   revalidatePath("/meago/workspace");
   revalidatePath("/meago/gmv-video");
 
+  // Ringkasan WAJIB menyebut semua yang tidak masuk apa adanya — kreator baru yang
+  // dibuat otomatis, baris yang di-skip parser, duplikat yang digabung, dan baris tanpa
+  // kreator ter-resolve. Tidak ada yang dibuang diam-diam.
   const autoMsg = autoCreated.length
-    ? ` Auto-created: ${autoCreated.slice(0, 10).join(", ")}${autoCreated.length > 10 ? ` (+${autoCreated.length - 10})` : ""}.`
+    ? ` Kreator baru dibuat otomatis (${autoCreated.length}, CM belum di-assign): ${autoCreated.slice(0, 10).join(", ")}${autoCreated.length > 10 ? ` (+${autoCreated.length - 10} lagi)` : ""}.`
     : "";
-  const unmatchedMsg = unmatchedCount > 0 ? ` Unmatched: ${unmatchedCount} baris (no username match).` : "";
+  const skippedPreview = skipped
+    .slice(0, 10)
+    .map((s) => `baris ${s.rowIndex}: ${s.reason}`)
+    .join("; ");
+  const skipMsg = skipped.length
+    ? ` Skipped ${skipped.length}: ${skippedPreview}${skipped.length > 10 ? ` (+${skipped.length - 10})` : ""}.`
+    : "";
+  const dedupMsg = dedupedCount > 0 ? ` ${dedupedCount} baris video duplikat digabung (nilai terakhir dipakai).` : "";
+  const unmatchedMsg = unmatchedCount > 0 ? ` Unmatched: ${unmatchedCount} baris tanpa kreator ter-resolve.` : "";
 
   return {
     ok: true,
-    message: `Ingest Video GMV ${periodStart}..${periodEnd} selesai: ${rows.length} baris, ${creatorIds.size} kreator, ${videoRowsToInsert.length} video.${autoMsg}${unmatchedMsg}${archiveMsg}`,
+    message: `Ingest Video GMV ${periodStart}..${periodEnd} selesai: ${rows.length} baris, ${creatorIds.size} kreator, ${videoRowsToInsert.length} video.${autoMsg}${dedupMsg}${unmatchedMsg}${skipMsg}${archiveMsg}`,
   };
 }

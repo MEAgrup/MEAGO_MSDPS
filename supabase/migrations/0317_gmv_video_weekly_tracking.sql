@@ -39,8 +39,10 @@ create table if not exists creator_video_gmv (
   created_at            timestamptz default now(),
   updated_at            timestamptz default now(),
 
-  -- Constraint: satu video per minggu per batch
-  unique (creator_id, video_id, period_start, batch_id)
+  -- Satu baris per (kreator, video, minggu) — batch_id SENGAJA tidak masuk key: ingest
+  -- memakai delete-then-insert per (kreator, period_start), jadi tanpa ini satu video
+  -- bisa tersimpan dua kali untuk minggu yang sama lewat dua batch berbeda.
+  unique (creator_id, video_id, period_start)
 );
 
 comment on table creator_video_gmv is
@@ -63,30 +65,20 @@ create index creator_video_gmv_video_id_period_idx
   on creator_video_gmv (video_id, period_start desc);
 
 -- ---- RLS Policies ----------------------------------------------------------
+-- Mengikuti PERSIS pola tabel agregat mingguan lain (0303 cps_*/cssg_*/ctp_*): ingest
+-- dijalankan sebagai user terautentikasi (bukan service-role), jadi policy harus
+-- mengizinkan CreatorManagement + management. Insert & DELETE dua-duanya wajib karena
+-- ingest memakai delete-then-insert per (kreator, period_start) saat re-proses.
 alter table creator_video_gmv enable row level security;
 
--- Policy: select — tim MCN bisa baca data sesama tim (via mcn_creators.owner_cpm_id)
-create policy "select_own_team_video_gmv" on creator_video_gmv
-  for select using (
-    auth.uid() is not null and
-    exists (
-      select 1 from mcn_creators mc
-      where mc.id = creator_video_gmv.creator_id
-        and exists (
-          select 1 from employees e
-          where e.id = auth.uid()
-            and e.id = mc.owner_cpm_id
-        )
-    )
-  );
-
--- Policy: insert — service role (server action ingest)
-create policy "insert_video_gmv_service" on creator_video_gmv
-  for insert with check (auth.role() = 'service_role');
-
--- Policy: update — updated_at trigger saja
-create policy "update_video_gmv_system" on creator_video_gmv
-  for update using (false) with check (false); -- Tidak ada update manual
+create policy cvg_select on creator_video_gmv for select to authenticated
+  using (is_od() or is_director() or auth_division() in ('CreatorManagement','BizDev','Acquisition'));
+create policy cvg_insert on creator_video_gmv for insert to authenticated
+  with check (is_od() or is_director() or auth_division() = 'CreatorManagement');
+create policy cvg_delete on creator_video_gmv for delete to authenticated
+  using (is_od() or is_director() or auth_division() = 'CreatorManagement');
+-- Sengaja TIDAK ada policy UPDATE: baris agregat hanya ditulis ulang lewat
+-- delete-then-insert, tidak pernah di-patch di tempat.
 
 -- ---- Trigger: updated_at timestamp ------------------------------------------
 create or replace function creator_video_gmv_update_ts()
