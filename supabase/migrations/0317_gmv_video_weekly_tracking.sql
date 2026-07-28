@@ -13,7 +13,7 @@
 -- disimpan, hanya agregat mingguan.
 create table if not exists creator_video_gmv (
   id                    bigserial primary key,
-  creator_id            bigint not null references mcn_creators (id) on delete cascade,
+  creator_id            uuid not null references mcn_creators (id) on delete cascade,
   batch_id              text not null references upload_batches (batch_id) on delete cascade,
 
   -- Video identifiers
