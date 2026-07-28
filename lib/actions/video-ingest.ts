@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fileHashFull, buildBatchId, readWorkbookSheets } from "@/lib/mcn/file-read";
+import { fileHashFull, readWorkbookSheets } from "@/lib/mcn/file-read";
 import {
   parseVideoGmvWorkbook,
   isVideoGmvWorkbook,
@@ -261,6 +261,30 @@ async function sweepExpiredWeeklyData(supabase: SupabaseClient): Promise<void> {
     );
 }
 
+// Ambil SELURUH master kreator dengan paginasi .range(). PostgREST memotong hasil di
+// 1000 baris bila tidak di-range — dengan >1000 kreator, sisanya akan dianggap "belum
+// ada" dan ter-auto-create sebagai duplikat (akar masalah yang sama seperti bug daftar
+// prospek terpotong). Jangan ganti dengan select tanpa range.
+const CREATOR_PAGE = 1000;
+async function fetchAllCreators(
+  supabase: SupabaseClient,
+  platform: string
+): Promise<{ ok: true; rows: CreatorMaster[] } | { ok: false; message: string }> {
+  const all: CreatorMaster[] = [];
+  for (let from = 0; ; from += CREATOR_PAGE) {
+    const { data, error } = await supabase
+      .from("mcn_creators")
+      .select("id, username, name, owner_cpm_id, status")
+      .eq("platform", platform)
+      .order("id", { ascending: true })
+      .range(from, from + CREATOR_PAGE - 1);
+    if (error) return { ok: false, message: `Gagal membaca master kreator: ${error.message}` };
+    const page = (data ?? []) as CreatorMaster[];
+    all.push(...page);
+    if (page.length < CREATOR_PAGE) return { ok: true, rows: all };
+  }
+}
+
 // Baca flag checkbox force_reprocess dari form.
 function readForceReprocess(formData: FormData): boolean {
   const raw = formData.get("force_reprocess");
@@ -306,11 +330,16 @@ export async function runVideoGmvIngest(
     return { ok: false, message: `Gagal membaca file: ${e instanceof Error ? e.message : String(e)}` };
   }
 
-  // Router format: jika bukan video GMV → tolak.
+  // Router format: tolak file yang salah jenis sebelum parsing penuh. Export Creator
+  // Analysis biasa (yang mengisi creator_period_summary lewat form "Upload Data
+  // Mingguan") punya "Live streams" dan TIDAK punya "Video views"/"CTR" — supaya tidak
+  // tertukar, form ini hanya menerima slice PostOnly.
   if (!isVideoGmvWorkbook(sheets)) {
     return {
       ok: false,
-      message: `File bukan format "GMV Video Weekly Tracking" yang diharapkan. Cek kolom: Creator ID, Video ID, Video GMV.`,
+      message:
+        'File bukan export "Creator Analysis — PostOnly" yang diharapkan (kolom "Video views" & "CTR" tidak ditemukan). ' +
+        'Export performa biasa yang berisi "Live streams" diunggah lewat card "Upload Data Mingguan" di halaman Data Kreator.',
     };
   }
 
@@ -328,15 +357,16 @@ export async function runVideoGmvIngest(
   if (overlapErr) return overlapErr;
 
   // 4. batch_id idempoten.
-  const batch_id = buildBatchId(periodStart, hash8);
+  // batch_id BUKAN buildBatchId(): helper itu menghasilkan `ingest:<start>:<hash8>` yang
+  // dipakai jalur summary. File PostOnly ini juga dikenali oleh jalur summary, jadi kalau
+  // file yang sama diunggah ke kedua form, hash8-nya identik → batch_id identik → batch
+  // jalur lain ikut ter-reset ke staging. Namespace terpisah mencegah tabrakan itu.
+  const batch_id = `video:${periodStart}:${hash8}`;
 
   // 5. Resolve kreator BY USERNAME (fallback name; else insert baru).
-  const { data: existingRaw, error: exErr } = await supabase
-    .from("mcn_creators")
-    .select("id, username, name, owner_cpm_id, status")
-    .eq("platform", platform);
-  if (exErr) return { ok: false, message: `Gagal membaca master kreator: ${exErr.message}` };
-  const existing = (existingRaw ?? []) as CreatorMaster[];
+  const masters = await fetchAllCreators(supabase, platform);
+  if (!masters.ok) return { ok: false, message: masters.message };
+  const existing = masters.rows;
 
   const byUsername = new Map<string, CreatorMaster>();
   const byName = new Map<string, CreatorMaster>();
@@ -349,14 +379,18 @@ export async function runVideoGmvIngest(
   const toInsert: { name: string; username: string; platform: string; status: string }[] = [];
   const insertSeen = new Set<string>();
   const backfillIds: { id: string; username: string }[] = [];
+  // lower(name) yang sudah terpakai — master existing + yang dijadwalkan insert.
+  // mcn_creators unik pada (platform, lower(name)), jadi dua kreator berbeda dengan
+  // nama tampilan sama akan menabrak 23505 dan menggagalkan SELURUH batch.
+  const nameTaken = new Set<string>(byName.keys());
 
   for (const row of rows) {
     const uKey = row.username.toLowerCase();
-    if (byUsername.has(uKey)) continue; // already matched by username
+    if (byUsername.has(uKey)) continue; // sudah cocok by username
 
     const nameMatch = byName.get(row.name.toLowerCase());
     if (nameMatch) {
-      // Fallback name: use this master + backfill username.
+      // Fallback name: pakai master itu + BACKFILL kolom username.
       nameMatch.username = row.username;
       byUsername.set(uKey, nameMatch);
       backfillIds.push({ id: nameMatch.id, username: row.username });
@@ -365,7 +399,12 @@ export async function runVideoGmvIngest(
 
     if (!insertSeen.has(uKey)) {
       insertSeen.add(uKey);
-      toInsert.push({ name: row.name, username: row.username, platform, status: "aktif" });
+      // Nama bentrok dgn kreator lain (nama tampilan TikTok tidak unik) → bedakan
+      // dengan username supaya insert tidak gagal; username tetap identitas aslinya.
+      let name = row.name;
+      if (nameTaken.has(name.toLowerCase())) name = `${row.name} (${row.username})`;
+      nameTaken.add(name.toLowerCase());
+      toInsert.push({ name, username: row.username, platform, status: "aktif" });
       autoCreated.push(row.username);
     }
   }
@@ -376,15 +415,20 @@ export async function runVideoGmvIngest(
     if (error) return { ok: false, message: `Gagal backfill username: ${error.message}` };
   }
 
-  // Insert kreator baru (batch) → daftarkan ke byUsername.
+  // Insert kreator baru → daftarkan ke byUsername. Dipotong per 500 supaya file besar
+  // (±1.900 kreator) tidak menabrak batas ukuran request.
   if (toInsert.length > 0) {
-    const { data: created, error: cErr } = await supabase
-      .from("mcn_creators")
-      .insert(toInsert)
-      .select("id, username");
-    if (cErr) return { ok: false, message: `Gagal membuat kreator baru: ${cErr.message}` };
     const insertData = new Map(toInsert.map((t) => [t.username.toLowerCase(), t]));
-    for (const c of created ?? []) {
+    const created: { id: string; username: string | null }[] = [];
+    for (let i = 0; i < toInsert.length; i += 500) {
+      const { data, error: cErr } = await supabase
+        .from("mcn_creators")
+        .insert(toInsert.slice(i, i + 500))
+        .select("id, username");
+      if (cErr) return { ok: false, message: `Gagal membuat kreator baru: ${cErr.message}` };
+      created.push(...((data ?? []) as { id: string; username: string | null }[]));
+    }
+    for (const c of created) {
       const uname = (c.username as string | null) ?? "";
       const src = insertData.get(uname.toLowerCase());
       byUsername.set(uname.toLowerCase(), {
@@ -409,13 +453,12 @@ export async function runVideoGmvIngest(
   if (!staging.ok) return { ok: false, message: staging.message };
   const failBatch = makeFailBatch(supabase, staging.batchRowId);
 
-  // 7. Build video_gmv insert rows (delete-then-insert per creator+period).
-  // Dedup per (kreator, video): export kadang mengulang baris video yang sama. Tanpa
-  // dedup, insert menabrak unique (creator_id, video_id, period_start) dan MENGGAGALKAN
-  // seluruh batch dengan error Postgres mentah. Occurrence terakhir menang (bukan
-  // dijumlahkan — baris berulang adalah pengulangan data yang sama, bukan tambahan).
-  const byCreatorVideo = new Map<string, Record<string, unknown>>();
-  const creatorIds = new Set<string>();
+  // 7. Build baris insert (delete-then-insert per kreator+periode).
+  // Dedup per kreator: satu kreator bisa muncul lebih dari sekali di file. Tanpa dedup,
+  // insert menabrak unique (creator_id, period_start) dan MENGGAGALKAN seluruh batch
+  // dengan error Postgres mentah. Occurrence terakhir menang (bukan dijumlahkan — baris
+  // berulang adalah pengulangan data yang sama, bukan tambahan).
+  const byCreator = new Map<string, Record<string, unknown>>();
   let unmatchedCount = 0;
   let dedupedCount = 0;
 
@@ -426,44 +469,58 @@ export async function runVideoGmvIngest(
       continue; // seharusnya tidak terjadi setelah resolve
     }
 
-    creatorIds.add(master.id);
-    const key = `${master.id}|${row.videoId}`;
-    if (byCreatorVideo.has(key)) dedupedCount++;
-    byCreatorVideo.set(key, {
+    if (byCreator.has(master.id)) dedupedCount++;
+    byCreator.set(master.id, {
       creator_id: master.id,
       batch_id,
-      video_id: row.videoId,
-      video_title: row.videoTitle,
       period_start: periodStart,
       period_end: periodEnd,
-      views: row.views ?? 0,
-      likes: row.likes ?? 0,
-      comments: row.comments ?? 0,
-      shares: row.shares ?? 0,
-      sales_value: row.salesValue ?? 0,
-      orders: row.orders ?? 0,
-      conversion_rate: row.conversionRate ?? 0,
+      sales_value: row.salesValue,
+      orders: row.orders,
+      aov: row.aov,
+      redemption_amount: row.redemptionAmount,
+      redeemed_orders: row.redeemedOrders,
+      new_posts: row.newPosts,
+      posts_with_views: row.postsWithViews,
+      posts_with_sales: row.postsWithSales,
+      video_views: row.videoViews,
+      ctr: row.ctr,
+      cvr: row.cvr,
+      avg_views_per_post: row.avgViewsPerPost,
+      avg_sales_value_per_post: row.avgSalesValuePerPost,
+      binding_status: row.bindingStatus,
+      creator_level: row.creatorLevel,
+      city: row.city,
     });
   }
 
-  const videoRowsToInsert = [...byCreatorVideo.values()];
+  const videoRowsToInsert = [...byCreator.values()];
+  const creatorIds = new Set(byCreator.keys());
   if (videoRowsToInsert.length === 0) {
-    return failBatch(`Tidak ada video ter-resolve dari file (${unmatchedCount} unmatched kreator).`);
+    return failBatch(`Tidak ada kreator ter-resolve dari file (${unmatchedCount} baris unmatched).`);
   }
 
-  // Delete existing video_gmv rows untuk creator+period (sebelum insert ulang).
-  const creatorIdArray = Array.from(creatorIds);
+  // Bersihkan baris minggu ini untuk kreator yang sama sebelum insert ulang, supaya
+  // proses ulang periode yang sama tidak menabrak unique constraint. Minggu LAIN tidak
+  // tersentuh — riwayat mingguan tetap utuh.
   const { error: dErr } = await supabase
     .from("creator_video_gmv")
     .delete()
-    .in("creator_id", creatorIdArray)
+    .in("creator_id", [...creatorIds])
     .eq("period_start", periodStart);
-  if (dErr) return failBatch(`Gagal membersihkan video GMV: ${dErr.message}`);
+  if (dErr) return failBatch(`Gagal membersihkan GMV video: ${dErr.message}`);
 
-  // Insert per-video rows.
-  if (videoRowsToInsert.length > 0) {
-    const { error } = await supabase.from("creator_video_gmv").insert(videoRowsToInsert);
-    if (error) return failBatch(`Gagal menulis video GMV: ${error.message}`);
+  // Insert per potongan: file mingguan berisi ~1.900 kreator, satu insert raksasa mudah
+  // kena batas ukuran request PostgREST.
+  const INSERT_CHUNK = 500;
+  for (let i = 0; i < videoRowsToInsert.length; i += INSERT_CHUNK) {
+    const chunk = videoRowsToInsert.slice(i, i + INSERT_CHUNK);
+    const { error } = await supabase.from("creator_video_gmv").insert(chunk);
+    if (error) {
+      return failBatch(
+        `Gagal menulis GMV video (baris ${i + 1}–${i + chunk.length} dari ${videoRowsToInsert.length}): ${error.message}`
+      );
+    }
   }
 
   // 8. Tandai processed + batch stats.
