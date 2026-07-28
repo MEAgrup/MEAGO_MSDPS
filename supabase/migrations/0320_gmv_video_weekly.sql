@@ -1,20 +1,29 @@
 -- =============================================================================
--- MSDPS · MCN · Migration 0318 — creator_video_gmv: per KREATOR per minggu
+-- MSDPS · MCN · Migration 0320 — GMV Video Mingguan (creator_video_gmv)
 -- =============================================================================
--- 0317 dirancang dengan asumsi export TikTok berisi baris per-VIDEO (video_id,
--- video_title). Setelah file export asli diperiksa ("Creator Analysis — PostOnly /
--- Managed Creators"), asumsi itu SALAH: satu baris = satu KREATOR untuk satu minggu,
--- tanpa kolom Video ID sama sekali. Metrik post sudah diagregasi oleh platform
--- (New posts, Posts with views, Video views, CTR, CVR, Avg. per post).
+-- Menyimpan GMV & metrik post mingguan per kreator dari export TikTok
+-- "Creator Analysis — PostOnly / Managed Creators" (slice video/post, TANPA live).
+-- Satu baris = satu KREATOR untuk satu minggu; file export tidak punya kolom
+-- Video ID — metrik post sudah diagregasi oleh platform (New posts, Posts with
+-- views, Video views, CTR, CVR, Avg. per post).
 --
--- Karena itu tabel dibentuk ulang mengikuti data nyata. Tabel 0317 masih KOSONG di
--- semua environment saat migrasi ini dibuat, jadi drop-and-recreate aman dan tidak
--- ada data yang hilang. Riwayat migrasi dibiarkan forward-only (0317 tidak diedit)
--- supaya DB yang sudah menjalankan 0317 tetap konsisten dengan berkas migrasi.
+-- Jalur ini TERPISAH dari "Upload Data Mingguan" (0303 creator_period_summary)
+-- yang memakai export performa biasa (yang punya kolom Live streams). Keduanya
+-- berbagi upload_batches, dibedakan lewat source_type ('tiktok_video' vs 'tiktok')
+-- dan namespace batch_id ('video:…' vs 'ingest:…').
 --
--- Catatan angka: "Sales value" pada file PostOnly = GMV dari video/post (bukan live) —
--- inilah sumber "GMV Video Mingguan". CTR/CVR disimpan sebagai FRAKSI apa adanya dari
--- file (0.0427… = 4,27%); konversi ke persen hanya di lapisan tampilan.
+-- Pola drop-raw sama seperti 0303/0315: file mentah tidak pernah dipersist —
+-- hanya agregat mingguan ini + arsip JSON hasil render di bucket weekly-archives.
+--
+-- Catatan angka:
+--   • "Sales value" pada file PostOnly = GMV dari video/post → kolom sales_value.
+--   • CTR/CVR disimpan sebagai FRAKSI apa adanya dari file (0.0427 = 4,27%);
+--     konversi ke persen hanya di lapisan tampilan.
+--   • Sel kosong di file tetap NULL (bukan 0) — "tidak ada data" berbeda dari nol.
+--
+-- `drop table if exists` di awal membuat migrasi ini idempoten dan aman dijalankan
+-- pada database yang sudah memakai bentuk rancangan awal (per-video). Tabel ini
+-- belum pernah menampung data di environment mana pun saat migrasi dibuat.
 -- =============================================================================
 
 drop table if exists creator_video_gmv cascade;
@@ -44,7 +53,7 @@ create table creator_video_gmv (
   avg_views_per_post        numeric,
   avg_sales_value_per_post  numeric,
 
-  -- Snapshot identitas saat minggu itu (informasi, master tetap di mcn_creators)
+  -- Snapshot identitas pada minggu itu (informasi; master tetap di mcn_creators)
   binding_status            text,
   creator_level             text,
   city                      text,
@@ -52,9 +61,9 @@ create table creator_video_gmv (
   created_at                timestamptz default now(),
   updated_at                timestamptz default now(),
 
-  -- Satu baris per (kreator, minggu). batch_id SENGAJA tidak masuk key: ingest memakai
-  -- delete-then-insert per (kreator, period_start), jadi tanpa ini satu kreator bisa
-  -- tersimpan dua kali untuk minggu yang sama lewat dua batch berbeda.
+  -- Satu baris per (kreator, minggu). batch_id SENGAJA tidak masuk key: ingest
+  -- memakai delete-then-insert per (kreator, period_start), jadi tanpa ini satu
+  -- kreator bisa tersimpan dua kali untuk minggu sama lewat dua batch berbeda.
   unique (creator_id, period_start)
 );
 
@@ -91,11 +100,36 @@ create policy cvg_delete on creator_video_gmv for delete to authenticated
 -- Sengaja TIDAK ada policy UPDATE: baris agregat hanya ditulis ulang lewat
 -- delete-then-insert, tidak pernah di-patch di tempat.
 
+-- ---- Trigger updated_at ------------------------------------------------------
+create or replace function creator_video_gmv_update_ts()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end $$;
+
 drop trigger if exists creator_video_gmv_update_ts_trigger on creator_video_gmv;
 create trigger creator_video_gmv_update_ts_trigger
   before update on creator_video_gmv
   for each row
   execute function creator_video_gmv_update_ts();
 
--- Fungsi purge sudah memangkas creator_video_gmv sejak 0317 (kolom period_start tetap
--- ada dengan nama & tipe yang sama), jadi tidak perlu diubah di sini.
+-- ---- Retensi: ikutkan tabel ini ke purge bulanan (0315) ----------------------
+-- Body sama dengan 0315 ditambah satu delete. Objek Storage tidak disentuh di sini
+-- (Postgres tak bisa menghapus objek fisik) — itu tugas sweep server action.
+create or replace function mcn_purge_expired_weekly_data()
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  months int;
+  cutoff date;
+begin
+  months := coalesce(
+    (select value::text::int from app_config where key = 'mcn.retention_months'),
+    6);
+  cutoff := current_date - make_interval(months => months);
+
+  delete from creator_period_summary     where period_start < cutoff;
+  delete from creator_subcat_segment_gmv where period_start < cutoff;
+  delete from creator_top_products        where period_start < cutoff;
+  delete from creator_video_gmv           where period_start < cutoff;
+end $$;
