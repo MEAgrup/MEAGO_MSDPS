@@ -11,3 +11,7 @@ supabase/.temp/
 # Secrets — never commit
 .supabase-token
 tsconfig.tsbuildinfo
+
+# skrip sekali-pakai backfill (tidak untuk repo)
+*-tmp.mts
+*-tmp.mjs
