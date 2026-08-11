@@ -1,5 +1,43 @@
 # Troubleshooting
 
+## 401 "Invalid API key" saat Tambah Karyawan (TERKONFIRMASI 2026-08-11)
+
+**Gejala.** Form terkirim, muncul `Supabase menolak service-role key (401): Invalid API key`.
+
+**Penyebab.** `SUPABASE_SERVICE_ROLE_KEY` dan `NEXT_PUBLIC_SUPABASE_URL` menunjuk **project
+Supabase yang berbeda**. Panel diagnosa di `/employees` melaporkan:
+
+```
+URL Supabase: https://vgjzvdpxrdoefoncuazw.supabase.co     ← MSDPS Staging
+Service-role key: … role "service_role", ref "mvcckptntrvzujqaoxxh"   ← MSDPS Production
+Panggilan admin ke Supabase GAGAL (401): Invalid API key
+```
+
+Key-nya sendiri sah (`role service_role`, utuh, tanpa spasi) — tapi milik project lain, dan
+Supabase selalu menolak key lintas-project dengan 401. Pesan Supabase tidak pernah menyinggung
+soal project, jadi tanpa perbandingan `ref` penyebabnya tidak kelihatan.
+
+**Asalnya** dari setup staging (`docs/STAGING.md` §3): environment Preview sudah diarahkan ke
+Supabase staging untuk `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`, tapi
+`SUPABASE_SERVICE_ROLE_KEY`-nya masih tertinggal memakai key production. Efeknya hanya terasa di
+fitur yang butuh service-role (buat akun karyawan / akun portal kreator) — sisanya jalan normal
+karena memakai anon key, sehingga masalahnya baru muncul saat QA menambah user.
+
+**Perbaikan konfigurasi.** Vercel → `meago-msdps` → Settings → Environment Variables →
+`SUPABASE_SERVICE_ROLE_KEY` pada scope yang bersangkutan: isi dengan `service_role` dari project
+**yang sama dengan URL-nya**, lalu redeploy environment itu.
+
+| Environment | URL | Ambil `service_role` dari |
+|---|---|---|
+| Production (`main`) | `mvcckptntrvzujqaoxxh` | project **MSDPS** |
+| Preview / branch `staging` | `vgjzvdpxrdoefoncuazw` | project **MSDPS Staging** |
+
+**Perbaikan di kode.** `adminKeyWarning()` kini membandingkan klaim `ref` di JWT dengan project
+ref pada URL dan menyebut mismatch-nya langsung (lengkap dengan nama project), jadi kasus ini
+tidak lagi perlu dibaca manual dari panel. Kalau bentuk key lolos semua cek tapi tetap ditolak
+401/403, `adminKeyRejectionHint()` mengarahkan ke kemungkinan terakhir: JWT secret sudah
+dirotasi atau legacy API key dinonaktifkan.
+
 ## "Internal server error" saat Tambah Karyawan / Buat akun portal kreator
 
 **Gejala.** Form `/employees` → *Tambah Karyawan* (atau `/meago/creators` → *Buat akun*)

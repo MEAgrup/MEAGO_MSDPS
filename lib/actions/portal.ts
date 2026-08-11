@@ -6,6 +6,7 @@ import {
   createAdminClient,
   hasAdminEnv,
   adminKeyWarning,
+  adminKeyRejectionHint,
   ADMIN_ENV_MESSAGE,
 } from "@/lib/supabase/admin";
 import { parseRupiah } from "@/lib/mcn/parsers";
@@ -225,15 +226,14 @@ export async function createCreatorAccount(
       if (/already|registered|exist/i.test(msg)) {
         return { ok: false, message: `Email "${email}" sudah terpakai oleh akun lain.` };
       }
-      const warning = adminKeyWarning();
-      const suffix = warning ? ` — ${warning}` : "";
       if (createErr?.status === 401 || createErr?.status === 403) {
         return {
           ok: false,
-          message: `Supabase menolak service-role key (${createErr.status}): ${msg}. Periksa SUPABASE_SERVICE_ROLE_KEY di environment${suffix}`,
+          message: `Supabase menolak service-role key (${createErr.status}): ${msg}. ${adminKeyRejectionHint()}`,
         };
       }
-      return { ok: false, message: `Gagal membuat akun: ${msg}${suffix}` };
+      const warning = adminKeyWarning();
+      return { ok: false, message: `Gagal membuat akun: ${msg}${warning ? ` — ${warning}` : ""}` };
     }
 
     // Guard balapan: hanya kaitkan bila kreator masih tanpa akun (dua admin paralel).

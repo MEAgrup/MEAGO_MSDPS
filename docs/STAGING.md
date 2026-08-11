@@ -75,6 +75,14 @@ Vercel untuk Preview environment):
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ambil dari dashboard Supabase project **"MSDPS Staging"** → Settings → API → `anon` `public` key |
 | `SUPABASE_SERVICE_ROLE_KEY` | ambil dari dashboard Supabase project **"MSDPS Staging"** → Settings → API → `service_role` key (rahasia, jangan expose ke client) |
 
+> ⚠️ **Ketiga variable harus berasal dari project yang sama.** Pernah terjadi (QA 2026-08-11):
+> URL + anon key sudah diarahkan ke staging, tapi `SUPABASE_SERVICE_ROLE_KEY` masih key
+> production. Akibatnya semua fitur yang butuh service-role — Tambah Karyawan dan Buat akun
+> portal kreator — gagal dengan `401 Invalid API key`, sementara fitur lain tetap jalan normal
+> (memakai anon key), sehingga masalahnya tidak kelihatan sampai ada yang menambah user.
+> Cek cepat: `/employees` → **"Cek koneksi service-role"**; panel menyebut `ref` key dan project
+> pada URL, dan langsung melaporkan bila keduanya beda.
+
 **Penting — gap yang harus diperhatikan:** branch Preview *lain* (semua feature branch
 selain `staging`) akan tetap memakai environment variable Preview **default**, yang
 saat ini masih menunjuk ke Supabase **production**. Artinya **setiap Preview deployment

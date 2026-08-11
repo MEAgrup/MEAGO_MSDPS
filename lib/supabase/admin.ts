@@ -47,6 +47,7 @@ export function createAdminClient() {
 export type AdminKeyInfo = {
   urlPresent: boolean;
   url: string | null;
+  urlRef: string | null;
   keyPresent: boolean;
   length: number;
   prefix: string;
@@ -55,6 +56,27 @@ export type AdminKeyInfo = {
   projectRef: string | null;
   hasWhitespace: boolean;
 };
+
+// Project ref Supabase yang dipakai repo ini (lihat docs/STAGING.md). Dipakai
+// hanya untuk memperjelas pesan diagnosa — ref bukan rahasia.
+const KNOWN_REFS: Record<string, string> = {
+  mvcckptntrvzujqaoxxh: "MSDPS Production",
+  vgjzvdpxrdoefoncuazw: "MSDPS Staging",
+  bqknstylbpwsnlgnzayw: "MCN MEA Production",
+  fomlangoiiywhexwoqom: "MCN MEA Staging",
+};
+
+function refLabel(ref: string): string {
+  const name = KNOWN_REFS[ref];
+  return name ? `"${ref}" (${name})` : `"${ref}"`;
+}
+
+// Ambil project ref dari URL Supabase: https://<ref>.supabase.co
+function projectRefFromUrl(url: string | null): string | null {
+  if (!url) return null;
+  const m = /^https?:\/\/([a-z0-9]+)\.supabase\./i.exec(url.trim());
+  return m ? m[1] : null;
+}
 
 // Payload JWT legacy Supabase memuat { role, ref }. Bukan rahasia (key-nya
 // sendiri tidak pernah dikembalikan) — hanya dipakai untuk membedakan
@@ -76,10 +98,12 @@ function decodeJwtClaims(token: string): { role: string | null; ref: string | nu
 export function describeAdminKey(): AdminKeyInfo {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? null;
   const raw = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const urlRef = projectRefFromUrl(url);
   if (!raw) {
     return {
       urlPresent: Boolean(url),
       url,
+      urlRef,
       keyPresent: false,
       length: 0,
       prefix: "",
@@ -101,6 +125,7 @@ export function describeAdminKey(): AdminKeyInfo {
   return {
     urlPresent: Boolean(url),
     url,
+    urlRef,
     keyPresent: true,
     length: raw.length,
     prefix: trimmed.slice(0, 10),
@@ -126,6 +151,22 @@ export function adminKeyWarning(info: AdminKeyInfo = describeAdminKey()): string
   if (info.format === "jwt" && info.role && info.role !== "service_role") {
     return `SUPABASE_SERVICE_ROLE_KEY berisi key dengan role "${info.role}", bukan "service_role" — kemungkinan tertukar dengan anon key. Ambil \`service_role\` di Supabase → Settings → API.`;
   }
+  // Key sah tapi milik project lain. Supabase menolaknya dengan 401 "Invalid API
+  // key" — pesan yang sama sekali tidak menyinggung soal project, sehingga tanpa
+  // cek ini penyebabnya tidak kelihatan. Kasus paling sering: environment
+  // staging/preview yang URL-nya sudah diarahkan ke project staging tapi
+  // service-role key-nya masih key production (lihat docs/STAGING.md §3).
+  if (info.projectRef && info.urlRef && info.projectRef !== info.urlRef) {
+    return (
+      `SUPABASE_SERVICE_ROLE_KEY milik project ${refLabel(info.projectRef)}, ` +
+      `sedangkan NEXT_PUBLIC_SUPABASE_URL menunjuk project ${refLabel(info.urlRef)}. ` +
+      `Key dari project lain selalu ditolak 401 "Invalid API key". Ambil \`service_role\` ` +
+      `dari project ${refLabel(info.urlRef)} → Settings → API, lalu redeploy.`
+    );
+  }
+  if (info.format === "jwt" && !info.role) {
+    return "SUPABASE_SERVICE_ROLE_KEY berbentuk JWT tapi isinya tidak bisa dibaca — kemungkinan terpotong saat paste. Isi ulang utuh lalu redeploy.";
+  }
   if (info.format === "unknown") {
     return "SUPABASE_SERVICE_ROLE_KEY tidak berbentuk key Supabase yang dikenal (bukan JWT `eyJ…` maupun `sb_secret_…`). Periksa nilainya.";
   }
@@ -134,4 +175,18 @@ export function adminKeyWarning(info: AdminKeyInfo = describeAdminKey()): string
     return "SUPABASE_SERVICE_ROLE_KEY kebawa spasi/newline saat paste (sudah dipangkas otomatis, tapi sebaiknya dirapikan di Vercel).";
   }
   return null;
+}
+
+// Dipakai saat Supabase menolak key (401/403) padahal bentuknya lolos semua cek
+// di atas — satu-satunya kemungkinan yang tersisa.
+export const ADMIN_KEY_REJECTED_HINT =
+  "Bentuk key benar dan project-nya cocok, jadi key-nya sendiri yang sudah tidak berlaku — " +
+  "kemungkinan JWT secret project sudah dirotasi, atau legacy API key dinonaktifkan di Supabase. " +
+  "Ambil `service_role` terbaru di Supabase → Settings → API, update di Vercel, lalu redeploy.";
+
+// Penjelasan untuk penolakan 401/403: pakai temuan bentuk key kalau ada,
+// selain itu jatuh ke kemungkinan terakhir. Selalu mengembalikan sesuatu —
+// penolakan key tidak boleh berakhir tanpa langkah lanjutan.
+export function adminKeyRejectionHint(info: AdminKeyInfo = describeAdminKey()): string {
+  return adminKeyWarning(info) ?? ADMIN_KEY_REJECTED_HINT;
 }

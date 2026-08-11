@@ -7,6 +7,7 @@ import {
   hasAdminEnv,
   describeAdminKey,
   adminKeyWarning,
+  adminKeyRejectionHint,
   ADMIN_ENV_MESSAGE,
 } from "@/lib/supabase/admin";
 import { isDivision } from "@/lib/divisions";
@@ -31,9 +32,7 @@ function createUserMessage(email: string, message: string, status?: number): str
     return `Email "${email}" sudah terpakai oleh akun lain.`;
   }
   if (status === 401 || status === 403) {
-    return withKeyWarning(
-      `Supabase menolak service-role key (${status}): ${message}. Periksa nilai SUPABASE_SERVICE_ROLE_KEY di environment.`
-    );
+    return `Supabase menolak service-role key (${status}): ${message}.\n\nDiagnosa: ${adminKeyRejectionHint()}`;
   }
   if (/weak|password/i.test(message)) {
     return `Password ditolak Supabase: ${message}`;
@@ -85,10 +84,13 @@ export async function checkAdminConnection(): Promise<ActionResult> {
     if (error) {
       lines.push(
         "",
-        `Panggilan admin ke Supabase GAGAL (${error.status ?? "tanpa status"}): ${error.message}`
+        `Panggilan admin ke Supabase GAGAL (${error.status ?? "tanpa status"}): ${error.message}`,
+        `Diagnosa: ${
+          error.status === 401 || error.status === 403
+            ? adminKeyRejectionHint(info)
+            : (adminKeyWarning(info) ?? "Bentuk env terlihat wajar — periksa status project Supabase dan konektivitas jaringan.")
+        }`
       );
-      const warning = adminKeyWarning(info);
-      if (warning) lines.push(`Diagnosa: ${warning}`);
       return { ok: false, message: lines.join("\n") };
     }
 
