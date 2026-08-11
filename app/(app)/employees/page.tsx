@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { AddEmployeeForm } from "./add-form";
+import { AddEmployeeForm, AdminConnectionCheck } from "./add-form";
 
 type Employee = {
   id: string;
@@ -71,6 +71,7 @@ export default async function EmployeesPage() {
       {canManage && (
         <div className="card">
           <h2>Tambah Karyawan</h2>
+          <AdminConnectionCheck />
           <AddEmployeeForm />
         </div>
       )}
