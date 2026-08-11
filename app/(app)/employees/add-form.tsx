@@ -2,10 +2,7 @@
 
 import { useActionState } from "react";
 import { createEmployee, type ActionResult } from "@/lib/actions/employees";
-
-const DIVISIONS = [
-  "Marketing", "BizDev", "Finance", "Account", "Ecommerce", "Ads", "KOL", "LiveStream",
-];
+import { DIVISIONS, DIVISION_LABELS } from "@/lib/divisions";
 
 export function AddEmployeeForm() {
   const [state, formAction, pending] = useActionState<ActionResult | null, FormData>(
@@ -40,7 +37,7 @@ export function AddEmployeeForm() {
           <select name="division" required defaultValue="">
             <option value="" disabled>Pilih divisi…</option>
             {DIVISIONS.map((d) => (
-              <option key={d} value={d}>{d}</option>
+              <option key={d} value={d}>{DIVISION_LABELS[d]}</option>
             ))}
           </select>
         </div>
