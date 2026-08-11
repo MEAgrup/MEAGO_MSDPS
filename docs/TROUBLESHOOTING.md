@@ -27,12 +27,28 @@ berhasil di deployment.
 - `app/(app)/campaigns/page.tsx` — metrik marketing tampil kosong kalau service key tidak ada,
   halaman tidak ikut jatuh (pola yang sudah dipakai `/meago/creators`).
 
+**Cara memastikan penyebabnya (production, satu klik).** `/employees` → card *Tambah Karyawan*
+→ tombol **"Cek koneksi service-role"** (OD/Director). Panel ini melaporkan, dari dalam runtime
+production itu sendiri:
+
+- apakah `NEXT_PUBLIC_SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` benar-benar terbaca;
+- bentuk key-nya — panjang, awalan, format (`jwt` / `sb_secret_` / `sb_publishable_`), dan untuk
+  JWT legacy juga klaim `role` + `ref` project. **Nilai key tidak pernah ditampilkan.**
+  Kalau yang terpasang ternyata anon key, panel langsung menyebut `role "anon"`;
+- hasil panggilan admin sungguhan ke Supabase (`auth.admin.listUsers`) beserta status errornya.
+
+Diagnosa yang sama otomatis ditempel ke pesan gagal di form, jadi percobaan berikutnya sudah
+membawa jawabannya tanpa perlu buka log.
+
 **Yang harus dilakukan di sisi konfigurasi** (tidak bisa dikerjakan dari repo):
 1. Vercel → project MSDPS → Settings → Environment Variables.
-2. Pastikan `SUPABASE_SERVICE_ROLE_KEY` ada dan ter-scope ke **Production** (dan Preview kalau
-   QA memakai preview deployment). Nilainya: Supabase → project `mvcckptntrvzujqaoxxh` →
-   Settings → API → `service_role`. Server-only — jangan diberi prefix `NEXT_PUBLIC_`.
-3. **Redeploy** — env baru tidak berlaku untuk deployment yang sudah jadi.
+2. Pastikan `SUPABASE_SERVICE_ROLE_KEY` ada dan **checkbox Production-nya tercentang** — env yang
+   hanya ter-scope Development/Preview tetap terlihat ada di daftar, tapi tidak terbaca di
+   production. Nilainya: Supabase → project `mvcckptntrvzujqaoxxh` → Settings → API →
+   `service_role` (bukan `anon`). Server-only — jangan diberi prefix `NEXT_PUBLIC_`.
+3. **Redeploy** — env baru/berubah tidak berlaku untuk deployment yang sudah jadi. Kalau env
+   ditambahkan setelah deployment production terakhir, runtime-nya masih memakai nilai lama
+   (yaitu: kosong).
 4. Ulangi Tambah Karyawan. Kalau masih gagal, form kini menampilkan penyebab aslinya
    (mis. "Email … sudah terpakai", "service-role key ditolak (401/403)").
 

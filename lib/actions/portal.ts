@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient, hasAdminEnv, ADMIN_ENV_MESSAGE } from "@/lib/supabase/admin";
+import {
+  createAdminClient,
+  hasAdminEnv,
+  adminKeyWarning,
+  ADMIN_ENV_MESSAGE,
+} from "@/lib/supabase/admin";
 import { parseRupiah } from "@/lib/mcn/parsers";
 import {
   PORTAL_REQUEST_TYPES,
@@ -205,7 +210,7 @@ export async function createCreatorAccount(
 
     if (!hasAdminEnv()) {
       console.error("[createCreatorAccount] SUPABASE_SERVICE_ROLE_KEY / NEXT_PUBLIC_SUPABASE_URL tidak tersedia di runtime.");
-      return { ok: false, message: ADMIN_ENV_MESSAGE };
+      return { ok: false, message: adminKeyWarning() ?? ADMIN_ENV_MESSAGE };
     }
 
     const admin = createAdminClient();
@@ -220,14 +225,15 @@ export async function createCreatorAccount(
       if (/already|registered|exist/i.test(msg)) {
         return { ok: false, message: `Email "${email}" sudah terpakai oleh akun lain.` };
       }
+      const warning = adminKeyWarning();
+      const suffix = warning ? ` — ${warning}` : "";
       if (createErr?.status === 401 || createErr?.status === 403) {
         return {
           ok: false,
-          message:
-            "Supabase menolak service-role key (401/403). Periksa nilai SUPABASE_SERVICE_ROLE_KEY di environment — kemungkinan salah salin atau sudah dirotasi.",
+          message: `Supabase menolak service-role key (${createErr.status}): ${msg}. Periksa SUPABASE_SERVICE_ROLE_KEY di environment${suffix}`,
         };
       }
-      return { ok: false, message: `Gagal membuat akun: ${msg}` };
+      return { ok: false, message: `Gagal membuat akun: ${msg}${suffix}` };
     }
 
     // Guard balapan: hanya kaitkan bila kreator masih tanpa akun (dua admin paralel).

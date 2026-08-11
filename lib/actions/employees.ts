@@ -2,13 +2,27 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient, hasAdminEnv, ADMIN_ENV_MESSAGE } from "@/lib/supabase/admin";
+import {
+  createAdminClient,
+  hasAdminEnv,
+  describeAdminKey,
+  adminKeyWarning,
+  ADMIN_ENV_MESSAGE,
+} from "@/lib/supabase/admin";
 import { isDivision } from "@/lib/divisions";
 
 export type ActionResult = { ok: boolean; message: string };
 
 const RANKS = ["staff", "lead"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Tempelkan diagnosa bentuk env ke pesan gagal. Kegagalan pembuatan akun di
+// production nyaris selalu soal env, dan pesan Supabase sendiri tidak pernah
+// menyebutkannya.
+function withKeyWarning(message: string): string {
+  const warning = adminKeyWarning();
+  return warning ? `${message}\n\nDiagnosa: ${warning}` : message;
+}
 
 // Terjemahkan kegagalan auth.admin.createUser jadi pesan yang bisa ditindaklanjuti.
 // Tanpa ini user hanya melihat teks mentah GoTrue (atau, dulu, layar 500 kosong).
@@ -17,12 +31,76 @@ function createUserMessage(email: string, message: string, status?: number): str
     return `Email "${email}" sudah terpakai oleh akun lain.`;
   }
   if (status === 401 || status === 403) {
-    return "Supabase menolak service-role key (401/403). Periksa nilai SUPABASE_SERVICE_ROLE_KEY di environment — kemungkinan salah salin atau sudah dirotasi.";
+    return withKeyWarning(
+      `Supabase menolak service-role key (${status}): ${message}. Periksa nilai SUPABASE_SERVICE_ROLE_KEY di environment.`
+    );
   }
   if (/weak|password/i.test(message)) {
     return `Password ditolak Supabase: ${message}`;
   }
-  return `Gagal membuat akun login: ${message}`;
+  return withKeyWarning(`Gagal membuat akun login (${status ?? "tanpa status"}): ${message}`);
+}
+
+// checkAdminConnection — panel diagnosa untuk OD/Director. Menjawab satu
+// pertanyaan yang tidak bisa dijawab dari luar: apakah runtime production ini
+// benar-benar memegang service-role key yang sah, dan apakah panggilan admin ke
+// Supabase berhasil. Tidak pernah menampilkan nilai key — hanya bentuknya.
+export async function checkAdminConnection(): Promise<ActionResult> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+    const { data: me } = await supabase
+      .from("employees")
+      .select("is_od, is_director")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (!me || (!me.is_od && !me.is_director)) {
+      return { ok: false, message: "Hanya OD/Director yang boleh menjalankan diagnosa." };
+    }
+
+    const info = describeAdminKey();
+    const lines: string[] = [
+      `URL Supabase: ${info.url ?? "TIDAK TERBACA"}`,
+      `Service-role key: ${
+        info.keyPresent
+          ? `terbaca (${info.length} karakter, awalan "${info.prefix}…", format ${info.format}${
+              info.role ? `, role "${info.role}"` : ""
+            }${info.projectRef ? `, ref "${info.projectRef}"` : ""})`
+          : "TIDAK TERBACA"
+      }`,
+    ];
+
+    if (!hasAdminEnv()) {
+      lines.push("", `Diagnosa: ${adminKeyWarning() ?? ADMIN_ENV_MESSAGE}`);
+      return { ok: false, message: lines.join("\n") };
+    }
+
+    // Panggilan admin paling ringan yang tetap butuh service-role: baca 1 user.
+    const admin = createAdminClient();
+    const { error } = await admin.auth.admin.listUsers({ page: 1, perPage: 1 });
+    if (error) {
+      lines.push(
+        "",
+        `Panggilan admin ke Supabase GAGAL (${error.status ?? "tanpa status"}): ${error.message}`
+      );
+      const warning = adminKeyWarning(info);
+      if (warning) lines.push(`Diagnosa: ${warning}`);
+      return { ok: false, message: lines.join("\n") };
+    }
+
+    lines.push("", "Panggilan admin ke Supabase BERHASIL — service-role key valid di runtime ini.");
+    const warning = adminKeyWarning(info);
+    if (warning) lines.push(`Catatan: ${warning}`);
+    return { ok: true, message: lines.join("\n") };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("[checkAdminConnection] exception:", e);
+    return { ok: false, message: `Diagnosa gagal dijalankan: ${detail}` };
+  }
 }
 
 export async function createEmployee(
@@ -83,7 +161,7 @@ export async function createEmployee(
     // Supabase supaya salah konfigurasi terbaca jelas, bukan jadi 500.
     if (!hasAdminEnv()) {
       console.error("[createEmployee] SUPABASE_SERVICE_ROLE_KEY / NEXT_PUBLIC_SUPABASE_URL tidak tersedia di runtime.");
-      return { ok: false, message: ADMIN_ENV_MESSAGE };
+      return { ok: false, message: withKeyWarning(ADMIN_ENV_MESSAGE) };
     }
 
     const admin = createAdminClient();
@@ -125,6 +203,6 @@ export async function createEmployee(
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
     console.error("[createEmployee] exception:", e);
-    return { ok: false, message: `Gagal menambah karyawan: ${detail}` };
+    return { ok: false, message: withKeyWarning(`Gagal menambah karyawan: ${detail}`) };
   }
 }

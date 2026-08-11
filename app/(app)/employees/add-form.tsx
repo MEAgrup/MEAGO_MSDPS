@@ -1,8 +1,45 @@
 "use client";
 
-import { useActionState } from "react";
-import { createEmployee, type ActionResult } from "@/lib/actions/employees";
+import { useActionState, useState, useTransition } from "react";
+import {
+  createEmployee,
+  checkAdminConnection,
+  type ActionResult,
+} from "@/lib/actions/employees";
 import { DIVISIONS, DIVISION_LABELS } from "@/lib/divisions";
+
+// Pesan bisa multi-baris (diagnosa env) — pertahankan barisnya.
+const MSG_STYLE = { marginBottom: 12, display: "block", whiteSpace: "pre-line" as const };
+
+// AdminConnectionCheck — jawab satu pertanyaan yang tidak bisa dijawab dari luar
+// production: apakah runtime ini benar-benar memegang service-role key yang sah.
+// Dipakai saat pembuatan akun gagal tanpa sebab yang jelas.
+export function AdminConnectionCheck() {
+  const [result, setResult] = useState<ActionResult | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <button
+        type="button"
+        className="btn-ghost sm"
+        disabled={pending}
+        onClick={() =>
+          startTransition(async () => {
+            setResult(await checkAdminConnection());
+          })
+        }
+      >
+        {pending ? "Memeriksa…" : "Cek koneksi service-role"}
+      </button>
+      {result && (
+        <div className={result.ok ? "ok-msg" : "err"} style={{ ...MSG_STYLE, marginTop: 10 }}>
+          {result.message}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function AddEmployeeForm() {
   const [state, formAction, pending] = useActionState<ActionResult | null, FormData>(
@@ -13,7 +50,7 @@ export function AddEmployeeForm() {
   return (
     <form action={formAction}>
       {state && (
-        <div className={state.ok ? "badge green" : "err"} style={{ marginBottom: 12, display: "block" }}>
+        <div className={state.ok ? "badge green" : "err"} style={MSG_STYLE}>
           {state.message}
         </div>
       )}
