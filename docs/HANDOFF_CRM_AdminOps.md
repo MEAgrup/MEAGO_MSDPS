@@ -148,14 +148,36 @@ masih dipakai section arsip).
    Juga `main` punya fix #17 (`lib/divisions.ts`, `app/error.tsx`, hardening `createAdminClient`
    di `lib/actions/employees.ts`/`portal.ts`/`admin.ts`) yang **belum ada di `staging`**.
    Harus direkonsiliasi sebelum merge `staging` → `main`. Sesi ini hanya mem-port `app/error.tsx`.
-2. **Drift schema `brand_deals` tanpa migrasi di repo.** Staging **dan** production sama-sama
-   punya ~19 kolom POI tambahan (`kategori_poi`, `pic_name`, `pic_whatsapp`, `bentuk_kerjasama`,
-   `nominal_harga`, `benefit`, `visit_start_date/time`, `visit_end_date/time`, `kreator_needed`,
-   `konten_needed`, `brief_link`, `bd_id`, `listing_date`, `visit_realized_date`,
-   `kreator_realized`, `video_realized`, `visit_checked`, `poin`, `transaction_id`) plus view
-   `v_poi_deal_summary` — **tidak ada file migrasinya di repo**, dipasang langsung ke DB.
-   Sesi ini tidak menyentuhnya. Sebaiknya dibuatkan migrasi susulan sebelum ada yang menjalankan
-   `supabase db push` dan bingung dengan hasilnya.
+2. **Drift schema `brand_deals` tanpa migrasi di repo — sudah ditulis migrasinya (0322),
+   BELUM di-apply.** Audit lanjutan 2026-08-28 menemukan drift-nya lebih besar dari catatan
+   awal: **21 kolom** POI (`kategori_poi` … `transaction_id`), 2 CHECK, 2 FK, 2 index, view
+   `v_poi_deal_summary`, **plus dua fungsi SECURITY DEFINER yang belum tercatat sama sekali**
+   — `update_poi_realisasi()` dan `create_poi_finance()` (yang terakhir menerbitkan transaksi
+   Finance M5 dan bisa membuat baris `merchants` baru). Semuanya ada di production **dan**
+   staging, tidak ada di repo.
+
+   Yang memakainya bukan kode repo ini: pencarian di `main` dan `staging` hanya menemukan
+   `poi_location` (0312) — tidak ada referensi ke 21 kolom itu, ke view, atau ke kedua RPC.
+   Padahal fiturnya hidup: production punya 60 baris `brand_deals` dan **semuanya** baris POI.
+   Jadi konsumennya ada di luar repo ini; jangan menghapus objek-objek itu hanya karena tidak
+   dipakai `.from()` di sini.
+
+   `supabase/migrations/0322_brand_deals_poi_drift.sql` mendokumentasikan semua objek itu
+   secara idempoten. Sudah diuji dengan menjalankannya utuh di Supabase staging di dalam
+   transaksi lalu `rollback`: berjalan bersih, dan jumlah kolom/constraint/index serta body
+   view tidak berubah sedikit pun (no-op).
+
+   **Satu perubahan nyata yang disengaja di dalamnya:** `v_poi_deal_summary` di staging masih
+   tanpa `security_invoker` sehingga melewati RLS `brand_deals` — advisor security staging
+   menandainya `security_definer_view` level **ERROR**, satu-satunya ERROR di project itu dan
+   satu-satunya regresi terhadap pembersihan 0314. Production sudah `security_invoker = true`.
+   0322 menyetel invoker + pola grant 0008/0314 (`revoke all`, lalu `grant select to
+   authenticated`), jadi di staging ia memperbaiki advisor dan di production ia hanya mencabut
+   grant ambient `anon` (yang sudah tersaring RLS, dan tidak ada satu pun request ke view/RPC
+   itu di log 23 jam terakhir). Dampak datanya nihil sekarang — `brand_deals` staging 0 baris.
+
+   Belum di-apply ke project manapun. Terapkan ke staging dulu, verifikasi advisor ERROR-nya
+   hilang, baru production.
 
 ## Format import bulk (untuk dokumentasi user)
 
