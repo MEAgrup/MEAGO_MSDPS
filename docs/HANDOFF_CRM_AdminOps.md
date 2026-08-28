@@ -6,21 +6,26 @@ sudah di-merge (fast-forward) ke **`staging`**. Kedua branch ada di commit **`7d
 ## Ringkasan status (untuk chat berikutnya)
 
 Tiga fitur inti Web App Google Apps Script *"Forms Leads Masuk & Dashboard CRM"* sudah
-dipindahkan ke MSDPS, mengganti **flow** dua tab existing. **Kode selesai, DB staging selesai
-& teruji SQL.** Yang BELUM: verifikasi UI end-to-end lewat browser.
+dipindahkan ke MSDPS, mengganti **flow** dua tab existing. **Kode selesai; DB staging DAN
+production selesai & teruji SQL.** Yang BELUM: verifikasi UI end-to-end lewat browser.
 
-**BLOCKER (bukan bug kode, tidak bisa dikerjakan dari repo):** deployment di
-`meago-msdps-git-staging-meagency.vercel.app` **membaca database PRODUCTION**, bukan staging —
-lihat `docs/STAGING.md` §3b untuk bukti log. Selama itu belum dibereskan, fitur ini tidak bisa
-dites lewat URL staging (tabelnya tidak ada di DB yang dibaca), **dan setiap test lewat URL itu
-sebenarnya menulis ke database production.**
+**Penyebab error yang dilaporkan** (`Application error … digest 3022209123`): deployment Preview
+branch `staging` **kehilangan ketiga environment variable Supabase**, sehingga
+`createServerClient(undefined)` melempar `supabaseUrl is required.` sebelum menghubungi siapa
+pun — build production menyembunyikan pesan aslinya. Detail + perbaikannya di
+`docs/STAGING.md` §3c. Sejak commit di branch ini, kondisi itu tidak lagi tampil sebagai layar
+error: middleware me-rewrite semua route ke `/konfigurasi` yang menyebut variabel mana yang
+hilang dan mengingatkan bahwa **Redeploy wajib**.
 
-**UPDATE (akhir sesi):** Yohan meminta push ke production, jadi migrasi **0321 + 0323 sudah
-diterapkan ke Supabase production `mvcckptntrvzujqaoxxh`** — smoke test 10/10 lolos + probe RLS
-lolos + hash schema identik dengan staging. Karena deployment di URL staging membaca DB
-production (lihat blocker di atas), fitur ini **sekarang sudah bisa dibuka dari URL staging**.
-Perbaikan env Vercel tetap perlu dikerjakan supaya staging benar-benar terpisah — sekarang
-alasannya bukan lagi "fitur tidak jalan", tapi "test staging menulis ke DB production".
+**KOREKSI:** sesi ini sempat menyimpulkan "URL staging membaca DB production" dari log Supabase.
+Kesimpulan itu **ditarik** — request production yang terlihat ternyata berbentuk query `/deals`
+versi LAMA, jadi datang dari site production, bukan dari deployment staging. `edge_logs` staging
+yang kosong dijelaskan oleh env yang hilang di atas. Apakah scoping env §3 sudah dikerjakan
+**masih belum diketahui**; cek lewat `/konfigurasi` setelah deployment punya env lagi.
+
+**Migrasi sudah masuk ke DUA project.** Atas permintaan Yohan, **0321 + 0323 diterapkan ke
+Supabase production `mvcckptntrvzujqaoxxh`** selain staging — smoke test 10/10 lolos di keduanya,
+probe RLS lolos, hash schema identik. Jadi tabel CRM ada di mana pun deployment itu menunjuk.
 
 ## Konteks singkat
 
@@ -153,15 +158,25 @@ masih dipakai section arsip).
 
 ## Pekerjaan tersisa (urut prioritas)
 
-1. **Test UI end-to-end** di URL staging (DB-nya production, jadi tabelnya sudah ada). Kalau ada
-   error, layarnya sekarang menampilkan pesan + `digest` — laporkan digest-nya.
-2. **Merge `staging` → `main`** kalau ingin fitur ini muncul di URL production
-   (`meago-msdps.vercel.app`). BELUM dikerjakan: merge-nya bukan fast-forward dan bertabrakan di
-   nomor migrasi (lihat utang teknis #1), plus akan ikut men-deploy semua pekerjaan `staging` lain
-   yang belum pernah masuk `main`. Perlu keputusan + resolusi konflik tersendiri.
-3. **Yohan: perbaiki env var Vercel** (`docs/STAGING.md` §3 + §3b) — scope 3 variable Preview ke
-   branch `staging`, lalu **Redeploy**. Sekarang alasannya bukan lagi "fitur tidak jalan"
-   (sudah jalan), tapi supaya **test lewat URL staging berhenti menulis ke DB production**.
+1. **Yohan: isi environment variable Supabase di Vercel, lalu REDEPLOY.** Ini yang bikin URL
+   staging error — var-nya hilang, bukan kodenya. Tiga variable (`NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) dengan scope **Preview**
+   di-scope ke branch `staging` (`docs/STAGING.md` §3). **Redeploy wajib** — `NEXT_PUBLIC_*`
+   di-inline saat build, jadi menambahkannya di dashboard tidak mengubah deployment yang sudah
+   jadi.
+2. **Cek `/konfigurasi` di URL staging** — halaman itu terbuka tanpa login dan menyebut project
+   Supabase yang sedang dibaca beserta label `(STAGING)` / `(PRODUCTION)`. Ini sekaligus
+   menjawab pertanyaan yang masih terbuka: apakah scoping §3 mengarah ke project yang benar.
+   Kalau ternyata PRODUCTION, bereskan dulu sebelum URL itu dipakai uji coba — test-nya akan
+   menulis ke DB production.
+3. **Test UI end-to-end** (login BD → Forms Leads Masuk → Update Status → Pendataan Transaksi).
+   Tabel CRM sudah ada di kedua project, jadi tidak ada lagi kemungkinan "tabel tidak
+   ditemukan". Kalau muncul error lain, layarnya menampilkan pesan + `digest` — laporkan
+   digest-nya.
+4. **Merge `staging` → `main`** kalau ingin fitur ini muncul di URL production
+   (`meago-msdps.vercel.app`). BELUM dikerjakan: merge-nya bukan fast-forward, bertabrakan di
+   nomor migrasi (lihat utang teknis #1), dan akan ikut men-deploy semua pekerjaan `staging`
+   lain yang belum pernah masuk `main`. Perlu keputusan + resolusi konflik tersendiri.
 
 ## Dua utang teknis yang ditemukan sesi ini (BUKAN dari perubahan ini)
 
@@ -171,14 +186,36 @@ masih dipakai section arsip).
    Juga `main` punya fix #17 (`lib/divisions.ts`, `app/error.tsx`, hardening `createAdminClient`
    di `lib/actions/employees.ts`/`portal.ts`/`admin.ts`) yang **belum ada di `staging`**.
    Harus direkonsiliasi sebelum merge `staging` → `main`. Sesi ini hanya mem-port `app/error.tsx`.
-2. **Drift schema `brand_deals` tanpa migrasi di repo.** Staging **dan** production sama-sama
-   punya ~19 kolom POI tambahan (`kategori_poi`, `pic_name`, `pic_whatsapp`, `bentuk_kerjasama`,
-   `nominal_harga`, `benefit`, `visit_start_date/time`, `visit_end_date/time`, `kreator_needed`,
-   `konten_needed`, `brief_link`, `bd_id`, `listing_date`, `visit_realized_date`,
-   `kreator_realized`, `video_realized`, `visit_checked`, `poin`, `transaction_id`) plus view
-   `v_poi_deal_summary` — **tidak ada file migrasinya di repo**, dipasang langsung ke DB.
-   Sesi ini tidak menyentuhnya. Sebaiknya dibuatkan migrasi susulan sebelum ada yang menjalankan
-   `supabase db push` dan bingung dengan hasilnya.
+2. **Drift schema `brand_deals` tanpa migrasi di repo — sudah ditulis migrasinya (0322),
+   BELUM di-apply.** Audit lanjutan 2026-08-28 menemukan drift-nya lebih besar dari catatan
+   awal: **21 kolom** POI (`kategori_poi` … `transaction_id`), 2 CHECK, 2 FK, 2 index, view
+   `v_poi_deal_summary`, **plus dua fungsi SECURITY DEFINER yang belum tercatat sama sekali**
+   — `update_poi_realisasi()` dan `create_poi_finance()` (yang terakhir menerbitkan transaksi
+   Finance M5 dan bisa membuat baris `merchants` baru). Semuanya ada di production **dan**
+   staging, tidak ada di repo.
+
+   Yang memakainya bukan kode repo ini: pencarian di `main` dan `staging` hanya menemukan
+   `poi_location` (0312) — tidak ada referensi ke 21 kolom itu, ke view, atau ke kedua RPC.
+   Padahal fiturnya hidup: production punya 60 baris `brand_deals` dan **semuanya** baris POI.
+   Jadi konsumennya ada di luar repo ini; jangan menghapus objek-objek itu hanya karena tidak
+   dipakai `.from()` di sini.
+
+   `supabase/migrations/0322_brand_deals_poi_drift.sql` mendokumentasikan semua objek itu
+   secara idempoten. Sudah diuji dengan menjalankannya utuh di Supabase staging di dalam
+   transaksi lalu `rollback`: berjalan bersih, dan jumlah kolom/constraint/index serta body
+   view tidak berubah sedikit pun (no-op).
+
+   **Satu perubahan nyata yang disengaja di dalamnya:** `v_poi_deal_summary` di staging masih
+   tanpa `security_invoker` sehingga melewati RLS `brand_deals` — advisor security staging
+   menandainya `security_definer_view` level **ERROR**, satu-satunya ERROR di project itu dan
+   satu-satunya regresi terhadap pembersihan 0314. Production sudah `security_invoker = true`.
+   0322 menyetel invoker + pola grant 0008/0314 (`revoke all`, lalu `grant select to
+   authenticated`), jadi di staging ia memperbaiki advisor dan di production ia hanya mencabut
+   grant ambient `anon` (yang sudah tersaring RLS, dan tidak ada satu pun request ke view/RPC
+   itu di log 23 jam terakhir). Dampak datanya nihil sekarang — `brand_deals` staging 0 baris.
+
+   Belum di-apply ke project manapun. Terapkan ke staging dulu, verifikasi advisor ERROR-nya
+   hilang, baru production.
 
 ## Format import bulk (untuk dokumentasi user)
 

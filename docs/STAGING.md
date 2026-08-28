@@ -87,38 +87,60 @@ langsung ke production dari sebuah branch, baru override per-branch seperlunya.
 
 ---
 
-## 3b. ⚠️ TERVERIFIKASI 2026-08-28: staging URL masih membaca Supabase PRODUCTION
+## 3b. Status §3 masih BELUM terverifikasi (dikoreksi 2026-08-28)
 
-Langkah manual di §3 **belum pernah dikerjakan**. Bukti dari log Supabase (bukan dugaan):
+Bagian ini sebelumnya menyatakan "TERVERIFIKASI: staging URL membaca Supabase PRODUCTION".
+**Kesimpulan itu DITARIK** — buktinya tidak sekuat yang diklaim.
 
-- Project **staging** `vgjzvdpxrdoefoncuazw`: `edge_logs` **kosong** sejak 2026-08-27 09:37 UTC —
-  tidak ada satu pun request HTTP masuk saat `meago-msdps-git-staging-meagency.vercel.app`
-  dibuka.
+Apa yang benar-benar diamati saat URL staging error:
+
+- Project **staging** `vgjzvdpxrdoefoncuazw`: `edge_logs` kosong — nol request masuk.
 - Project **production** `mvcckptntrvzujqaoxxh`: pada saat yang sama menerima request dari
-  Vercel (`Vercel Edge Functions` untuk middleware, lalu `node` untuk Server Component),
-  termasuk query milik halaman `/deals`.
+  Vercel, termasuk query halaman `/deals`.
 
-Artinya deployment di URL staging memakai **database production**. Konsekuensinya:
+Kesimpulan "berarti URL staging memakai DB production" ternyata keliru, karena:
 
-1. Migrasi yang diterapkan ke Supabase staging **tidak terlihat** dari URL staging — fitur baru
-   akan gagal dengan "tabel tidak ditemukan".
-2. Lebih penting: **setiap test lewat URL "staging" sebenarnya menulis ke database production.**
-   URL itu belum boleh dipakai untuk uji coba sampai §3 dibereskan.
+1. Query `/deals` yang tercatat di production berbentuk `employees?select=id,full_name` —
+   itu bentuk halaman `/deals` **versi lama**. Versi baru meminta
+   `id,full_name,division`. Jadi request itu datang dari **site production** (branch `main`),
+   bukan dari deployment staging.
+2. `edge_logs` staging yang kosong punya penjelasan lain yang lebih pas, yaitu §3c di bawah:
+   env Supabase deployment staging **hilang sama sekali**, sehingga client-nya gagal dibuat
+   dan tidak ada request yang pernah dikirim ke project mana pun.
 
-**Catatan 2026-08-28:** migrasi CRM (0321+0323) akhirnya diterapkan ke **kedua** project atas
-permintaan Yohan, jadi gejala #1 hilang dan fitur bisa dibuka dari URL staging. Gejala #2 TETAP
-ADA dan itu alasan utama §3 masih harus dikerjakan.
+Jadi: penyebab error yang dilaporkan adalah **env yang hilang** (§3c), bukan salah-sambung
+project. Apakah scoping §3 sudah pernah dikerjakan **masih belum diketahui** dan tetap harus
+dicek — begitu deployment punya env lagi, buka `/konfigurasi` di URL staging: halaman itu
+menyebut project Supabase yang sedang dibaca beserta label `(STAGING)` / `(PRODUCTION)`.
+
+Kalau ternyata memang menunjuk ke production, dua konsekuensinya: (1) migrasi yang hanya
+diterapkan ke Supabase staging tidak akan terlihat dari URL itu; (2) yang lebih penting,
+**setiap test lewat URL "staging" sebenarnya menulis ke database production** — dan itu harus
+dibereskan sebelum URL itu dipakai uji coba.
 
 **Perbaikan (harus dikerjakan di dashboard Vercel, tidak bisa dari repo):** ikuti §3 — tambahkan
 tiga variable dengan scope **Preview** yang dibatasi ke branch `staging`, lalu **redeploy**
 (env baru tidak berlaku untuk deployment yang sudah jadi). Sangat disarankan juga men-set
 default Preview (tanpa batasan branch) ke nilai staging, supaya semua preview branch lain tidak
-lagi menyentuh production.
+menyentuh production.
 
-**Cara cek cepat setelah diperbaiki:** buka `/leads` atau `/deals` di URL staging. Kalau tabel
-CRM belum ada di project yang dibaca, halaman menampilkan banner merah yang **menyebutkan ref
-project Supabase yang sedang dipakai** (`lib/supabase/project-ref.ts`) — jadi salah-sambung
-langsung kelihatan tanpa perlu buka log.
+**Catatan migrasi CRM:** 0321 + 0323 sudah diterapkan ke **kedua** project (staging dan
+production) atas permintaan Yohan, jadi tabel `crm_leads`/`crm_transaksi` ada di mana pun
+deployment itu menunjuk.
+
+### 3c. Kalau env-nya justru HILANG (kejadian 2026-08-28)
+
+Gejalanya beda dan sempat membingungkan: setiap halaman menampilkan *"An error occurred in the
+Server Components render"* + digest, sementara **log Supabase kosong di semua project** — tidak
+ada satu pun request masuk. Sebabnya deployment tidak punya `NEXT_PUBLIC_SUPABASE_URL` /
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` sama sekali, sehingga `createServerClient(undefined)` melempar
+`supabaseUrl is required.` sebelum sempat menghubungi siapa pun — dan build production
+menyembunyikan pesan aslinya.
+
+Sejak perbaikan di branch ini, kondisi itu tidak lagi tampil sebagai layar error: middleware
+me-*rewrite* semua route ke `/konfigurasi`, yang menyebut variabel mana yang hilang dan
+mengingatkan bahwa **Redeploy wajib** (variabel `NEXT_PUBLIC_*` di-inline saat build, jadi
+menambahkannya di dashboard tidak mengubah deployment yang sudah jadi).
 
 ---
 

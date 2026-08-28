@@ -42,7 +42,8 @@ export default async function DashboardPage() {
           </table>
         ) : (
           <p>
-            Akun login Anda ({user!.email}) belum tertaut ke data karyawan. Minta OD/Director
+            Akun login Anda ({user?.email ?? "sesi tidak terbaca"}) belum tertaut ke data
+            karyawan. Minta OD/Director
             menambahkan Anda di <strong>Kelola Karyawan</strong>.
           </p>
         )}
