@@ -65,8 +65,8 @@ export default async function DealsPage() {
   const supabase = await getCachedClient();
 
   const [
-    transaksi,
-    poiOptions,
+    transaksiRes,
+    poiRes,
     { data: empsRaw },
     { data: dealsRaw },
     { data: merchantsRaw },
@@ -97,6 +97,12 @@ export default async function DealsPage() {
   ]);
 
   const employees = (empsRaw as EmployeeOption[] | null) ?? [];
+  const transaksi = transaksiRes.rows;
+  const poiOptions = poiRes.rows;
+
+  // Kegagalan baca CRM ditampilkan sebagai peringatan, bukan exception: registry
+  // deal MCN di bawah tetap terbaca dan halaman tidak jatuh jadi 500 kosong.
+  const dbErrors = [transaksiRes.error, poiRes.error].filter((e): e is string => e !== null);
 
   // Lead Dealing/Renewal yang belum punya satu pun transaksi (notifikasi
   // "Perlu Input Transaksi" pada web app Apps Script).
@@ -129,6 +135,17 @@ export default async function DealsPage() {
         <Link href="/leads">Leads &amp; Prospek</Link>. Satu lead bisa punya banyak transaksi
         (visit berulang / perpanjangan).
       </p>
+
+      {dbErrors.length > 0 && (
+        <div className="card" style={{ borderColor: "#fca5a5", background: "#fef2f2" }}>
+          <h2 style={{ color: "#b91c1c" }}>Data transaksi CRM tidak dapat dimuat</h2>
+          {dbErrors.map((e) => (
+            <p className="section-sub" key={e} style={{ marginBottom: 6 }}>
+              {e}
+            </p>
+          ))}
+        </div>
+      )}
 
       {belumTercatat.length > 0 && (
         <div className="card" style={{ borderColor: "#fcd34d", background: "#fffbeb" }}>

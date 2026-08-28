@@ -69,8 +69,8 @@ export default async function LeadsPage() {
   const supabase = await getCachedClient();
 
   const [
-    crmLeads,
-    trxLeadIds,
+    crmLeadsRes,
+    trxLeadIdsRes,
     { data: empsRaw },
     { data: legacyLeads },
     { data: legacyAttempts },
@@ -100,13 +100,19 @@ export default async function LeadsPage() {
       .order("created_at", { ascending: false }),
   ]);
 
-  const leads = crmLeads;
+  const leads = crmLeadsRes.rows;
   const employees = (empsRaw as EmployeeOption[] | null) ?? [];
+
+  // Kegagalan baca CRM ditampilkan sebagai peringatan, bukan exception: arsip
+  // Module 1 di bawah tetap terbaca dan halaman tidak jatuh jadi 500 kosong.
+  const dbErrors = [crmLeadsRes.error, trxLeadIdsRes.error].filter(
+    (e): e is string => e !== null
+  );
 
   // Jumlah transaksi per lead — dipakai untuk badge "belum ada transaksi" dan
   // banner pengingat (mirror notifikasi "Perlu Input Transaksi" web app lama).
   const trxCountByLead: Record<string, number> = {};
-  for (const t of trxLeadIds) {
+  for (const t of trxLeadIdsRes.rows) {
     trxCountByLead[t.crm_lead_id] = (trxCountByLead[t.crm_lead_id] ?? 0) + 1;
   }
 
@@ -131,6 +137,17 @@ export default async function LeadsPage() {
         Lead yang sudah <b>Dealing</b> atau <b>Renewal</b> didata transaksinya di{" "}
         <Link href="/deals">Merchant Deals</Link>.
       </p>
+
+      {dbErrors.length > 0 && (
+        <div className="card" style={{ borderColor: "#fca5a5", background: "#fef2f2" }}>
+          <h2 style={{ color: "#b91c1c" }}>Data CRM tidak dapat dimuat</h2>
+          {dbErrors.map((e) => (
+            <p className="section-sub" key={e} style={{ marginBottom: 6 }}>
+              {e}
+            </p>
+          ))}
+        </div>
+      )}
 
       {belumTercatat.length > 0 && (
         <div className="card" style={{ borderColor: "#fcd34d", background: "#fffbeb" }}>

@@ -87,6 +87,37 @@ langsung ke production dari sebuah branch, baru override per-branch seperlunya.
 
 ---
 
+## 3b. ⚠️ TERVERIFIKASI 2026-08-28: staging URL masih membaca Supabase PRODUCTION
+
+Langkah manual di §3 **belum pernah dikerjakan**. Bukti dari log Supabase (bukan dugaan):
+
+- Project **staging** `vgjzvdpxrdoefoncuazw`: `edge_logs` **kosong** sejak 2026-08-27 09:37 UTC —
+  tidak ada satu pun request HTTP masuk saat `meago-msdps-git-staging-meagency.vercel.app`
+  dibuka.
+- Project **production** `mvcckptntrvzujqaoxxh`: pada saat yang sama menerima request dari
+  Vercel (`Vercel Edge Functions` untuk middleware, lalu `node` untuk Server Component),
+  termasuk query milik halaman `/deals`.
+
+Artinya deployment di URL staging memakai **database production**. Konsekuensinya:
+
+1. Migrasi yang diterapkan ke Supabase staging **tidak terlihat** dari URL staging — fitur baru
+   akan gagal dengan "tabel tidak ditemukan".
+2. Lebih penting: **setiap test lewat URL "staging" sebenarnya menulis ke database production.**
+   URL itu belum boleh dipakai untuk uji coba sampai §3 dibereskan.
+
+**Perbaikan (harus dikerjakan di dashboard Vercel, tidak bisa dari repo):** ikuti §3 — tambahkan
+tiga variable dengan scope **Preview** yang dibatasi ke branch `staging`, lalu **redeploy**
+(env baru tidak berlaku untuk deployment yang sudah jadi). Sangat disarankan juga men-set
+default Preview (tanpa batasan branch) ke nilai staging, supaya semua preview branch lain tidak
+lagi menyentuh production.
+
+**Cara cek cepat setelah diperbaiki:** buka `/leads` atau `/deals` di URL staging. Kalau tabel
+CRM belum ada di project yang dibaca, halaman menampilkan banner merah yang **menyebutkan ref
+project Supabase yang sedang dipakai** (`lib/supabase/project-ref.ts`) — jadi salah-sambung
+langsung kelihatan tanpa perlu buka log.
+
+---
+
 ## 4. Menerapkan migrasi ke staging
 
 Ada dua cara, pilih salah satu.
