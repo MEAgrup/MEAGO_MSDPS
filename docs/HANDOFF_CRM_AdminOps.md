@@ -178,7 +178,7 @@ masih dipakai section arsip).
    nomor migrasi (lihat utang teknis #1), dan akan ikut men-deploy semua pekerjaan `staging`
    lain yang belum pernah masuk `main`. Perlu keputusan + resolusi konflik tersendiri.
 
-## Dua utang teknis yang ditemukan sesi ini (BUKAN dari perubahan ini)
+## Tiga utang teknis yang ditemukan sesi ini (BUKAN dari perubahan ini)
 
 1. **`staging` dan `main` sudah menyimpang, dan nomor migrasi bertabrakan.**
    `main` punya `0317_gmv_video_weekly_tracking.sql`; `staging` punya
@@ -216,6 +216,22 @@ masih dipakai section arsip).
 
    Belum di-apply ke project manapun. Terapkan ke staging dulu, verifikasi advisor ERROR-nya
    hilang, baru production.
+
+3. **Database production TERTINGGAL dari branch `staging`.** Diverifikasi lewat objek DB
+   (2026-08-28), bukan dari nama migrasi:
+   - `acquisitions.commission_share` — **tidak ada** di production (migrasi
+     `0317_acquisition_extra_fields.sql` belum di-apply).
+   - Tabel `acquisition_followups` — **tidak ada** di production (migrasi
+     `0319_acquisition_followups.sql` belum di-apply).
+
+   Konsekuensinya untuk rencana merge `staging` → `main`: kode di `staging`
+   (`/acquisition`, `/acquisition/renewal`, `lib/actions/acquisition-followup.ts`) membaca
+   kolom/tabel itu. Kalau di-merge ke `main` tanpa menerapkan 0317 & 0319 ke production lebih
+   dulu, halaman-halaman itu akan gagal di URL production. **Terapkan migrasinya dulu, baru
+   merge.**
+
+   Riwayat migrasi production juga memuat nama yang tidak ada di repo (`0310_poi_dealing`,
+   `0318_auth_users_token_null_guard`) — bagian dari drift yang sama, layak diaudit sekalian.
 
 ## Format import bulk (untuk dokumentasi user)
 
