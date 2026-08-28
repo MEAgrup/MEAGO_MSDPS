@@ -14,15 +14,23 @@ export async function middleware(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // Without Supabase env vars the client can't be built. Rather than throwing
-  // (which surfaces as MIDDLEWARE_INVOCATION_FAILED / a hard 500 on every
-  // route), pass the request through so the deployment stays reachable and the
-  // misconfiguration is visible in logs instead of a blank error page.
+  // Without Supabase env vars the client can't be built. Throwing here surfaces
+  // as MIDDLEWARE_INVOCATION_FAILED (hard 500 on every route), but simply
+  // passing the request through is no better: the next Server Component calls
+  // createServerClient(undefined) and throws "supabaseUrl is required.", and a
+  // production build hides that message — the user only ever sees "An error
+  // occurred in the Server Components render" plus a digest, with NO request
+  // reaching Supabase, so the logs on both sides are empty too (kejadian
+  // 2026-08-28 di URL staging). Rewrite to /konfigurasi instead: satu halaman
+  // statis yang tidak menyentuh Supabase dan menyebut variabel mana yang hilang.
   if (!supabaseUrl || !supabaseAnonKey) {
     console.error(
-      "[middleware] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY — skipping auth gate. Set these in Vercel → Settings → Environment Variables."
+      "[middleware] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY — serving /konfigurasi. Set these in Vercel → Settings → Environment Variables, then redeploy."
     );
-    return response;
+    if (request.nextUrl.pathname === "/konfigurasi") return response;
+    const url = request.nextUrl.clone();
+    url.pathname = "/konfigurasi";
+    return NextResponse.rewrite(url);
   }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
@@ -54,8 +62,13 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthRoute = path === "/login";
+  // /konfigurasi tetap terbuka tanpa login: halaman diagnosa yang menyebut
+  // project Supabase mana yang dibaca deployment ini (ref bukan rahasia — sudah
+  // ada di setiap URL request; key tidak pernah ditampilkan). Justru saat sesi
+  // tidak bisa terbentuk halaman itulah yang perlu dibuka.
+  const isPublicRoute = isAuthRoute || path === "/konfigurasi";
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

@@ -111,10 +111,25 @@ tiga variable dengan scope **Preview** yang dibatasi ke branch `staging`, lalu *
 default Preview (tanpa batasan branch) ke nilai staging, supaya semua preview branch lain tidak
 lagi menyentuh production.
 
-**Cara cek cepat setelah diperbaiki:** buka `/leads` atau `/deals` di URL staging. Kalau tabel
-CRM belum ada di project yang dibaca, halaman menampilkan banner merah yang **menyebutkan ref
-project Supabase yang sedang dipakai** (`lib/supabase/project-ref.ts`) — jadi salah-sambung
-langsung kelihatan tanpa perlu buka log.
+**Cara cek cepat setelah diperbaiki:** buka **`/konfigurasi`** di URL staging. Halaman itu
+terbuka tanpa login dan menyebutkan project Supabase yang sedang dibaca deployment, lengkap
+dengan label `(STAGING)` / `(PRODUCTION)` — jadi salah-sambung ketahuan dalam satu klik.
+Alternatif lain: buka `/leads` atau `/deals`; kalau tabel CRM tidak ada di project yang dibaca,
+banner merahnya juga menyebut ref project (`lib/supabase/project-ref.ts`).
+
+### 3c. Kalau env-nya justru HILANG (kejadian 2026-08-28)
+
+Gejalanya beda dan sempat membingungkan: setiap halaman menampilkan *"An error occurred in the
+Server Components render"* + digest, sementara **log Supabase kosong di semua project** — tidak
+ada satu pun request masuk. Sebabnya deployment tidak punya `NEXT_PUBLIC_SUPABASE_URL` /
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` sama sekali, sehingga `createServerClient(undefined)` melempar
+`supabaseUrl is required.` sebelum sempat menghubungi siapa pun — dan build production
+menyembunyikan pesan aslinya.
+
+Sejak perbaikan di branch ini, kondisi itu tidak lagi tampil sebagai layar error: middleware
+me-*rewrite* semua route ke `/konfigurasi`, yang menyebut variabel mana yang hilang dan
+mengingatkan bahwa **Redeploy wajib** (variabel `NEXT_PUBLIC_*` di-inline saat build, jadi
+menambahkannya di dashboard tidak mengubah deployment yang sudah jadi).
 
 ---
 
