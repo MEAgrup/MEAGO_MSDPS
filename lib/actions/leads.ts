@@ -2,18 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import {
+  isBrandCategory,
+  isBusinessTypeOf,
+  isIntakeSource,
+  normalizePhone62,
+} from "@/lib/leads/intake";
 
 export type ActionResult = { ok: boolean; message: string };
 
-// Sources that require an origin campaign (mirrors leads_validate in DB).
+// Sumber yang mewajibkan kampanye asal (mirror leads_validate di DB). Hanya
+// berlaku untuk jalur impor CSV — form intake BD tidak memakai kampanye.
 const CAMPAIGN_REQUIRED = ["Leads-Iklan", "Broadcast", "Event", "Kulwa-Webinar", "GO-Program"];
-
-// JS mirror of normalize_phone_id (for dedup lookup only; DB is authoritative).
-function jsNormalize(p: string): string | null {
-  if (!p || !p.trim()) return null;
-  const digits = p.replace(/[^0-9]/g, "").replace(/^0/, "").replace(/^62/, "");
-  return "+62" + digits;
-}
 
 async function ctx() {
   const supabase = await createClient();
@@ -29,6 +29,9 @@ async function ctx() {
   return { supabase, user, me };
 }
 
+// Intake lead BD (tab Leads & Prospek → "Daftarkan Lead"). Wajib: Nama BD +
+// Brand/Merchant/POI. Sisanya opsional — DB (0318) yang jadi otoritas validasi;
+// pengecekan di sini hanya supaya pesan errornya ramah.
 export async function createLead(
   _prev: ActionResult | null,
   formData: FormData
@@ -36,47 +39,49 @@ export async function createLead(
   const { supabase, user } = await ctx();
   if (!user) return { ok: false, message: "Tidak terautentikasi." };
 
-  const lead_name = String(formData.get("lead_name") || "").trim();
-  const phone_raw = String(formData.get("phone_raw") || "").trim();
-  const email = String(formData.get("email") || "").trim() || null;
+  const bd_employee_id = String(formData.get("bd_employee_id") || "");
+  const brand_name = String(formData.get("brand_name") || "").trim();
+  const brand_category = String(formData.get("brand_category") || "");
+  const business_type = String(formData.get("business_type") || "");
   const source = String(formData.get("source") || "");
-  const origin_campaign_id = String(formData.get("origin_campaign_id") || "") || null;
+  const pic_name_position = String(formData.get("pic_name_position") || "").trim();
+  const pic_phone_raw = String(formData.get("pic_phone") || "");
+  const web_socmed_link = String(formData.get("web_socmed_link") || "").trim();
 
-  if (!lead_name || !phone_raw || !source) {
+  if (!bd_employee_id || !brand_name) {
     return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
   }
-  if (CAMPAIGN_REQUIRED.includes(source) && !origin_campaign_id) {
-    return { ok: false, message: "[kampanye asal wajib untuk sumber ini]" };
+  if (brand_category && !isBrandCategory(brand_category)) {
+    return { ok: false, message: "[kategori brand tidak dikenal]" };
+  }
+  if (business_type) {
+    if (!brand_category) {
+      return { ok: false, message: "[kategori brand wajib dipilih sebelum jenis usaha]" };
+    }
+    if (!isBusinessTypeOf(brand_category, business_type)) {
+      return { ok: false, message: "[jenis usaha tidak sesuai kategori brand]" };
+    }
+  }
+  if (source && !isIntakeSource(source)) {
+    return { ok: false, message: "[source tidak dikenal]" };
   }
 
+  // lead_name sengaja tidak dikirim: trigger DB menurunkannya dari brand_name.
   const { error } = await supabase.from("leads").insert({
-    lead_name,
-    phone_raw,
-    email,
-    source,
-    origin_campaign_id,
+    bd_employee_id,
+    brand_name,
+    brand_category: brand_category || null,
+    business_type: business_type || null,
+    source: source || null,
+    pic_name_position: pic_name_position || null,
+    pic_phone: normalizePhone62(pic_phone_raw),
+    web_socmed_link: web_socmed_link || null,
   });
 
-  if (error) {
-    if (error.code === "23505") {
-      const norm = jsNormalize(phone_raw);
-      const { data: dup } = await supabase
-        .from("leads")
-        .select("code, lead_name, status")
-        .eq("phone_normalized", norm)
-        .maybeSingle();
-      return {
-        ok: false,
-        message: dup
-          ? `[nomor sudah terdaftar] sebagai ${dup.code} — ${dup.lead_name} (${dup.status}).`
-          : "[nomor sudah terdaftar di database leads]",
-      };
-    }
-    return { ok: false, message: `Gagal menyimpan lead: ${error.message}` };
-  }
+  if (error) return { ok: false, message: `Gagal menyimpan lead: ${error.message}` };
 
   revalidatePath("/leads");
-  return { ok: true, message: `Lead "${lead_name}" terdaftar di pool.` };
+  return { ok: true, message: `Lead "${brand_name}" terdaftar di pool.` };
 }
 
 export async function importLeadsCsv(

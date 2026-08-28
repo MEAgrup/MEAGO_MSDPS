@@ -7,11 +7,15 @@ type Lead = {
   id: string;
   code: string | null;
   lead_name: string;
-  phone_normalized: string;
-  source: string;
+  phone_normalized: string | null;
+  source: string | null;
   status: string;
   stale: boolean;
   created_at: string;
+  bd_employee_id: string | null;
+  brand_category: string | null;
+  business_type: string | null;
+  pic_phone: string | null;
 };
 
 type Attempt = {
@@ -60,13 +64,16 @@ export default async function LeadsPage() {
     await Promise.all([
       supabase
         .from("leads")
-        .select("id, code, lead_name, phone_normalized, source, status, stale, created_at")
+        .select(
+          "id, code, lead_name, phone_normalized, source, status, stale, created_at, " +
+            "bd_employee_id, brand_category, business_type, pic_phone"
+        )
         .order("created_at", { ascending: false }),
       supabase
         .from("prospect_attempts")
         .select("id, code, parent_lead_id, owner_id, status, won, not_qualified_reason")
         .order("created_at", { ascending: false }),
-      supabase.from("employees").select("id, full_name"),
+      supabase.from("employees").select("id, full_name, division, active"),
       supabase
         .from("campaigns")
         .select("id, code, campaign_name")
@@ -74,6 +81,11 @@ export default async function LeadsPage() {
     ]);
 
   const empName = new Map<string, string>((emps ?? []).map((e) => [e.id, e.full_name]));
+  // Dropdown "Nama BD" pada form intake = karyawan BizDev yang masih aktif.
+  const bdOptions = (emps ?? [])
+    .filter((e) => e.division === "BizDev" && e.active !== false)
+    .map((e) => ({ id: e.id, full_name: e.full_name }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   const leadList = (leads as Lead[] | null) ?? [];
   const attList = (attempts as Attempt[] | null) ?? [];
@@ -124,8 +136,9 @@ export default async function LeadsPage() {
           <thead>
             <tr>
               <th>Kode</th>
-              <th>Nama</th>
-              <th>Nomor</th>
+              <th>Brand / Nama</th>
+              <th>BD</th>
+              <th>Kontak</th>
               <th>Sumber</th>
               <th>Status</th>
               <th className="right">Prospek</th>
@@ -141,9 +154,15 @@ export default async function LeadsPage() {
                   <td className="mono">{l.code ?? "—"}</td>
                   <td>
                     {l.lead_name} {l.stale && <span className="badge amber">stale</span>}
+                    {(l.business_type ?? l.brand_category) && (
+                      <div className="muted" style={{ fontSize: 11 }}>
+                        {l.business_type ?? l.brand_category}
+                      </div>
+                    )}
                   </td>
-                  <td className="mono">{l.phone_normalized}</td>
-                  <td className="muted">{l.source}</td>
+                  <td>{(l.bd_employee_id && empName.get(l.bd_employee_id)) ?? "—"}</td>
+                  <td className="mono">{l.phone_normalized ?? l.pic_phone ?? "—"}</td>
+                  <td className="muted">{l.source ?? "—"}</td>
                   <td>
                     <span className={`badge ${LEAD_STATUS_CLASS[l.status] ?? "gray"}`}>
                       {l.status}
@@ -158,7 +177,7 @@ export default async function LeadsPage() {
             })}
             {leadList.length === 0 && (
               <tr>
-                <td colSpan={isBizDev ? 7 : 6} className="muted">
+                <td colSpan={isBizDev ? 8 : 7} className="muted">
                   Belum ada lead. Daftarkan atau impor di bawah.
                 </td>
               </tr>
@@ -228,7 +247,7 @@ export default async function LeadsPage() {
         <>
           <div className="card">
             <h2>Daftarkan Lead</h2>
-            <NewLeadForm campaigns={campaigns ?? []} />
+            <NewLeadForm bdOptions={bdOptions} />
           </div>
           <div className="card">
             <details className="disclose">
