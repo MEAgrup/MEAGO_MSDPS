@@ -15,8 +15,12 @@ lihat `docs/STAGING.md` §3b untuk bukti log. Selama itu belum dibereskan, fitur
 dites lewat URL staging (tabelnya tidak ada di DB yang dibaca), **dan setiap test lewat URL itu
 sebenarnya menulis ke database production.**
 
-Keputusan Yohan di sesi ini: **perbaiki env Vercel dulu**, JANGAN apply 0321 ke production.
-Jadi migrasi 0321 saat ini **hanya ada di Supabase staging**.
+**UPDATE (akhir sesi):** Yohan meminta push ke production, jadi migrasi **0321 + 0323 sudah
+diterapkan ke Supabase production `mvcckptntrvzujqaoxxh`** — smoke test 10/10 lolos + probe RLS
+lolos + hash schema identik dengan staging. Karena deployment di URL staging membaca DB
+production (lihat blocker di atas), fitur ini **sekarang sudah bisa dibuka dari URL staging**.
+Perbaikan env Vercel tetap perlu dikerjakan supaya staging benar-benar terpisah — sekarang
+alasannya bukan lagi "fitur tidak jalan", tapi "test staging menulis ke DB production".
 
 ## Konteks singkat
 
@@ -54,9 +58,19 @@ select set_config('request.jwt.claims','{"sub":"<uuid>","role":"authenticated"}'
 Konsekuensi: sistem lama **tetap utuh** dan bisa dibuka di section arsip (`<details>`) di
 masing-masing halaman. Ini disengaja, bukan sisa pekerjaan.
 
-## Migrasi `supabase/migrations/0321_crm_leads_transaksi.sql`
+## Migrasi `0321_crm_leads_transaksi.sql` + `0323_crm_hardening_revoke_definer.sql`
 
-Status: **applied ke staging `vgjzvdpxrdoefoncuazw`**. TIDAK ke production.
+Status: **applied ke staging `vgjzvdpxrdoefoncuazw` DAN production `mvcckptntrvzujqaoxxh`**.
+Hash schema (kolom + policy + transisi) kedua project identik:
+`e5676e9fdca3f5a39fb36511618e7573`.
+
+**0323** adalah hardening susulan: 0321 lupa mencabut `EXECUTE` dari public/anon/authenticated
+untuk fungsi trigger SECURITY DEFINER `crm_leads_validate()` dan `crm_transaksi_validate()`,
+sehingga keduanya terdaftar di PostgREST sebagai `/rest/v1/rpc/…` dan muncul di Supabase
+advisor. Semua fungsi trigger definer lain sudah dicabut di 0008/0105 — 0323 menyamakan
+konvensinya. Mencabut EXECUTE tidak mempengaruhi jalannya trigger (hak EXECUTE diperiksa saat
+trigger DIBUAT, bukan saat berjalan); sudah diverifikasi dengan insert sebagai user BizDev asli
+setelah revoke: ID terbit, normalisasi nomor jalan, state machine tetap memblokir lompatan.
 
 - `normalize_phone_62(text)` — normalisasi ke format `62…` (meniru `formatContactPIC()`).
   Beda dari `normalize_phone_id()` Module 1 yang menghasilkan `+62…`.
@@ -107,12 +121,19 @@ masih dipakai section arsip).
 
 ## Verifikasi yang SUDAH dilakukan
 
-- **Smoke test trigger di staging: 10/10 lolos** — brand kosong ditolak; ID terbit
+- **Smoke test trigger 10/10 lolos di staging DAN production** — brand kosong ditolak; ID terbit
   `CRM-202608-0001`; `0812-3456-7890` → `6281234567890`; lompat Leads→Dealing diblokir; Dealing
   tanpa benefit ditolak; stempel `tanggal_status_dealing` terisi; Dining tanpa durasi ditolak;
   Berbayar nominal 0 ditolak; Free memaksa nominal 0 + bersihkan durasi; lead bertransaksi tidak
   bisa dihapus. Semua di-rollback — tidak ada baris tes tertinggal (`crm_leads` = 0 rows).
-- **Probe RLS** — BizDev bisa baca + insert; Ads dapat 0 baris dan insert ditolak.
+- **Probe RLS (staging + production)** — BizDev bisa baca + insert; Ads dapat 0 baris dan insert
+  ditolak. Di production probe ini dijalankan ULANG setelah 0323 untuk membuktikan revoke tidak
+  mematikan trigger.
+- **Timezone WIB** — `visit_mulai` yang ditulis `2026-09-01T10:00:00+07:00` terbaca kembali
+  sebagai `2026-09-01 10:00` di zona Asia/Jakarta (tidak tergeser 7 jam).
+- **Supabase advisor (security) production** — dua WARN yang sempat muncul dari 0321
+  (`anon_/authenticated_security_definer_function_executable` untuk kedua fungsi validate)
+  **hilang** setelah 0323. Sisa temuan advisor semuanya pre-existing dan bukan dari perubahan ini.
 - **Audit kolom** — semua nama kolom di string `select()` dicek ada di schema staging (0 mismatch).
 - `npx tsc --noEmit` dan `next build` bersih.
 
@@ -132,13 +153,15 @@ masih dipakai section arsip).
 
 ## Pekerjaan tersisa (urut prioritas)
 
-1. **Yohan: perbaiki env var Vercel** (`docs/STAGING.md` §3 + §3b) — scope 3 variable Preview ke
-   branch `staging`, lalu **Redeploy** (env baru tidak berlaku untuk deployment yang sudah jadi).
-   Disarankan set juga default Preview ke staging supaya semua preview branch berhenti menyentuh
-   production.
-2. Test UI end-to-end di URL staging; kalau ada error, layarnya sekarang menampilkan pesan +
-   `digest` (bukan layar kosong) — laporkan digest-nya.
-3. Baru setelah lolos staging: apply 0321 ke production + merge `staging` → `main`.
+1. **Test UI end-to-end** di URL staging (DB-nya production, jadi tabelnya sudah ada). Kalau ada
+   error, layarnya sekarang menampilkan pesan + `digest` — laporkan digest-nya.
+2. **Merge `staging` → `main`** kalau ingin fitur ini muncul di URL production
+   (`meago-msdps.vercel.app`). BELUM dikerjakan: merge-nya bukan fast-forward dan bertabrakan di
+   nomor migrasi (lihat utang teknis #1), plus akan ikut men-deploy semua pekerjaan `staging` lain
+   yang belum pernah masuk `main`. Perlu keputusan + resolusi konflik tersendiri.
+3. **Yohan: perbaiki env var Vercel** (`docs/STAGING.md` §3 + §3b) — scope 3 variable Preview ke
+   branch `staging`, lalu **Redeploy**. Sekarang alasannya bukan lagi "fitur tidak jalan"
+   (sudah jalan), tapi supaya **test lewat URL staging berhenti menulis ke DB production**.
 
 ## Dua utang teknis yang ditemukan sesi ini (BUKAN dari perubahan ini)
 

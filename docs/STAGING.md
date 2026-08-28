@@ -105,6 +105,10 @@ Artinya deployment di URL staging memakai **database production**. Konsekuensiny
 2. Lebih penting: **setiap test lewat URL "staging" sebenarnya menulis ke database production.**
    URL itu belum boleh dipakai untuk uji coba sampai §3 dibereskan.
 
+**Catatan 2026-08-28:** migrasi CRM (0321+0323) akhirnya diterapkan ke **kedua** project atas
+permintaan Yohan, jadi gejala #1 hilang dan fitur bisa dibuka dari URL staging. Gejala #2 TETAP
+ADA dan itu alasan utama §3 masih harus dikerjakan.
+
 **Perbaikan (harus dikerjakan di dashboard Vercel, tidak bisa dari repo):** ikuti §3 — tambahkan
 tiga variable dengan scope **Preview** yang dibatasi ke branch `staging`, lalu **redeploy**
 (env baru tidak berlaku untuk deployment yang sudah jadi). Sangat disarankan juga men-set
