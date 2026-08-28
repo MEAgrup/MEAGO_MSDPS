@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import {
   createLead,
   importLeadsCsv,
@@ -8,16 +8,10 @@ import {
   advanceAttempt,
   type ActionResult,
 } from "@/lib/actions/leads";
-import {
-  BRAND_CATEGORIES,
-  BUSINESS_TYPES,
-  INTAKE_SOURCES,
-  normalizePhone62,
-  type BrandCategory,
-} from "@/lib/leads/intake";
+import { IntakeFormFields, type BdOption, type BusinessTypeOptions } from "./intake-fields";
 
 type Campaign = { id: string; code: string | null; campaign_name: string };
-export type BdOption = { id: string; full_name: string };
+export type { BdOption };
 
 const SOURCES = [
   "Scouting", "Leads-Socmed", "Leads-Iklan", "Website", "Referral", "Broadcast",
@@ -42,100 +36,21 @@ function Msg({ state }: { state: ActionResult | null }) {
 }
 
 // Form intake lead BD. Wajib hanya "Nama BD" + "Brand / Merchant / POI";
-// sisanya opsional. Jenis usaha = dependent dropdown dari kategori brand, jadi
-// kategorinya disimpan di state (satu-satunya alasan komponen ini stateful).
-export function NewLeadForm({ bdOptions }: { bdOptions: BdOption[] }) {
+// sisanya opsional. Kolom-kolomnya dibagi dengan EditLeadModal lewat
+// IntakeFormFields supaya kedua form tidak pernah menyimpang.
+export function NewLeadForm({
+  bdOptions,
+  businessTypeOptions,
+}: {
+  bdOptions: BdOption[];
+  businessTypeOptions: BusinessTypeOptions;
+}) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(createLead, null);
-  const [category, setCategory] = useState<BrandCategory | "">("");
-  const [waPhone, setWaPhone] = useState("");
 
   return (
     <form action={action}>
       <Msg state={state} />
-      <div className="row">
-        <div>
-          <label>Nama BD *</label>
-          <select name="bd_employee_id" defaultValue="" required>
-            <option value="" disabled>
-              Pilih BD…
-            </option>
-            {bdOptions.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.full_name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label>Brand / Merchant / POI *</label>
-          <input name="brand_name" required />
-        </div>
-      </div>
-      <div className="row">
-        <div>
-          <label>Kategori Brand</label>
-          <select
-            name="brand_category"
-            value={category}
-            onChange={(e) => setCategory(e.target.value as BrandCategory | "")}
-          >
-            <option value="">— pilih kategori —</option>
-            {BRAND_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label>Jenis Usaha</label>
-          {/* key={category} memaksa select ter-reset saat kategori berganti. */}
-          <select key={category} name="business_type" defaultValue="" disabled={!category}>
-            <option value="">{category ? "— pilih jenis usaha —" : "— pilih kategori dulu —"}</option>
-            {(category ? BUSINESS_TYPES[category] : []).map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <div className="row">
-        <div>
-          <label>Source</label>
-          <select name="source" defaultValue="">
-            <option value="">— pilih source —</option>
-            {INTAKE_SOURCES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label>Nama &amp; Posisi PIC</label>
-          <input name="pic_name_position" placeholder="mis. Budi — Marketing Manager" />
-        </div>
-      </div>
-      <div className="row">
-        <div>
-          <label>Kontak PIC (HP / WhatsApp)</label>
-          <input
-            name="pic_phone"
-            inputMode="tel"
-            placeholder="628123456789"
-            value={waPhone}
-            onChange={(e) => setWaPhone(e.target.value)}
-            // Diketik bebas (0812…, +62 812…), dirapikan ke awalan 62 saat blur;
-            // server + trigger DB menormalkan ulang sebagai otoritasnya.
-            onBlur={(e) => setWaPhone(normalizePhone62(e.target.value) ?? "")}
-          />
-        </div>
-        <div>
-          <label>Link website / akun sosmed</label>
-          <input name="web_socmed_link" placeholder="instagram.com/… atau https://…" />
-        </div>
-      </div>
+      <IntakeFormFields idPrefix="new" bdOptions={bdOptions} businessTypeOptions={businessTypeOptions} />
       <button type="submit" disabled={pending}>
         {pending ? "Menyimpan…" : "Daftarkan Lead"}
       </button>

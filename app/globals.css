@@ -121,6 +121,24 @@ details.disclose > summary { cursor: pointer; font-weight: 600; font-size: 13px;
 .modal-body { padding: 20px; max-height: 65vh; overflow-y: auto; }
 .modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border); }
 
+/* ---- Leads: Pool Lead toolbar / filters / pagination / combobox ---- */
+.table-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.table-toolbar h2 { margin: 0; }
+.filters-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 14px; }
+.filters-row label { margin-bottom: 3px; }
+.filters-row input, .filters-row select { margin-bottom: 0; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: #334155; }
+.pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 13px; }
+.combobox-wrap { position: relative; }
+.combobox-list {
+  position: absolute; top: calc(100% + 2px); left: 0; right: 0; z-index: 60;
+  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  max-height: 220px; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,.15);
+}
+.combobox-item { padding: 8px 11px; font-size: 13px; cursor: pointer; }
+.combobox-item:hover { background: #f1f5f9; }
+
 /* Fase C */
 .subcard {
   border: 1px solid var(--border); border-radius: 10px;

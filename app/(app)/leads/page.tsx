@@ -1,22 +1,14 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { tanggal } from "@/lib/format";
-import { NewLeadForm, ImportCsvForm, ClaimButton, AttemptControls } from "./forms";
+import { NewLeadForm, ImportCsvForm, AttemptControls } from "./forms";
+import { PoolLeadSection, type PoolLead } from "./pool";
+import { BRAND_CATEGORIES, type BrandCategory } from "@/lib/leads/intake";
+import type { BusinessTypeOptions } from "./intake-fields";
 
-type Lead = {
-  id: string;
-  code: string | null;
-  lead_name: string;
-  phone_normalized: string | null;
-  source: string | null;
-  status: string;
-  stale: boolean;
-  created_at: string;
-  bd_employee_id: string | null;
-  brand_category: string | null;
-  business_type: string | null;
-  pic_phone: string | null;
-};
+const POOL_LEAD_COLUMNS =
+  "id, code, lead_name, brand_name, bd_employee_id, brand_category, business_type, wilayah, " +
+  "source, pic_name_position, pic_phone, web_socmed_link, phone_normalized, status, stale, " +
+  "crm_status, benefit_dealing, nominal_bayar, tanggal_mulai_kontrak, tanggal_akhir_kontrak, created_at";
 
 type Attempt = {
   id: string;
@@ -26,14 +18,6 @@ type Attempt = {
   status: string;
   won: boolean;
   not_qualified_reason: string | null;
-};
-
-const LEAD_STATUS_CLASS: Record<string, string> = {
-  "[Pool]": "slate",
-  "[Scouted - Aktif]": "blue",
-  "[Closed - Success]": "green",
-  "[Tidak Berkualitas]": "amber",
-  "[Ditolak]": "red",
 };
 
 const ATTEMPT_STATUS_CLASS: Record<string, string> = {
@@ -54,21 +38,15 @@ export default async function LeadsPage() {
 
   const me = await getEmployee();
   const isBizDev = me?.division === "BizDev";
-  const canRegister = isBizDev || me?.division === "Marketing" || !!me?.is_director;
+  const canManage = isBizDev || me?.division === "Marketing" || !!me?.is_director;
   const canControl = (ownerId: string) =>
     ownerId === me?.id || (isBizDev && me?.rank === "lead") || !!me?.is_director;
 
   const supabase = await getCachedClient();
 
-  const [{ data: leads }, { data: attempts }, { data: emps }, { data: campaigns }] =
+  const [{ data: leads }, { data: attempts }, { data: emps }, { data: campaigns }, { data: businessTypes }, { data: benefits }] =
     await Promise.all([
-      supabase
-        .from("leads")
-        .select(
-          "id, code, lead_name, phone_normalized, source, status, stale, created_at, " +
-            "bd_employee_id, brand_category, business_type, pic_phone"
-        )
-        .order("created_at", { ascending: false }),
+      supabase.from("leads").select(POOL_LEAD_COLUMNS).order("created_at", { ascending: false }),
       supabase
         .from("prospect_attempts")
         .select("id, code, parent_lead_id, owner_id, status, won, not_qualified_reason")
@@ -78,16 +56,29 @@ export default async function LeadsPage() {
         .from("campaigns")
         .select("id, code, campaign_name")
         .order("created_at", { ascending: false }),
+      supabase.from("lead_business_types").select("brand_category, label").order("label"),
+      supabase.from("lead_benefit_options").select("label").order("label"),
     ]);
 
-  const empName = new Map<string, string>((emps ?? []).map((e) => [e.id, e.full_name]));
+  const bdNameById: Record<string, string> = Object.fromEntries(
+    (emps ?? []).map((e) => [e.id, e.full_name])
+  );
   // Dropdown "Nama BD" pada form intake = karyawan BizDev yang masih aktif.
   const bdOptions = (emps ?? [])
     .filter((e) => e.division === "BizDev" && e.active !== false)
     .map((e) => ({ id: e.id, full_name: e.full_name }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
-  const leadList = (leads as Lead[] | null) ?? [];
+  const businessTypeOptions: BusinessTypeOptions = Object.fromEntries(
+    BRAND_CATEGORIES.map((c) => [c, [] as string[]])
+  ) as BusinessTypeOptions;
+  for (const row of businessTypes ?? []) {
+    const cat = row.brand_category as BrandCategory;
+    if (businessTypeOptions[cat]) businessTypeOptions[cat].push(row.label);
+  }
+  const benefitOptions = (benefits ?? []).map((b) => b.label);
+
+  const leadList = (leads as PoolLead[] | null) ?? [];
   const attList = (attempts as Attempt[] | null) ?? [];
   const attByLead = new Map<string, Attempt[]>();
   for (const a of attList) {
@@ -100,7 +91,6 @@ export default async function LeadsPage() {
   const myOpen = attList.filter(
     (a) => a.owner_id === me?.id && a.status.startsWith("[") && !a.status.startsWith("[Closed")
   ).length;
-  const won = attList.filter((a) => a.won).length;
   const contested = [...attByLead.values()].filter((arr) => arr.length > 1).length;
 
   return (
@@ -130,61 +120,15 @@ export default async function LeadsPage() {
         </div>
       </div>
 
-      <div className="card">
-        <h2>Pool Lead ({leadList.length})</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Kode</th>
-              <th>Brand / Nama</th>
-              <th>BD</th>
-              <th>Kontak</th>
-              <th>Sumber</th>
-              <th>Status</th>
-              <th className="right">Prospek</th>
-              {isBizDev && <th>Aksi</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {leadList.map((l) => {
-              const n = attByLead.get(l.id)?.length ?? 0;
-              const claimable = l.status === "[Pool]" || l.status === "[Scouted - Aktif]";
-              return (
-                <tr key={l.id}>
-                  <td className="mono">{l.code ?? "—"}</td>
-                  <td>
-                    {l.lead_name} {l.stale && <span className="badge amber">stale</span>}
-                    {(l.business_type ?? l.brand_category) && (
-                      <div className="muted" style={{ fontSize: 11 }}>
-                        {l.business_type ?? l.brand_category}
-                      </div>
-                    )}
-                  </td>
-                  <td>{(l.bd_employee_id && empName.get(l.bd_employee_id)) ?? "—"}</td>
-                  <td className="mono">{l.phone_normalized ?? l.pic_phone ?? "—"}</td>
-                  <td className="muted">{l.source ?? "—"}</td>
-                  <td>
-                    <span className={`badge ${LEAD_STATUS_CLASS[l.status] ?? "gray"}`}>
-                      {l.status}
-                    </span>
-                  </td>
-                  <td className="right">{n}</td>
-                  {isBizDev && (
-                    <td>{claimable ? <ClaimButton leadId={l.id} /> : <span className="muted">—</span>}</td>
-                  )}
-                </tr>
-              );
-            })}
-            {leadList.length === 0 && (
-              <tr>
-                <td colSpan={isBizDev ? 8 : 7} className="muted">
-                  Belum ada lead. Daftarkan atau impor di bawah.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <PoolLeadSection
+        leads={leadList}
+        bdOptions={bdOptions}
+        bdNameById={bdNameById}
+        businessTypeOptions={businessTypeOptions}
+        benefitOptions={benefitOptions}
+        isBizDev={isBizDev}
+        canManage={canManage}
+      />
 
       <div className="card">
         <h2>Papan Kompetisi Prospek</h2>
@@ -209,9 +153,10 @@ export default async function LeadsPage() {
                 <tr key={a.id}>
                   <td className="mono">{a.code ?? "(pending)"}</td>
                   <td>
-                    <span className="mono">{lead?.code ?? "—"}</span> {lead?.lead_name ?? "?"}
+                    <span className="mono">{lead?.code ?? "—"}</span>{" "}
+                    {lead?.brand_name ?? lead?.lead_name ?? "?"}
                   </td>
-                  <td>{empName.get(a.owner_id) ?? "—"}</td>
+                  <td>{bdNameById[a.owner_id] ?? "—"}</td>
                   <td>
                     <span className={`badge ${ATTEMPT_STATUS_CLASS[a.status] ?? "gray"}`}>
                       {a.status}
@@ -243,11 +188,11 @@ export default async function LeadsPage() {
         </table>
       </div>
 
-      {canRegister && (
+      {canManage && (
         <>
           <div className="card">
             <h2>Daftarkan Lead</h2>
-            <NewLeadForm bdOptions={bdOptions} />
+            <NewLeadForm bdOptions={bdOptions} businessTypeOptions={businessTypeOptions} />
           </div>
           <div className="card">
             <details className="disclose">
