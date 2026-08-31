@@ -126,39 +126,47 @@ function LeadPicker({
   );
 }
 
-// UpdateStatusButton — tombol global (bukan per-baris) yang membuka modal alur
-// status CRM. Renewal hanya aktif dipilih kalau lead terpilih berstatus Dealing;
-// Benefit Dealing / Nominal Bayar / Durasi Kontrak hanya muncul untuk
-// Dealing/Renewal (DEAL_STATUSES).
+// UpdateStatusButton — modal alur status CRM. Dipakai dalam dua mode: global
+// (tombol di toolbar tabel, brand dipilih lewat LeadPicker) dan per-baris
+// (tombol "Update" di kolom Aksi, `fixedLead` mengunci brand ke baris itu).
+// Renewal hanya aktif dipilih kalau lead terpilih berstatus Dealing; Benefit
+// Dealing / Nominal Bayar / Durasi Kontrak hanya muncul untuk Dealing/Renewal
+// (DEAL_STATUSES).
 export function UpdateStatusButton({
   leads,
   benefitOptions,
+  fixedLead,
 }: {
   leads: PoolLead[];
   benefitOptions: string[];
+  fixedLead?: PoolLead;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(
     updateLeadStatus,
     null
   );
-  const [leadId, setLeadId] = useState("");
+  const [leadId, setLeadId] = useState(fixedLead?.id ?? "");
   const [status, setStatus] = useState<CrmStatus | "">("");
-  const selected = leads.find((l) => l.id === leadId);
+  const selected = fixedLead ?? leads.find((l) => l.id === leadId);
   const isDeal = status !== "" && isDealStatus(status);
 
   useEffect(() => {
     if (state?.ok) {
       setOpen(false);
-      setLeadId("");
+      setLeadId(fixedLead?.id ?? "");
       setStatus("");
     }
-  }, [state]);
+  }, [state, fixedLead]);
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)}>
-        Update Status Leads
+      <button
+        type="button"
+        className={fixedLead ? "sm ghost2" : undefined}
+        onClick={() => setOpen(true)}
+      >
+        {fixedLead ? "Update" : "Update Status Leads"}
       </button>
       {open && (
         <div
@@ -169,7 +177,7 @@ export function UpdateStatusButton({
         >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h3>Update Status Leads</h3>
+              <h3>Update Status Leads{fixedLead ? ` · ${fixedLead.brand_name ?? fixedLead.lead_name}` : ""}</h3>
               <button type="button" className="sm ghost2" onClick={() => setOpen(false)}>
                 ✕
               </button>
@@ -179,9 +187,15 @@ export function UpdateStatusButton({
                 {state && !state.ok && <div className="err">{state.message}</div>}
 
                 <label>Pilih Brand / Merchant *</label>
-                <LeadPicker leads={leads} value={leadId} onChange={setLeadId} />
+                {fixedLead ? (
+                  <input type="hidden" name="lead_id" value={fixedLead.id} />
+                ) : (
+                  <LeadPicker leads={leads} value={leadId} onChange={setLeadId} />
+                )}
                 {selected && (
                   <p className="hint">
+                    {fixedLead && <b>{fixedLead.brand_name ?? fixedLead.lead_name}</b>}
+                    {fixedLead && " — "}
                     Status saat ini: <b>{selected.crm_status}</b>
                   </p>
                 )}
@@ -698,6 +712,7 @@ export function PoolLeadSection({
                   {canManage && (
                     <td className="right">
                       <div className="actions-row" style={{ justifyContent: "flex-end" }}>
+                        <UpdateStatusButton leads={leads} benefitOptions={benefitOptions} fixedLead={l} />
                         <EditLeadModal lead={l} bdOptions={bdOptions} businessTypeOptions={businessTypeOptions} />
                         <DeleteLeadButton leadId={l.id} label={l.brand_name ?? l.lead_name} />
                       </div>

@@ -16,10 +16,6 @@ import {
 
 export type ActionResult = { ok: boolean; message: string };
 
-// Sumber yang mewajibkan kampanye asal (mirror leads_validate di DB). Hanya
-// berlaku untuk jalur impor CSV — form intake BD tidak memakai kampanye.
-const CAMPAIGN_REQUIRED = ["Leads-Iklan", "Broadcast", "Event", "Kulwa-Webinar", "GO-Program"];
-
 async function ctx() {
   const supabase = await createClient();
   const {
@@ -263,20 +259,26 @@ export async function deleteLeadsBulk(
   return { ok: true, message: `${count ?? ids.length} lead dihapus.` };
 }
 
+// Impor massal CSV (tab Leads & Prospek). Format per baris: nama bd, brand,
+// kategori, wilayah (provinsi) — sama seperti field intake BD (readIntakeFields),
+// minus PIC/kontak/link yang tidak masuk akal untuk impor massal. "Nama BD"
+// dicocokkan ke karyawan BizDev aktif berdasarkan nama (case-insensitive).
 export async function importLeadsCsv(
   _prev: ActionResult | null,
   formData: FormData
 ): Promise<ActionResult> {
-  const { supabase, user } = await ctx();
-  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canManage(me)) return { ok: false, message: "Tidak berwenang mengimpor lead." };
 
   const raw = String(formData.get("csv") || "").trim();
-  const source = String(formData.get("source") || "");
-  const origin_campaign_id = String(formData.get("origin_campaign_id") || "") || null;
-  if (!raw || !source) return { ok: false, message: "Isi data CSV dan pilih sumber." };
-  if (CAMPAIGN_REQUIRED.includes(source) && !origin_campaign_id) {
-    return { ok: false, message: "[kampanye asal wajib untuk sumber ini]" };
-  }
+  if (!raw) return { ok: false, message: "Isi data CSV." };
+
+  const { data: emps } = await supabase
+    .from("employees")
+    .select("id, full_name")
+    .eq("division", "BizDev");
+  const bdIdByName = new Map((emps ?? []).map((e) => [e.full_name.trim().toLowerCase(), e.id]));
 
   const lines = raw
     .split(/\r?\n/)
@@ -288,16 +290,31 @@ export async function importLeadsCsv(
   let failed = 0;
   for (const line of lines) {
     const parts = line.split(/[,;\t]/).map((s) => s.trim());
-    const lead_name = parts[0];
-    const phone_raw = parts[1];
-    const email = parts[2] || null;
-    if (!lead_name || !phone_raw) {
+    const namaBd = parts[0];
+    const brand_name = parts[1];
+    const brand_category = parts[2] || "";
+    const wilayah = parts[3] || "";
+
+    const bd_employee_id = namaBd ? bdIdByName.get(namaBd.toLowerCase()) : undefined;
+    if (!bd_employee_id || !brand_name) {
       failed++;
       continue;
     }
-    const { error } = await supabase
-      .from("leads")
-      .insert({ lead_name, phone_raw, email, source, origin_campaign_id });
+    if (brand_category && !isBrandCategory(brand_category)) {
+      failed++;
+      continue;
+    }
+    if (wilayah && !isWilayah(wilayah)) {
+      failed++;
+      continue;
+    }
+
+    const { error } = await supabase.from("leads").insert({
+      bd_employee_id,
+      brand_name,
+      brand_category: brand_category || null,
+      wilayah: wilayah || null,
+    });
     if (error) {
       if (error.code === "23505") skippedDup++;
       else failed++;
