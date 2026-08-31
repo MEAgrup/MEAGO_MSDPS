@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { rupiah, tanggal } from "@/lib/format";
-import { updateDealTransaction, type ActionResult } from "@/lib/actions/deals";
+import { updateDealTransaction, deleteDealTransaction, deleteDealTransactionsBulk, type ActionResult } from "@/lib/actions/deals";
 import { DealIntakeFields } from "./intake-fields";
 import type { BdOption } from "../leads/intake-fields";
 import type { PoolLead } from "../leads/pool";
@@ -65,6 +65,57 @@ function Msg({ state }: { state: ActionResult | null }) {
 // EditDealModal — tombol "Edit" (atau "Lengkapi Data" untuk baris hasil Import
 // Master Deal) per baris. Memakai DealIntakeFields yang sama dengan
 // RegisterDealTransactionForm supaya field tidak pernah menyimpang.
+function DeleteDealButton({ dealId, label }: { dealId: string; label: string }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(deleteDealTransaction, null);
+  return (
+    <form
+      action={action}
+      className="inline-form"
+      onSubmit={(e) => {
+        if (!confirm(`Hapus deal "${label}"? Tindakan ini tidak dapat dibatalkan.`)) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="deal_id" value={dealId} />
+      <button className="sm dangerbtn" disabled={pending}>
+        {pending ? "…" : "Hapus"}
+      </button>
+      {state && !state.ok && (
+        <span className="badge red" title={state.message}>
+          gagal
+        </span>
+      )}
+    </form>
+  );
+}
+
+function BulkDeleteBar({ ids }: { ids: string[] }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    deleteDealTransactionsBulk,
+    null
+  );
+  return (
+    <form
+      action={action}
+      className="inline-form"
+      onSubmit={(e) => {
+        if (!confirm(`Hapus ${ids.length} deal terpilih? Tindakan ini tidak dapat dibatalkan.`)) {
+          e.preventDefault();
+        }
+      }}
+    >
+      {ids.map((id) => (
+        <input key={id} type="hidden" name="deal_ids" value={id} />
+      ))}
+      <button className="sm dangerbtn" disabled={pending || ids.length === 0}>
+        {pending ? "Menghapus…" : `Hapus ${ids.length} Terpilih`}
+      </button>
+      {state && <Msg state={state} />}
+    </form>
+  );
+}
+
 function EditDealModal({
   deal,
   dealingLeads,
@@ -194,6 +245,7 @@ export function DealsTable({
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZES)[number]>(10);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -244,7 +296,28 @@ export function DealsTable({
     setPage(1);
   }
 
-  const colCount = 9 + (canManage ? 1 : 0);
+  function toggleOne(id: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const pageIds = paginated.map((d) => d.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+
+  function toggleAllOnPage() {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (allPageSelected) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  const colCount = 9 + (canManage ? 2 : 0);
 
   return (
     <div className="card">
@@ -263,10 +336,21 @@ export function DealsTable({
         </div>
       </div>
 
+      {canManage && selected.size > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <BulkDeleteBar ids={[...selected]} />
+        </div>
+      )}
+
       <div style={{ overflowX: "auto" }}>
         <table>
           <thead>
             <tr>
+              {canManage && (
+                <th>
+                  <input type="checkbox" checked={allPageSelected} onChange={toggleAllOnPage} />
+                </th>
+              )}
               <SortHeader label="ID Merchant" sortKey="code" active={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="POI / Merchant" sortKey="poi" active={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="BD" sortKey="bd" active={sortKey} dir={sortDir} onSort={onSort} />
@@ -282,6 +366,15 @@ export function DealsTable({
           <tbody>
             {paginated.map((d) => (
               <tr key={d.id}>
+                {canManage && (
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(d.id)}
+                      onChange={() => toggleOne(d.id)}
+                    />
+                  </td>
+                )}
                 <td className="mono">
                   {d.code ?? "—"}
                   {d.unique_id && (
@@ -316,12 +409,15 @@ export function DealsTable({
                 </td>
                 {canManage && (
                   <td className="right">
-                    <EditDealModal
-                      deal={d}
-                      dealingLeads={dealingLeads}
-                      bdOptions={bdOptions}
-                      benefitOptions={benefitOptions}
-                    />
+                    <div className="actions-row" style={{ justifyContent: "flex-end" }}>
+                      <EditDealModal
+                        deal={d}
+                        dealingLeads={dealingLeads}
+                        bdOptions={bdOptions}
+                        benefitOptions={benefitOptions}
+                      />
+                      <DeleteDealButton dealId={d.id} label={d.brand_name} />
+                    </div>
                   </td>
                 )}
               </tr>

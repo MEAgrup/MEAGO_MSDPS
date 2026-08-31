@@ -475,6 +475,7 @@ export function PoolLeadSection({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZES)[number]>(10);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [dealingNotificationOpen, setDealingNotificationOpen] = useState(true);
 
   const jenisUsahaValues = useMemo(
     () => Array.from(new Set(leads.map((l) => l.business_type).filter((v): v is string => !!v))).sort(),
@@ -554,12 +555,61 @@ export function PoolLeadSection({
     });
   }
 
+  const dealingLeads = leads.filter((l) => l.crm_status === "Dealing");
+
   return (
-    <div className="card">
-      <div className="table-toolbar">
-        <h2>Pool Lead ({sorted.length})</h2>
-        {canManage && <UpdateStatusButton leads={leads} benefitOptions={benefitOptions} />}
-      </div>
+    <>
+      {dealingLeads.length > 0 && (
+        <div className="card">
+          <details open={dealingNotificationOpen} onToggle={(e) => setDealingNotificationOpen(e.currentTarget.open)}>
+            <summary style={{ cursor: "pointer", fontSize: 16, fontWeight: 500 }}>
+              📬 Notifikasi Brand Dealing ({dealingLeads.length})
+            </summary>
+            <div style={{ marginTop: 12 }}>
+              <div style={{ overflowX: "auto" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Kode</th>
+                      <th>Brand</th>
+                      <th>BD</th>
+                      <th>Benefit</th>
+                      <th>Nominal</th>
+                      <th>Periode Kontrak</th>
+                      <th className="right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dealingLeads.map((l) => (
+                      <tr key={l.id}>
+                        <td className="mono">{l.code ?? "—"}</td>
+                        <td>{l.brand_name ?? l.lead_name}</td>
+                        <td>{(l.bd_employee_id && bdNameById[l.bd_employee_id]) ?? "—"}</td>
+                        <td>{l.benefit_dealing ?? "—"}</td>
+                        <td className="right">{rupiah(l.nominal_bayar)}</td>
+                        <td>
+                          {l.tanggal_mulai_kontrak
+                            ? `${tanggal(l.tanggal_mulai_kontrak)} – ${tanggal(l.tanggal_akhir_kontrak)}`
+                            : "—"}
+                        </td>
+                        <td className="right">
+                          <UpdateStatusButton leads={leads} benefitOptions={benefitOptions} fixedLead={l} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="table-toolbar">
+          <h2>Pool Lead ({sorted.length})</h2>
+          {canManage && <UpdateStatusButton leads={leads} benefitOptions={benefitOptions} />}
+        </div>
 
       <div className="filters-row">
         <div>
@@ -778,6 +828,7 @@ export function PoolLeadSection({
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

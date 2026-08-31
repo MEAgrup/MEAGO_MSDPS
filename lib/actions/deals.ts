@@ -355,6 +355,46 @@ export async function importMasterDeal(
   };
 }
 
+// deleteDealTransaction — hapus satu transaksi deal
+export async function deleteDealTransaction(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang menghapus transaksi deal." };
+
+  const deal_id = String(formData.get("deal_id") || "").trim();
+  if (!deal_id) return { ok: false, message: "Deal tidak valid." };
+
+  const { error } = await supabase.from("brand_deals").delete().eq("id", deal_id);
+  if (error) return { ok: false, message: `Gagal menghapus transaksi: ${error.message}` };
+
+  revalidatePath("/deals");
+  revalidatePath("/leads");
+  return { ok: true, message: "Transaksi deal dihapus." };
+}
+
+// deleteDealTransactionsBulk — hapus multiple transaksi deals
+export async function deleteDealTransactionsBulk(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang menghapus transaksi deal." };
+
+  const deal_ids = formData.getAll("deal_ids") as string[];
+  if (deal_ids.length === 0) return { ok: false, message: "Pilih deal yang akan dihapus." };
+
+  const { error } = await supabase.from("brand_deals").delete().in("id", deal_ids);
+  if (error) return { ok: false, message: `Gagal menghapus transaksi: ${error.message}` };
+
+  revalidatePath("/deals");
+  revalidatePath("/leads");
+  return { ok: true, message: `${deal_ids.length} transaksi deal dihapus.` };
+}
+
 // setPipelineStage — DIPAKAI BizDev Workspace (app/(app)/bizdev), bukan lagi
 // oleh tab Merchant Deals sendiri (pipeline_stage tidak lagi ditampilkan di
 // sana) — JANGAN dihapus.
