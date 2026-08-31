@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { DealsTabs } from "./forms";
+import { DealsToolbar } from "./forms";
 import { DealsTable, type Deal } from "./table";
 import type { PoolLead } from "../leads/pool";
 
@@ -63,7 +63,7 @@ export default async function DealsPage() {
       </p>
 
       {canRegister && (
-        <DealsTabs
+        <DealsToolbar
           dealingLeads={dealingLeads}
           bdOptions={bdOptions}
           benefitOptions={benefitOptions}

@@ -21,6 +21,7 @@ import {
 } from "@/lib/leads/intake";
 import { IntakeFormFields, type BdOption, type BusinessTypeOptions } from "./intake-fields";
 import { ClaimButton } from "./forms";
+import { RegisterDealModal } from "../deals/forms";
 
 export type PoolLead = {
   id: string;
@@ -593,7 +594,12 @@ export function PoolLeadSection({
                             : "—"}
                         </td>
                         <td className="right">
-                          <UpdateStatusButton leads={leads} benefitOptions={benefitOptions} fixedLead={l} />
+                          <RegisterDealModal
+                            dealingLeads={leads}
+                            bdOptions={bdOptions}
+                            benefitOptions={benefitOptions}
+                            fixedLead={l}
+                          />
                         </td>
                       </tr>
                     ))}

@@ -27,7 +27,7 @@ export type DealIntakeDefaults = {
 };
 
 // Kolom form "Daftarkan Transaksi" (tab Merchant Deals), dipakai bersama oleh
-// RegisterDealTransactionForm dan EditDealModal — satu tempat supaya kedua
+// RegisterDealModal dan EditDealModal — satu tempat supaya kedua
 // form tidak pernah menyimpang. Memilih POI/Merchant otomatis menyarankan
 // Nama BD / Kategori POI / PIC / WhatsApp dari data Pool Lead yang sudah ada.
 export function DealIntakeFields({

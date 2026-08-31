@@ -64,7 +64,7 @@ function Msg({ state }: { state: ActionResult | null }) {
 
 // EditDealModal — tombol "Edit" (atau "Lengkapi Data" untuk baris hasil Import
 // Master Deal) per baris. Memakai DealIntakeFields yang sama dengan
-// RegisterDealTransactionForm supaya field tidak pernah menyimpang.
+// RegisterDealModal supaya field tidak pernah menyimpang.
 function DeleteDealButton({ dealId, label }: { dealId: string; label: string }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(deleteDealTransaction, null);
   return (
@@ -331,7 +331,7 @@ export function DealsTable({
               setQuery(e.target.value);
               setPage(1);
             }}
-            placeholder="wildcard…"
+            placeholder="search..."
           />
         </div>
       </div>
