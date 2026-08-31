@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCreator, getCachedClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
+import { MobileShell } from "@/components/mobile-shell";
 
 export default async function AppLayout({
   children,
@@ -82,13 +83,12 @@ export default async function AppLayout({
     </div>
   );
 
-  return (
-    <div className="app-shell">
-      <nav className="sidebar">
-        <div className="brand">MSDPS</div>
-        <div className="sub">MEAGO!</div>
+  const sidebar = (
+    <>
+      <div className="brand">MSDPS</div>
+      <div className="sub">MEAGO!</div>
 
-        {sectionHeading("Umum")}
+      {sectionHeading("Umum")}
         <Link href="/dashboard">Dashboard</Link>
         <Link href="/portal">Team Portal</Link>
         {seeFinance && <Link href="/finance">Keuangan</Link>}
@@ -153,8 +153,12 @@ export default async function AppLayout({
             </button>
           </form>
         </div>
-      </nav>
-      <main className="main">{children}</main>
-    </div>
+    </>
+  );
+
+  return (
+    <MobileShell brand="MSDPS" sidebar={sidebar}>
+      {children}
+    </MobileShell>
   );
 }
