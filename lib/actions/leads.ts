@@ -14,7 +14,10 @@ import {
   RENEWAL_REQUIRES_STATUS,
 } from "@/lib/leads/intake";
 
-export type ActionResult = { ok: boolean; message: string };
+// requiresForce: lead/prospek tidak terhapus karena FK prospect_attempts →
+// leads (23503) — UI menampilkan tombol "Hapus + Prospek Terkait" yang
+// mengirim ulang aksi yang sama dengan force=1 (lihat deleteLead/deleteLeadsBulk).
+export type ActionResult = { ok: boolean; message: string; requiresForce?: boolean };
 
 async function ctx() {
   const supabase = await createClient();
@@ -219,17 +222,39 @@ export async function deleteLead(
 
   const lead_id = String(formData.get("lead_id") || "");
   if (!lead_id) return { ok: false, message: "Lead tidak valid." };
+  const force = String(formData.get("force") || "") === "1";
+
+  // force=1: hapus dulu seluruh prospect_attempts anak lead ini supaya FK
+  // prospect_attempts→leads tidak lagi menghalangi delete lead di bawah.
+  if (force) {
+    const { error: attemptsError } = await supabase
+      .from("prospect_attempts")
+      .delete()
+      .eq("parent_lead_id", lead_id);
+    if (attemptsError) {
+      const msg =
+        attemptsError.code === "23503"
+          ? "Tidak bisa dihapus — salah satu prospek terkait sudah menjadi merchant (transaksi berjalan). Tuntaskan/pindahkan merchant tersebut dulu sebelum menghapus lead ini."
+          : `Gagal menghapus prospek terkait: ${attemptsError.message}`;
+      return { ok: false, message: msg };
+    }
+  }
 
   const { error } = await supabase.from("leads").delete().eq("id", lead_id);
   if (error) {
-    const msg =
-      error.code === "23503"
-        ? "Tidak bisa dihapus — lead ini sudah punya prospek terkait."
-        : `Gagal menghapus lead: ${error.message}`;
-    return { ok: false, message: msg };
+    if (error.code === "23503") {
+      return {
+        ok: false,
+        message:
+          'Tidak bisa dihapus — lead ini sudah punya prospek terkait. Klik "Hapus + Prospek Terkait" untuk menghapus lead beserta seluruh prospeknya sekaligus.',
+        requiresForce: true,
+      };
+    }
+    return { ok: false, message: `Gagal menghapus lead: ${error.message}` };
   }
 
   revalidatePath("/leads");
+  revalidatePath("/deals");
   return { ok: true, message: "Lead dihapus." };
 }
 
@@ -245,17 +270,37 @@ export async function deleteLeadsBulk(
 
   const ids = formData.getAll("lead_ids").map(String).filter(Boolean);
   if (ids.length === 0) return { ok: false, message: "Pilih minimal satu lead untuk dihapus." };
+  const force = String(formData.get("force") || "") === "1";
+
+  if (force) {
+    const { error: attemptsError } = await supabase
+      .from("prospect_attempts")
+      .delete()
+      .in("parent_lead_id", ids);
+    if (attemptsError) {
+      const msg =
+        attemptsError.code === "23503"
+          ? "Sebagian prospek terkait sudah menjadi merchant (transaksi berjalan) — tuntaskan/pindahkan dulu sebelum menghapus lead-nya."
+          : `Gagal menghapus prospek terkait: ${attemptsError.message}`;
+      return { ok: false, message: msg };
+    }
+  }
 
   const { error, count } = await supabase.from("leads").delete({ count: "exact" }).in("id", ids);
   if (error) {
-    const msg =
-      error.code === "23503"
-        ? "Sebagian lead tidak bisa dihapus karena sudah punya prospek terkait."
-        : `Gagal menghapus lead terpilih: ${error.message}`;
-    return { ok: false, message: msg };
+    if (error.code === "23503") {
+      return {
+        ok: false,
+        message:
+          'Sebagian lead tidak bisa dihapus karena sudah punya prospek terkait. Klik "Hapus + Prospek Terkait" untuk menghapus beserta seluruh prospeknya.',
+        requiresForce: true,
+      };
+    }
+    return { ok: false, message: `Gagal menghapus lead terpilih: ${error.message}` };
   }
 
   revalidatePath("/leads");
+  revalidatePath("/deals");
   return { ok: true, message: `${count ?? ids.length} lead dihapus.` };
 }
 

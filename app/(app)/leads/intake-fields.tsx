@@ -24,7 +24,7 @@ export type IntakeDefaults = {
   web_socmed_link?: string;
 };
 
-// Kolom form intake BD, dipakai bersama oleh NewLeadForm ("Daftarkan Lead") dan
+// Kolom form intake BD, dipakai bersama oleh NewLeadModal ("Daftar Lead") dan
 // EditLeadModal ("Edit" di kolom Aksi Pool Lead) — satu tempat supaya kedua form
 // tidak pernah menyimpang. `idPrefix` menjaga id <datalist> tetap unik kalau ada
 // lebih dari satu instance ter-mount sekaligus (form Daftarkan + modal Edit).

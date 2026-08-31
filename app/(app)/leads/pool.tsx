@@ -371,26 +371,42 @@ function EditLeadModal({
   );
 }
 
+// DeleteLeadButton — lead yang sudah pernah "diambil" BD (ClaimButton) punya
+// baris prospect_attempts anak; DB menolak delete-nya (FK 23503). Saat itu
+// terjadi, deleteLead mengembalikan requiresForce=true — tombol kedua "Hapus +
+// Prospek Terkait" muncul untuk mengirim ulang aksi yang sama dengan force=1
+// (menghapus prospect_attempts anak lebih dulu, baru lead-nya).
 function DeleteLeadButton({ leadId, label }: { leadId: string; label: string }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(deleteLead, null);
   return (
     <form
       action={action}
-      className="inline-form"
       onSubmit={(e) => {
-        if (!confirm(`Hapus lead "${label}"? Tindakan ini tidak dapat dibatalkan.`)) {
+        const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+        const isForce = submitter?.name === "force";
+        const msg = isForce
+          ? `Hapus lead "${label}" beserta SELURUH prospek terkait? Tindakan ini tidak dapat dibatalkan.`
+          : `Hapus lead "${label}"? Tindakan ini tidak dapat dibatalkan.`;
+        if (!confirm(msg)) {
           e.preventDefault();
         }
       }}
     >
       <input type="hidden" name="lead_id" value={leadId} />
-      <button className="sm dangerbtn" disabled={pending}>
-        {pending ? "…" : "Hapus"}
-      </button>
+      <div className="inline-form">
+        <button className="sm dangerbtn" disabled={pending}>
+          {pending ? "…" : "Hapus"}
+        </button>
+        {state?.requiresForce && (
+          <button className="sm dangerbtn" name="force" value="1" disabled={pending}>
+            {pending ? "…" : "Hapus + Prospek Terkait"}
+          </button>
+        )}
+      </div>
       {state && !state.ok && (
-        <span className="badge red" title={state.message}>
-          gagal
-        </span>
+        <div className="err" style={{ marginTop: 4, marginBottom: 0, maxWidth: 280 }}>
+          {state.message}
+        </div>
       )}
     </form>
   );
@@ -404,9 +420,13 @@ function BulkDeleteBar({ ids }: { ids: string[] }) {
   return (
     <form
       action={action}
-      className="inline-form"
       onSubmit={(e) => {
-        if (!confirm(`Hapus ${ids.length} lead terpilih? Tindakan ini tidak dapat dibatalkan.`)) {
+        const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+        const isForce = submitter?.name === "force";
+        const msg = isForce
+          ? `Hapus ${ids.length} lead terpilih beserta SELURUH prospek terkait? Tindakan ini tidak dapat dibatalkan.`
+          : `Hapus ${ids.length} lead terpilih? Tindakan ini tidak dapat dibatalkan.`;
+        if (!confirm(msg)) {
           e.preventDefault();
         }
       }}
@@ -414,9 +434,16 @@ function BulkDeleteBar({ ids }: { ids: string[] }) {
       {ids.map((id) => (
         <input key={id} type="hidden" name="lead_ids" value={id} />
       ))}
-      <button className="sm dangerbtn" disabled={pending || ids.length === 0}>
-        {pending ? "Menghapus…" : `Hapus ${ids.length} Terpilih`}
-      </button>
+      <div className="inline-form">
+        <button className="sm dangerbtn" disabled={pending || ids.length === 0}>
+          {pending ? "Menghapus…" : `Hapus ${ids.length} Terpilih`}
+        </button>
+        {state?.requiresForce && (
+          <button className="sm dangerbtn" name="force" value="1" disabled={pending}>
+            {pending ? "Menghapus…" : "Hapus + Prospek Terkait"}
+          </button>
+        )}
+      </div>
       {state && <Msg state={state} />}
     </form>
   );
@@ -455,6 +482,7 @@ export function PoolLeadSection({
   bdNameById,
   businessTypeOptions,
   benefitOptions,
+  recordedLeadIds,
   isBizDev,
   canManage,
 }: {
@@ -463,6 +491,7 @@ export function PoolLeadSection({
   bdNameById: Record<string, string>;
   businessTypeOptions: BusinessTypeOptions;
   benefitOptions: string[];
+  recordedLeadIds: Set<string>;
   isBizDev: boolean;
   canManage: boolean;
 }) {
@@ -556,7 +585,9 @@ export function PoolLeadSection({
     });
   }
 
-  const dealingLeads = leads.filter((l) => l.crm_status === "Dealing");
+  // Brand yang sudah tercatat transaksinya (brand_deals.lead_id) hilang dari
+  // notifikasi — sudah tidak perlu ditindaklanjuti lewat "Catat Transaksi".
+  const dealingLeads = leads.filter((l) => l.crm_status === "Dealing" && !recordedLeadIds.has(l.id));
 
   return (
     <>

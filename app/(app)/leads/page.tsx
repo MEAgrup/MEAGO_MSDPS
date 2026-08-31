@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { NewLeadForm, ImportCsvForm } from "./forms";
+import { NewLeadModal, ImportCsvForm } from "./forms";
 import { PoolLeadSection, type PoolLead } from "./pool";
 import { BRAND_CATEGORIES, type BrandCategory } from "@/lib/leads/intake";
 import type { BusinessTypeOptions } from "./intake-fields";
@@ -20,12 +20,13 @@ export default async function LeadsPage() {
 
   const supabase = await getCachedClient();
 
-  const [{ data: leads }, { data: emps }, { data: businessTypes }, { data: benefits }] =
+  const [{ data: leads }, { data: emps }, { data: businessTypes }, { data: benefits }, { data: recordedDeals }] =
     await Promise.all([
       supabase.from("leads").select(POOL_LEAD_COLUMNS).order("created_at", { ascending: false }),
       supabase.from("employees").select("id, full_name, division, active"),
       supabase.from("lead_business_types").select("brand_category, label").order("label"),
       supabase.from("lead_benefit_options").select("label").order("label"),
+      supabase.from("brand_deals").select("lead_id").not("lead_id", "is", null),
     ]);
 
   const bdNameById: Record<string, string> = Object.fromEntries(
@@ -48,14 +49,22 @@ export default async function LeadsPage() {
 
   const leadList = (leads as PoolLead[] | null) ?? [];
   const countByStatus = (status: string) => leadList.filter((l) => l.crm_status === status).length;
+  const recordedLeadIds = new Set(
+    (recordedDeals ?? []).map((d) => d.lead_id).filter((id): id is string => !!id)
+  );
 
   return (
     <>
-      <h1>Leads &amp; Prospek</h1>
-      <p className="page-sub">
-        Pool lead dedup by nomor (E.164). Prospek = salinan kerja BizDev; yang pertama closing
-        menang, sisanya otomatis [Closed - Kalah Kompetisi].
-      </p>
+      <div className="page-header">
+        <div>
+          <h1>Leads &amp; Prospek</h1>
+          <p className="page-sub">
+            Pool lead dedup by nomor (E.164). Prospek = salinan kerja BizDev; yang pertama closing
+            menang, sisanya otomatis [Closed - Kalah Kompetisi].
+          </p>
+        </div>
+        {canManage && <NewLeadModal bdOptions={bdOptions} businessTypeOptions={businessTypeOptions} />}
+      </div>
 
       <div className="stats">
         <div className="stat">
@@ -90,23 +99,18 @@ export default async function LeadsPage() {
         bdNameById={bdNameById}
         businessTypeOptions={businessTypeOptions}
         benefitOptions={benefitOptions}
+        recordedLeadIds={recordedLeadIds}
         isBizDev={isBizDev}
         canManage={canManage}
       />
 
       {canManage && (
-        <>
-          <div className="card">
-            <h2>Daftarkan Lead</h2>
-            <NewLeadForm bdOptions={bdOptions} businessTypeOptions={businessTypeOptions} />
-          </div>
-          <div className="card">
-            <details className="disclose">
-              <summary>Impor Massal (CSV)</summary>
-              <ImportCsvForm />
-            </details>
-          </div>
-        </>
+        <div className="card">
+          <details className="disclose">
+            <summary>Impor Massal (CSV)</summary>
+            <ImportCsvForm />
+          </details>
+        </div>
       )}
     </>
   );
