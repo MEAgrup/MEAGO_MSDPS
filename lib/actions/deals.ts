@@ -2,340 +2,339 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { parseCommission, parseFlexibleDate, parseRupiah } from "@/lib/mcn/parsers";
+import { isBrandCategory, isDealStatus, normalizePhone62 } from "@/lib/leads/intake";
+import { isBentukKerjasama, isOpsName } from "@/lib/deals/intake";
+import { parseIntTolerant, parseRupiah } from "@/lib/mcn/parsers";
 
 export type ActionResult = { ok: boolean; message: string };
+
+type Me = { id: string; division: string; rank: string | null; is_od: boolean; is_director: boolean };
 
 async function ctx() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { supabase, user: null, me: null };
+  if (!user) return { supabase, user: null, me: null as Me | null };
   const { data: me } = await supabase
     .from("employees")
     .select("id, division, rank, is_od, is_director")
     .eq("id", user.id)
     .maybeSingle();
-  return { supabase, user, me };
+  return { supabase, user, me: me as Me | null };
 }
 
-// registerDeal: form registrasi deal tervalidasi. fieldErrors dikumpulkan lalu digabung
-// jadi satu pesan terstruktur. shop_id (bila diisi) numeric-only + cek duplikat dulu.
-// Produk dinamis dibaca dari entries product_name_0.., mewarisi niche/exp/komisi deal.
-export async function registerDeal(
+// canManageDeals: siapa boleh "Daftarkan Transaksi" / edit — sama seperti
+// canRegister di page.tsx (mgmt/BizDev/CreatorManagement).
+function canManageDeals(me: Me | null): boolean {
+  return !!me && (me.is_od || me.is_director || me.division === "BizDev" || me.division === "CreatorManagement");
+}
+
+// canImportDeals: "Import Master Deal" dibatasi ke mgmt/BizDev saja.
+function canImportDeals(me: Me | null): boolean {
+  return !!me && (me.is_od || me.is_director || me.division === "BizDev");
+}
+
+type SupabaseClientLike = Awaited<ReturnType<typeof createClient>>;
+
+type DealFields = {
+  lead_id: string;
+  bd_id: string;
+  ops_name: string;
+  kategori_poi: string;
+  pic_name: string;
+  pic_whatsapp: string;
+  tanggal_mulai_kontrak: string | null;
+  tanggal_akhir_kontrak: string | null;
+  bentuk_kerjasama: string;
+  nominal_harga: number;
+  benefit: string;
+  visit_start_date: string;
+  visit_start_time: string;
+  visit_end_date: string;
+  visit_end_time: string;
+  kreator_needed: number;
+  konten_needed: number | null;
+  total_jam_live: number | null;
+  brief_link: string | null;
+};
+
+// readDealFields — validasi field form "Daftarkan Transaksi" / edit ("Lengkapi
+// Data"), dipakai bersama registerDealTransaction + updateDealTransaction.
+// DB (trigger brand_deals_validate, migrasi 0332/0333) tetap otoritas final —
+// pengecekan di sini hanya supaya pesan errornya ramah & spesifik per-field.
+async function readDealFields(
+  supabase: SupabaseClientLike,
+  formData: FormData
+): Promise<{ fields: DealFields; brand_name: string } | { error: string }> {
+  const lead_id = String(formData.get("lead_id") || "").trim();
+  const bd_id = String(formData.get("bd_id") || "").trim();
+  const ops_name = String(formData.get("ops_name") || "").trim();
+  const kategori_poi = String(formData.get("kategori_poi") || "").trim();
+  const pic_name = String(formData.get("pic_name") || "").trim();
+  const pic_whatsapp_raw = String(formData.get("pic_whatsapp") || "").trim();
+  const bentuk_kerjasama = String(formData.get("bentuk_kerjasama") || "").trim();
+  const nominalRaw = String(formData.get("nominal_harga") || "").trim();
+  const benefit = String(formData.get("benefit") || "").trim();
+  const visit_mulai = String(formData.get("visit_mulai") || "").trim();
+  const visit_berakhir = String(formData.get("visit_berakhir") || "").trim();
+  const kreatorRaw = String(formData.get("kreator_needed") || "").trim();
+  const kontenRaw = String(formData.get("konten_needed") || "").trim();
+  const jamLiveRaw = String(formData.get("total_jam_live") || "").trim();
+  const brief_link = String(formData.get("brief_link") || "").trim();
+  const tglMulaiRaw = String(formData.get("tanggal_mulai_kontrak") || "").trim();
+  const tglAkhirRaw = String(formData.get("tanggal_akhir_kontrak") || "").trim();
+
+  if (
+    !lead_id ||
+    !bd_id ||
+    !ops_name ||
+    !kategori_poi ||
+    !pic_name ||
+    !pic_whatsapp_raw ||
+    !bentuk_kerjasama ||
+    !benefit ||
+    !visit_mulai ||
+    !visit_berakhir ||
+    !kreatorRaw
+  ) {
+    return { error: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
+  }
+  if (!isBrandCategory(kategori_poi)) return { error: "[kategori POI tidak dikenal]" };
+  if (!isOpsName(ops_name)) return { error: "[nama OPS tidak dikenal]" };
+  if (!isBentukKerjasama(bentuk_kerjasama)) return { error: "[bentuk kerja sama tidak dikenal]" };
+
+  if (kategori_poi === "Dining" && (!tglMulaiRaw || !tglAkhirRaw)) {
+    return { error: "[tanggal awal & akhir kerjasama wajib diisi untuk kategori Dining]" };
+  }
+
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("id, brand_name, lead_name, crm_status")
+    .eq("id", lead_id)
+    .maybeSingle();
+  if (!lead) return { error: "[POI/Merchant tidak ditemukan]" };
+  if (!isDealStatus(lead.crm_status)) {
+    return { error: "[POI/Merchant harus berstatus Dealing atau Renewal]" };
+  }
+
+  const nominal_harga = bentuk_kerjasama === "Free/Barter" ? 0 : parseRupiah(nominalRaw) ?? NaN;
+  if (!Number.isFinite(nominal_harga) || nominal_harga < 0) {
+    return { error: "[nominal deals tidak valid]" };
+  }
+  if (bentuk_kerjasama === "Berbayar" && nominal_harga <= 0) {
+    return { error: "[nominal deals wajib diisi untuk Berbayar]" };
+  }
+
+  const kreator_needed = parseIntTolerant(kreatorRaw) ?? NaN;
+  if (!Number.isFinite(kreator_needed) || kreator_needed <= 0) {
+    return { error: "[jumlah kreator tidak valid]" };
+  }
+  let konten_needed: number | null = null;
+  if (kontenRaw) {
+    konten_needed = parseIntTolerant(kontenRaw);
+    if (konten_needed === null || konten_needed < 0) return { error: "[jumlah konten tidak valid]" };
+  }
+  let total_jam_live: number | null = null;
+  if (jamLiveRaw) {
+    total_jam_live = Number(jamLiveRaw);
+    if (!Number.isFinite(total_jam_live) || total_jam_live < 0) {
+      return { error: "[total jam live tidak valid]" };
+    }
+  }
+
+  const [visitMulaiDate, visitMulaiTime] = visit_mulai.split("T");
+  const [visitBerakhirDate, visitBerakhirTime] = visit_berakhir.split("T");
+  if (!visitMulaiDate || !visitMulaiTime || !visitBerakhirDate || !visitBerakhirTime) {
+    return { error: "[visit dimulai/berakhir tidak valid]" };
+  }
+  if (visitBerakhirDate < visitMulaiDate) {
+    return { error: "[tanggal selesai visit tidak boleh sebelum tanggal mulai]" };
+  }
+
+  const pic_whatsapp = normalizePhone62(pic_whatsapp_raw);
+  if (!pic_whatsapp) return { error: "[nomor WhatsApp tidak valid]" };
+
+  return {
+    brand_name: lead.brand_name ?? lead.lead_name,
+    fields: {
+      lead_id,
+      bd_id,
+      ops_name,
+      kategori_poi,
+      pic_name,
+      pic_whatsapp,
+      tanggal_mulai_kontrak: kategori_poi === "Dining" ? tglMulaiRaw : null,
+      tanggal_akhir_kontrak: kategori_poi === "Dining" ? tglAkhirRaw : null,
+      bentuk_kerjasama,
+      nominal_harga,
+      benefit,
+      visit_start_date: visitMulaiDate,
+      visit_start_time: visitMulaiTime,
+      visit_end_date: visitBerakhirDate,
+      visit_end_time: visitBerakhirTime,
+      kreator_needed,
+      konten_needed,
+      total_jam_live,
+      brief_link: brief_link || null,
+    },
+  };
+}
+
+// registerDealTransaction — form "Daftarkan Transaksi" (tab Merchant Deals).
+export async function registerDealTransaction(
   _prev: ActionResult | null,
   formData: FormData
 ): Promise<ActionResult> {
-  const { supabase, user } = await ctx();
-  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang mendaftarkan transaksi deal." };
 
-  const brand_name = String(formData.get("brand_name") || "").trim();
-  const shop_id = String(formData.get("shop_id") || "").trim() || null;
-  const merchant_id = String(formData.get("merchant_id") || "").trim() || null;
-  const niche = String(formData.get("niche") || "").trim() || null;
-  const brand_link = String(formData.get("brand_link") || "").trim() || null;
-  const campaign_name = String(formData.get("campaign_name") || "").trim() || null;
-  const campaign_id = String(formData.get("campaign_id") || "").trim() || null;
-  const pic_tap = String(formData.get("pic_tap") || "").trim() || null;
-  const expRaw = String(formData.get("exp_date") || "").trim();
-  const komisiKreatorRaw = String(formData.get("komisi_kreator") || "").trim();
-  const komisiMeaRaw = String(formData.get("komisi_mea") || "").trim();
-  const sourced_by_role = String(formData.get("sourced_by_role") || "").trim() || "bd";
-  const kreatorsNeededRaw = String(formData.get("kreators_needed") || "").trim();
-  const videosNeededRaw = String(formData.get("videos_needed") || "").trim();
-  const poi_location = String(formData.get("poi_location") || "").trim() || null;
+  const parsed = await readDealFields(supabase, formData);
+  if ("error" in parsed) return { ok: false, message: parsed.error };
 
-  const fieldErrors: Record<string, string> = {};
-
-  if (!brand_name) fieldErrors.brand_name = "brand wajib diisi (persis nama tampilan platform)";
-
-  // kreators_needed / videos_needed (opsional, info-only 0312): angka bulat bila diisi.
-  let kreators_needed: number | null = null;
-  if (kreatorsNeededRaw) {
-    if (!/^[0-9]+$/.test(kreatorsNeededRaw)) fieldErrors.kreators_needed = "harus angka bulat";
-    else kreators_needed = parseInt(kreatorsNeededRaw, 10);
-  }
-  let videos_needed: number | null = null;
-  if (videosNeededRaw) {
-    if (!/^[0-9]+$/.test(videosNeededRaw)) fieldErrors.videos_needed = "harus angka bulat";
-    else videos_needed = parseInt(videosNeededRaw, 10);
-  }
-
-  // shop_id: numeric-only bila diisi + cek duplikat sebelum insert.
-  if (shop_id !== null && !/^[0-9]+$/.test(shop_id)) {
-    fieldErrors.shop_id = "shop ID harus angka saja";
-  } else if (shop_id !== null) {
-    const { data: dup } = await supabase
-      .from("brand_deals")
-      .select("code, brand_name")
-      .eq("shop_id", shop_id)
-      .maybeSingle();
-    if (dup) fieldErrors.shop_id = `shop ID sudah dipakai deal ${dup.code} — ${dup.brand_name}`;
-  }
-
-  // exp_date wajib valid.
-  let exp_date: string | null = null;
-  if (!expRaw) {
-    fieldErrors.exp_date = "tanggal exp wajib diisi";
-  } else {
-    exp_date = parseFlexibleDate(expRaw);
-    if (!exp_date) fieldErrors.exp_date = "tanggal exp tidak valid";
-  }
-
-  // Komisi kreator (opsional; bila diisi wajib parse & 0-100, max>=min).
-  let komisi_kreator_raw: string | null = null;
-  let komisi_kreator_pct: number | null = null;
-  if (komisiKreatorRaw) {
-    const c = parseCommission(komisiKreatorRaw);
-    if (!c) fieldErrors.komisi_kreator = "komisi kreator tidak valid (0-100, max>=min)";
-    else {
-      komisi_kreator_raw = c.raw;
-      komisi_kreator_pct = c.pct;
-    }
-  }
-  let komisi_mea_raw: string | null = null;
-  let komisi_mea_pct: number | null = null;
-  if (komisiMeaRaw) {
-    const c = parseCommission(komisiMeaRaw);
-    if (!c) fieldErrors.komisi_mea = "komisi MEA tidak valid (0-100, max>=min)";
-    else {
-      komisi_mea_raw = c.raw;
-      komisi_mea_pct = c.pct;
-    }
-  }
-
-  if (Object.keys(fieldErrors).length > 0) {
-    const detail = Object.entries(fieldErrors)
-      .map(([f, msg]) => `• ${f}: ${msg}`)
-      .join("\n");
-    return { ok: false, message: `Registrasi deal gagal — perbaiki:\n${detail}` };
-  }
+  const sourced_by_role = me.division === "CreatorManagement" && !(me.is_od || me.is_director) ? "cm" : "bd";
 
   const { data: deal, error } = await supabase
     .from("brand_deals")
-    .insert({
-      brand_name,
-      shop_id,
-      merchant_id,
-      niche,
-      brand_link,
-      campaign_name,
-      campaign_id,
-      exp_date,
-      komisi_kreator_raw,
-      komisi_kreator_pct,
-      komisi_mea_raw,
-      komisi_mea_pct,
-      pic_tap,
-      sourced_by_role,
-      kreators_needed,
-      videos_needed,
-      poi_location,
-    })
+    .insert({ brand_name: parsed.brand_name, sourced_by_role, ...parsed.fields })
     .select("id, code")
     .single();
-  if (error) {
-    if (error.code === "23505") return { ok: false, message: "shop ID sudah terdaftar di deal lain." };
-    return { ok: false, message: `Gagal menyimpan deal: ${error.message}` };
-  }
-
-  // Produk dinamis: product_name_0, product_id_0, product_link_0, product_niche_0, ...
-  const products: Record<string, unknown>[] = [];
-  for (let i = 0; formData.has(`product_name_${i}`); i++) {
-    const pname = String(formData.get(`product_name_${i}`) || "").trim();
-    if (!pname) continue;
-    const pNicheRaw = String(formData.get(`product_niche_${i}`) || "").trim();
-    const pExpRaw = String(formData.get(`product_exp_${i}`) || "").trim();
-    const pKomisiRaw = String(formData.get(`product_komisi_${i}`) || "").trim();
-    const pExp = pExpRaw ? parseFlexibleDate(pExpRaw) : null;
-    const pKomisi = pKomisiRaw ? parseCommission(pKomisiRaw) : null;
-    products.push({
-      deal_id: deal.id,
-      product_name: pname,
-      product_id: String(formData.get(`product_id_${i}`) || "").trim() || null,
-      product_link: String(formData.get(`product_link_${i}`) || "").trim() || null,
-      // Produk mewarisi niche/exp/komisi deal bila kosong.
-      niche: pNicheRaw || niche,
-      exp_date: pExp ?? exp_date,
-      komisi_kreator_pct: pKomisi ? pKomisi.pct : komisi_kreator_pct,
-    });
-  }
-  let productMsg = "";
-  if (products.length > 0) {
-    const { error: pErr } = await supabase.from("deal_products").insert(products);
-    productMsg = pErr
-      ? ` (deal tersimpan, namun ${products.length} produk gagal: ${pErr.message})`
-      : ` + ${products.length} produk`;
-  }
+  if (error) return { ok: false, message: `Gagal menyimpan transaksi: ${error.message}` };
 
   revalidatePath("/deals");
-  return { ok: true, message: `Deal ${deal.code} — ${brand_name} terdaftar${productMsg}.` };
+  revalidatePath("/leads");
+  return { ok: true, message: `Transaksi deal ${deal.code} — ${parsed.brand_name} tersimpan.` };
 }
 
-// Alias header legacy → field kanonik (termasuk typo nyata `nama_campiagn`, `nama_bd`, `ads`).
-const LEGACY_HEADER_ALIASES: Record<string, string> = {
-  brand: "brand_name",
-  "nama brand": "brand_name",
-  nama_brand: "brand_name",
-  brand_name: "brand_name",
-  merchant: "brand_name",
-  "shop id": "shop_id",
-  shop_id: "shop_id",
-  shopid: "shop_id",
-  "id toko": "shop_id",
-  "nama campiagn": "campaign_name",
-  nama_campiagn: "campaign_name",
-  "nama campaign": "campaign_name",
-  nama_campaign: "campaign_name",
-  campaign: "campaign_name",
-  campaign_name: "campaign_name",
-  "nama_bd": "pic_name",
-  "nama bd": "pic_name",
-  bd: "pic_name",
-  pic: "pic_name",
-  exp: "exp_date",
-  "exp date": "exp_date",
-  exp_date: "exp_date",
-  expired: "exp_date",
-  "tanggal exp": "exp_date",
-  komisi: "komisi_kreator",
-  "komisi kreator": "komisi_kreator",
-  komisi_kreator: "komisi_kreator",
-  commission: "komisi_kreator",
-  "komisi mea": "komisi_mea",
-  komisi_mea: "komisi_mea",
-  niche: "niche",
-  kategori: "niche",
-  ads: "ads_budget",
-  "ads budget": "ads_budget",
-  ads_budget: "ads_budget",
-  budget: "ads_budget",
-};
-
-function resolveLegacyHeader(raw: string): string | null {
-  const key = raw.toLowerCase().trim().replace(/\s+/g, " ");
-  return LEGACY_HEADER_ALIASES[key] ?? null;
-}
-
-function splitLegacy(line: string): string[] {
-  return line.split(/[\t;,]/).map((s) => s.trim());
-}
-
-// importLegacyDeals: paste textarea → split manual. JANGAN PERNAH crash/tolak baris.
-// Probe baris header (skip judul non-header); field kotor → null + review_flags jsonb;
-// expired tetap insert (active_flag false via trigger); duplikat shop_id → skip.
-export async function importLegacyDeals(
+// updateDealTransaction — edit transaksi, termasuk jalur "Lengkapi Data" untuk
+// baris hasil Import Master Deal (kategori_poi dkk masih kosong).
+export async function updateDealTransaction(
   _prev: ActionResult | null,
   formData: FormData
 ): Promise<ActionResult> {
-  const { supabase, user } = await ctx();
-  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang mengedit transaksi deal." };
 
-  const raw = String(formData.get("data") || "").trim();
-  if (!raw) return { ok: false, message: "Tempel data legacy dulu." };
+  const deal_id = String(formData.get("deal_id") || "").trim();
+  if (!deal_id) return { ok: false, message: "Deal tidak valid." };
 
-  const lines = raw.split(/\r?\n/).map((l) => l.trimEnd());
-  const skipped: { row: number; reason: string }[] = [];
+  const parsed = await readDealFields(supabase, formData);
+  if ("error" in parsed) return { ok: false, message: parsed.error };
 
-  // Cari baris header: baris pertama dgn >=2 sel yang cocok alias header.
-  let headerFields: (string | null)[] | null = null;
-  let dataStart = 0;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === "") continue;
-    const cells = splitLegacy(lines[i]);
-    const mapped = cells.map(resolveLegacyHeader);
-    const matched = mapped.filter((m) => m !== null).length;
-    if (matched >= 2) {
-      headerFields = mapped;
-      dataStart = i + 1;
-      break;
-    }
-    skipped.push({ row: i + 1, reason: "baris judul/non-header dilewati" });
-  }
+  const { error } = await supabase
+    .from("brand_deals")
+    .update({ brand_name: parsed.brand_name, ...parsed.fields })
+    .eq("id", deal_id);
+  if (error) return { ok: false, message: `Gagal menyimpan perubahan: ${error.message}` };
 
-  if (!headerFields) {
-    return { ok: false, message: "Header tidak dikenali — tidak ada baris yang bisa diimpor." };
+  revalidatePath("/deals");
+  revalidatePath("/leads");
+  return { ok: true, message: "Transaksi deal diperbarui." };
+}
+
+// ---- Import Master Deal -----------------------------------------------------
+// Format tetap: Unique_ID, Bentuk_Kerjasama, Nominal, Benefit_Diberikan,
+// Visit_Mulai, Visit_Berakhir, Jumlah_Kreator, Jumlah_Konten, Link_Brief.
+// Baris yang masuk sengaja TANPA POI/BD/OPS/kategori/PIC/WhatsApp — brand_name
+// diisi sementara dengan Unique_ID, kategori_poi dibiarkan kosong (jadi
+// penanda "belum lengkap" di tabel Daftar Deal) sampai dilengkapi manual lewat
+// "Lengkapi Data".
+function splitCsvLine(line: string): string[] {
+  return line.split(/[\t;,]/).map((s) => s.trim());
+}
+
+// "YYYY-MM-DD" atau "YYYY-MM-DD HH:MM" (pemisah spasi atau T) — format ketat
+// sesuai catatan format di form Import Master Deal, bukan parser fleksibel.
+function parseDealDateTimeCell(raw: string): { date: string; time: string } | null {
+  const m = raw.trim().match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?$/);
+  if (!m) return null;
+  return { date: m[1], time: m[2] ?? "00:00" };
+}
+
+function normalizeBentukKerjasamaCell(raw: string): "Berbayar" | "Free/Barter" | null {
+  const v = raw.trim().toLowerCase();
+  if (v === "berbayar") return "Berbayar";
+  if (v === "free" || v === "barter" || v === "free/barter") return "Free/Barter";
+  return null;
+}
+
+export async function importMasterDeal(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canImportDeals(me)) return { ok: false, message: "Tidak berwenang mengimpor master deal." };
+
+  const raw = String(formData.get("csv") || "").trim();
+  if (!raw) return { ok: false, message: "Isi data CSV." };
+
+  const lines = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  let dataLines = lines;
+  if (lines.length > 0 && /unique_id/i.test(lines[0])) {
+    dataLines = lines.slice(1);
   }
 
   let inserted = 0;
-  for (let i = dataStart; i < lines.length; i++) {
-    if (lines[i].trim() === "") continue;
+  const skipped: { row: number; reason: string }[] = [];
+
+  for (let i = 0; i < dataLines.length; i++) {
     const rowNum = i + 1;
-    const cells = splitLegacy(lines[i]);
+    const cells = splitCsvLine(dataLines[i]);
+    const [
+      unique_id_raw,
+      bentukRaw,
+      nominalRaw,
+      benefitRaw,
+      visitMulaiRaw,
+      visitBerakhirRaw,
+      kreatorRaw,
+      kontenRaw,
+      briefRaw,
+    ] = cells;
 
-    const values: Record<string, string> = {};
-    for (let c = 0; c < headerFields.length; c++) {
-      const field = headerFields[c];
-      if (!field) continue;
-      const v = (cells[c] ?? "").trim();
-      if (v !== "" && !(field in values)) values[field] = v; // kolom pertama menang
+    const unique_id = (unique_id_raw ?? "").trim();
+    if (!unique_id) {
+      skipped.push({ row: rowNum, reason: "Unique_ID kosong" });
+      continue;
     }
-
-    const brand_name = values["brand_name"] ?? "";
-    if (!brand_name) {
-      skipped.push({ row: rowNum, reason: "brand_name kosong" });
+    const bentuk_kerjasama = normalizeBentukKerjasamaCell(bentukRaw ?? "");
+    if (!bentuk_kerjasama) {
+      skipped.push({ row: rowNum, reason: `Bentuk_Kerjasama tidak dikenal: "${bentukRaw ?? ""}"` });
       continue;
     }
 
-    const review_flags: Record<string, unknown> = {};
-
-    // shop_id: numeric-only; kotor → null + flag.
-    let shop_id: string | null = null;
-    if (values["shop_id"]) {
-      if (/^[0-9]+$/.test(values["shop_id"])) shop_id = values["shop_id"];
-      else review_flags.shop_id = `nilai kotor diabaikan: "${values["shop_id"]}"`;
-    }
-
-    // exp_date: invalid → null + flag (expired tetap insert via trigger active_flag).
-    let exp_date: string | null = null;
-    if (values["exp_date"]) {
-      exp_date = parseFlexibleDate(values["exp_date"]);
-      if (!exp_date) review_flags.exp_date = `tanggal tak terparse: "${values["exp_date"]}"`;
-    }
-
-    let komisi_kreator_raw: string | null = null;
-    let komisi_kreator_pct: number | null = null;
-    if (values["komisi_kreator"]) {
-      const c = parseCommission(values["komisi_kreator"]);
-      if (c) {
-        komisi_kreator_raw = c.raw;
-        komisi_kreator_pct = c.pct;
-      } else review_flags.komisi_kreator = `komisi tak terparse: "${values["komisi_kreator"]}"`;
-    }
-    let komisi_mea_raw: string | null = null;
-    let komisi_mea_pct: number | null = null;
-    if (values["komisi_mea"]) {
-      const c = parseCommission(values["komisi_mea"]);
-      if (c) {
-        komisi_mea_raw = c.raw;
-        komisi_mea_pct = c.pct;
-      } else review_flags.komisi_mea = `komisi tak terparse: "${values["komisi_mea"]}"`;
-    }
-
-    let ads_budget: number | null = null;
-    if (values["ads_budget"]) {
-      ads_budget = parseRupiah(values["ads_budget"]);
-      if (ads_budget === null) review_flags.ads_budget = `nominal tak terparse: "${values["ads_budget"]}"`;
-    }
-    if (values["pic_name"]) review_flags.pic_name = values["pic_name"]; // nama BD tak bisa dipetakan ke uuid
+    const nominal_harga = bentuk_kerjasama === "Free/Barter" ? 0 : parseRupiah(nominalRaw) ?? 0;
+    const benefit = (benefitRaw ?? "").trim() || null;
+    const visitMulai = parseDealDateTimeCell(visitMulaiRaw ?? "");
+    const visitBerakhir = parseDealDateTimeCell(visitBerakhirRaw ?? "");
+    const kreator_needed = parseIntTolerant(kreatorRaw ?? "");
+    const konten_needed = parseIntTolerant(kontenRaw ?? "");
+    const brief_link = (briefRaw ?? "").trim() || null;
 
     const { error } = await supabase.from("brand_deals").insert({
-      brand_name,
-      shop_id,
-      niche: values["niche"] ?? null,
-      campaign_name: values["campaign_name"] ?? null,
-      exp_date,
-      komisi_kreator_raw,
-      komisi_kreator_pct,
-      komisi_mea_raw,
-      komisi_mea_pct,
-      ads_budget,
+      brand_name: unique_id,
+      unique_id,
       sourced_by_role: "bd",
-      review_flags: Object.keys(review_flags).length > 0 ? review_flags : null,
+      bentuk_kerjasama,
+      nominal_harga,
+      benefit,
+      visit_start_date: visitMulai?.date ?? null,
+      visit_start_time: visitMulai?.time ?? null,
+      visit_end_date: visitBerakhir?.date ?? null,
+      visit_end_time: visitBerakhir?.time ?? null,
+      kreator_needed,
+      konten_needed,
+      brief_link,
     });
     if (error) {
-      if (error.code === "23505") skipped.push({ row: rowNum, reason: `shop_id duplikat (${shop_id})` });
+      if (error.code === "23505") skipped.push({ row: rowNum, reason: `Unique_ID duplikat (${unique_id})` });
       else skipped.push({ row: rowNum, reason: error.message });
       continue;
     }
@@ -350,13 +349,15 @@ export async function importLegacyDeals(
   const more = skipped.length > 10 ? ` (+${skipped.length - 10} lagi)` : "";
   return {
     ok: inserted > 0,
-    message: `Import legacy: ${inserted} deal masuk, ${skipped.length} dilewati${
+    message: `Import selesai: ${inserted} baris masuk (tandai "Lengkapi Data"), ${skipped.length} dilewati${
       skipped.length ? ` — ${preview}${more}` : ""
     }.`,
   };
 }
 
-// setPipelineStage: ubah pipeline_stage (ter-audit otomatis via trigger).
+// setPipelineStage — DIPAKAI BizDev Workspace (app/(app)/bizdev), bukan lagi
+// oleh tab Merchant Deals sendiri (pipeline_stage tidak lagi ditampilkan di
+// sana) — JANGAN dihapus.
 export async function setPipelineStage(
   _prev: ActionResult | null,
   formData: FormData
@@ -374,77 +375,4 @@ export async function setPipelineStage(
   revalidatePath("/deals");
   revalidatePath("/bizdev");
   return { ok: true, message: `Pipeline stage → ${pipeline_stage}.` };
-}
-
-// updateDealExtras: edit kebutuhan deal (kreator/video/POI, info-only 0312) untuk deal
-// yang sudah terdaftar — satu-satunya jalur "edit deal" untuk 3 kolom opsional ini
-// (field lain deal tidak diedit di sini). Kosong → null, angka wajib bulat bila diisi.
-export async function updateDealExtras(
-  _prev: ActionResult | null,
-  formData: FormData
-): Promise<ActionResult> {
-  const { supabase, user } = await ctx();
-  if (!user) return { ok: false, message: "Tidak terautentikasi." };
-
-  const id = String(formData.get("id") || "");
-  if (!id) return { ok: false, message: "Deal tidak valid." };
-
-  const kreatorsNeededRaw = String(formData.get("kreators_needed") || "").trim();
-  const videosNeededRaw = String(formData.get("videos_needed") || "").trim();
-  const poi_location = String(formData.get("poi_location") || "").trim() || null;
-
-  let kreators_needed: number | null = null;
-  if (kreatorsNeededRaw) {
-    if (!/^[0-9]+$/.test(kreatorsNeededRaw)) {
-      return { ok: false, message: "Kreator dibutuhkan harus angka bulat." };
-    }
-    kreators_needed = parseInt(kreatorsNeededRaw, 10);
-  }
-  let videos_needed: number | null = null;
-  if (videosNeededRaw) {
-    if (!/^[0-9]+$/.test(videosNeededRaw)) {
-      return { ok: false, message: "Jumlah video harus angka bulat." };
-    }
-    videos_needed = parseInt(videosNeededRaw, 10);
-  }
-
-  const { error } = await supabase
-    .from("brand_deals")
-    .update({ kreators_needed, videos_needed, poi_location })
-    .eq("id", id);
-  if (error) return { ok: false, message: `Gagal menyimpan kebutuhan deal: ${error.message}` };
-
-  revalidatePath("/deals");
-  return { ok: true, message: "Kebutuhan deal disimpan." };
-}
-
-// addDealProduct: tambah satu produk ke deal existing.
-export async function addDealProduct(
-  _prev: ActionResult | null,
-  formData: FormData
-): Promise<ActionResult> {
-  const { supabase, user } = await ctx();
-  if (!user) return { ok: false, message: "Tidak terautentikasi." };
-
-  const deal_id = String(formData.get("deal_id") || "");
-  const product_name = String(formData.get("product_name") || "").trim();
-  if (!deal_id || !product_name) return { ok: false, message: "Deal & nama produk wajib diisi." };
-
-  const expRaw = String(formData.get("exp_date") || "").trim();
-  const komisiRaw = String(formData.get("komisi_kreator") || "").trim();
-  const komisi = komisiRaw ? parseCommission(komisiRaw) : null;
-
-  const { error } = await supabase.from("deal_products").insert({
-    deal_id,
-    product_name,
-    product_id: String(formData.get("product_id") || "").trim() || null,
-    product_link: String(formData.get("product_link") || "").trim() || null,
-    niche: String(formData.get("niche") || "").trim() || null,
-    exp_date: expRaw ? parseFlexibleDate(expRaw) : null,
-    komisi_kreator_pct: komisi ? komisi.pct : null,
-  });
-  if (error) return { ok: false, message: `Gagal menambah produk: ${error.message}` };
-
-  revalidatePath("/deals");
-  return { ok: true, message: `Produk "${product_name}" ditambahkan.` };
 }

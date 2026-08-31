@@ -63,7 +63,9 @@ function Msg({ state }: { state: ActionResult | null }) {
 // LeadPicker — combobox "Pilih Brand / Merchant": ketik untuk hot search, daftar
 // pra-urut A-Z. Native <select> tidak cukup untuk daftar besar + pencarian, jadi
 // dibuat manual (tanpa library — konsisten dengan sisa app yang plain React).
-function LeadPicker({
+// Diekspor supaya dipakai ulang oleh Merchant Deals (pemilihan POI/Merchant
+// Dealing/Renewal) — hidden input name selalu "lead_id".
+export function LeadPicker({
   leads,
   value,
   onChange,

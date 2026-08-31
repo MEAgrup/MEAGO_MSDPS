@@ -43,6 +43,29 @@ export default async function AppLayout({
   const seeProj =
     mgmt || isLead || ["CreatorManagement", "BizDev", "Acquisition"].includes(div);
 
+  // Notif "Leads & Prospek" + "Merchant Deals": brand berstatus Dealing/Renewal
+  // yang belum punya transaksi deal (brand_deals.lead_id). Sama untuk kedua
+  // link — dihitung sekali di sini. Dibatasi ke mgmt/BizDev (bukan seeLeads
+  // penuh) karena RLS brand_deals tidak mengizinkan Marketing SELECT — badge
+  // untuk Marketing akan selalu tampak "penuh" (dealtSet kosong) kalau dipaksa.
+  let missingDealCount = 0;
+  if (mgmt || div === "BizDev") {
+    const supabase = await getCachedClient();
+    const [{ data: dealingLeads }, { data: dealtLeads }] = await Promise.all([
+      supabase.from("leads").select("id").in("crm_status", ["Dealing", "Renewal"]),
+      supabase.from("brand_deals").select("lead_id").not("lead_id", "is", null),
+    ]);
+    const dealtSet = new Set((dealtLeads ?? []).map((d) => d.lead_id));
+    missingDealCount = (dealingLeads ?? []).filter((l) => !dealtSet.has(l.id)).length;
+  }
+
+  const NotifBadge = ({ count }: { count: number }) =>
+    count > 0 ? (
+      <span className="badge red" style={{ marginLeft: 6 }} title="Dealing/Renewal belum ada transaksi deal">
+        {count}
+      </span>
+    ) : null;
+
   const sectionHeading = (label: string) => (
     <div
       style={{
@@ -80,8 +103,18 @@ export default async function AppLayout({
         {(seeCM || div === "BizDev") && <Link href="/meago/schedule">Jadwal Live</Link>}
 
         {seeBD && sectionHeading("BizDev & Admin Ops")}
-        {seeLeads && <Link href="/leads">Leads &amp; Prospek</Link>}
-        {seeBD && <Link href="/deals">Merchant Deals</Link>}
+        {seeLeads && (
+          <Link href="/leads">
+            Leads &amp; Prospek
+            <NotifBadge count={missingDealCount} />
+          </Link>
+        )}
+        {seeBD && (
+          <Link href="/deals">
+            Merchant Deals
+            <NotifBadge count={missingDealCount} />
+          </Link>
+        )}
         {seeBD && <Link href="/bizdev">BizDev Workspace</Link>}
 
         {seeAcq && sectionHeading("Akuisisi Kreator")}
