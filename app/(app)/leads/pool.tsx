@@ -506,6 +506,9 @@ export function PoolLeadSection({
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZES)[number]>(10);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dealingNotificationOpen, setDealingNotificationOpen] = useState(true);
+  const [notifQuery, setNotifQuery] = useState("");
+  const [notifMaximized, setNotifMaximized] = useState(false);
+  const [notifPage, setNotifPage] = useState(1);
 
   const jenisUsahaValues = useMemo(
     () => Array.from(new Set(leads.map((l) => l.business_type).filter((v): v is string => !!v))).sort(),
@@ -589,6 +592,74 @@ export function PoolLeadSection({
   // notifikasi — sudah tidak perlu ditindaklanjuti lewat "Catat Transaksi".
   const dealingLeads = leads.filter((l) => l.crm_status === "Dealing" && !recordedLeadIds.has(l.id));
 
+  // Hot search wildcard: kode brand (ID) atau nama BD (BDM PIC) — dipakai di
+  // tampilan normal maupun saat "Perbesar".
+  const notifFiltered = useMemo(() => {
+    const q = notifQuery.trim().toLowerCase();
+    if (!q) return dealingLeads;
+    return dealingLeads.filter((l) => {
+      const bd = (l.bd_employee_id && bdNameById[l.bd_employee_id]) ?? "";
+      const hay = `${l.code ?? ""} ${bd}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [dealingLeads, notifQuery, bdNameById]);
+
+  const NOTIF_PAGE_SIZE = 10;
+  const notifPageCount = Math.max(1, Math.ceil(notifFiltered.length / NOTIF_PAGE_SIZE));
+  const notifClampedPage = Math.min(notifPage, notifPageCount);
+  const notifPaginated = notifMaximized
+    ? notifFiltered.slice((notifClampedPage - 1) * NOTIF_PAGE_SIZE, notifClampedPage * NOTIF_PAGE_SIZE)
+    : notifFiltered;
+
+  const renderNotifTable = (rows: PoolLead[]) => (
+    <div style={{ overflowX: "auto" }}>
+      <table>
+        <thead>
+          <tr>
+            <th>Kode</th>
+            <th>Brand</th>
+            <th>BD</th>
+            <th>Benefit</th>
+            <th>Nominal</th>
+            <th>Periode Kontrak</th>
+            <th className="right">Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((l) => (
+            <tr key={l.id}>
+              <td className="mono">{l.code ?? "—"}</td>
+              <td>{l.brand_name ?? l.lead_name}</td>
+              <td>{(l.bd_employee_id && bdNameById[l.bd_employee_id]) ?? "—"}</td>
+              <td>{l.benefit_dealing ?? "—"}</td>
+              <td className="right">{rupiah(l.nominal_bayar)}</td>
+              <td>
+                {l.tanggal_mulai_kontrak
+                  ? `${tanggal(l.tanggal_mulai_kontrak)} – ${tanggal(l.tanggal_akhir_kontrak)}`
+                  : "—"}
+              </td>
+              <td className="right">
+                <RegisterDealModal
+                  dealingLeads={leads}
+                  bdOptions={bdOptions}
+                  benefitOptions={benefitOptions}
+                  fixedLead={l}
+                />
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={7} className="muted">
+                Tidak ada brand dealing yang cocok dengan pencarian.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <>
       {dealingLeads.length > 0 && (
@@ -598,47 +669,77 @@ export function PoolLeadSection({
               📬 Notifikasi Brand Dealing ({dealingLeads.length})
             </summary>
             <div style={{ marginTop: 12 }}>
-              <div style={{ overflowX: "auto" }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Kode</th>
-                      <th>Brand</th>
-                      <th>BD</th>
-                      <th>Benefit</th>
-                      <th>Nominal</th>
-                      <th>Periode Kontrak</th>
-                      <th className="right">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dealingLeads.map((l) => (
-                      <tr key={l.id}>
-                        <td className="mono">{l.code ?? "—"}</td>
-                        <td>{l.brand_name ?? l.lead_name}</td>
-                        <td>{(l.bd_employee_id && bdNameById[l.bd_employee_id]) ?? "—"}</td>
-                        <td>{l.benefit_dealing ?? "—"}</td>
-                        <td className="right">{rupiah(l.nominal_bayar)}</td>
-                        <td>
-                          {l.tanggal_mulai_kontrak
-                            ? `${tanggal(l.tanggal_mulai_kontrak)} – ${tanggal(l.tanggal_akhir_kontrak)}`
-                            : "—"}
-                        </td>
-                        <td className="right">
-                          <RegisterDealModal
-                            dealingLeads={leads}
-                            bdOptions={bdOptions}
-                            benefitOptions={benefitOptions}
-                            fixedLead={l}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="table-toolbar">
+                <div style={{ flex: 1, maxWidth: 340 }}>
+                  <label>Cari ID Brand / BD</label>
+                  <input
+                    value={notifQuery}
+                    onChange={(e) => {
+                      setNotifQuery(e.target.value);
+                      setNotifPage(1);
+                    }}
+                    placeholder="wildcard, mis. LEAD-2026 atau nama BD"
+                    style={{ marginBottom: 0 }}
+                  />
+                </div>
+                <button type="button" className="sm ghost2" onClick={() => setNotifMaximized(true)}>
+                  ⤢ Perbesar
+                </button>
               </div>
+              {renderNotifTable(notifFiltered)}
             </div>
           </details>
+        </div>
+      )}
+
+      {notifMaximized && (
+        <div className="modal-backdrop" onClick={() => setNotifMaximized(false)}>
+          <div className="modal modal-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>📬 Notifikasi Brand Dealing ({notifFiltered.length})</h3>
+              <button type="button" className="sm ghost2" onClick={() => setNotifMaximized(false)}>
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ maxWidth: 340, marginBottom: 4 }}>
+                <label>Cari ID Brand / BD</label>
+                <input
+                  value={notifQuery}
+                  onChange={(e) => {
+                    setNotifQuery(e.target.value);
+                    setNotifPage(1);
+                  }}
+                  placeholder="wildcard, mis. LEAD-2026 atau nama BD"
+                />
+              </div>
+              {renderNotifTable(notifPaginated)}
+              <div className="pagination">
+                <div className="muted">10 baris / halaman</div>
+                <div className="actions-row">
+                  <button
+                    type="button"
+                    className="sm ghost2"
+                    disabled={notifClampedPage <= 1}
+                    onClick={() => setNotifPage((p) => Math.max(1, p - 1))}
+                  >
+                    ‹ Sebelumnya
+                  </button>
+                  <span className="muted" style={{ alignSelf: "center" }}>
+                    Halaman {notifClampedPage} dari {notifPageCount}
+                  </span>
+                  <button
+                    type="button"
+                    className="sm ghost2"
+                    disabled={notifClampedPage >= notifPageCount}
+                    onClick={() => setNotifPage((p) => Math.min(notifPageCount, p + 1))}
+                  >
+                    Selanjutnya ›
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

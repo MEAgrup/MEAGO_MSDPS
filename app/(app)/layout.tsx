@@ -109,6 +109,7 @@ export default async function AppLayout({
             <NotifBadge count={missingDealCount} />
           </Link>
         )}
+        {seeLeads && <Link href="/leads/dashboard">Dashboard CRM</Link>}
         {seeBD && (
           <Link href="/deals">
             Merchant Deals

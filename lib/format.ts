@@ -22,6 +22,11 @@ export function durasi(sec: number | null | undefined): string {
   return h > 0 ? `${h}j ${m}m` : `${m}m`;
 }
 
+export function hariDesimal(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  return `${n.toFixed(1)} hari`;
+}
+
 export function tanggal(d: string | null | undefined): string {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("id-ID", {
