@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
+import { num, rupiah } from "@/lib/format";
 import { DealsToolbar } from "./forms";
 import { DealsTable, type Deal } from "./table";
 import type { PoolLead } from "../leads/pool";
@@ -54,6 +55,14 @@ export default async function DealsPage() {
     .map((e) => ({ id: e.id, full_name: e.full_name }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
+  const totalTransaksi = deals.length;
+  const totalNominalDeals = deals.reduce((sum, d) => sum + (d.nominal_harga ?? 0), 0);
+  const berbayarCount = deals.filter((d) => d.bentuk_kerjasama === "Berbayar").length;
+  const freeBarterCount = deals.filter((d) => d.bentuk_kerjasama === "Free/Barter").length;
+  const skemaTotal = berbayarCount + freeBarterCount;
+  const berbayarPct = skemaTotal > 0 ? Math.round((berbayarCount / skemaTotal) * 100) : 0;
+  const freeBarterPct = skemaTotal > 0 ? 100 - berbayarPct : 0;
+
   return (
     <>
       <h1>Merchant Deals</h1>
@@ -61,6 +70,29 @@ export default async function DealsPage() {
         Pendataan transaksi kerja sama POI/merchant hasil pipeline BD (Leads &amp; Prospek → Dealing /
         Renewal).
       </p>
+
+      <div className="stats">
+        <div className="stat">
+          <div className="k">Total Transaksi</div>
+          <div className="v">{num(totalTransaksi)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Total Nominal Deals</div>
+          <div className="v small">{rupiah(totalNominalDeals)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Skema Berbayar</div>
+          <div className="v">
+            {num(berbayarCount)} <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>({berbayarPct}%)</span>
+          </div>
+        </div>
+        <div className="stat">
+          <div className="k">Skema Free/Barter</div>
+          <div className="v">
+            {num(freeBarterCount)} <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>({freeBarterPct}%)</span>
+          </div>
+        </div>
+      </div>
 
       {canRegister && (
         <DealsToolbar
