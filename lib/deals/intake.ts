@@ -5,7 +5,7 @@
 // lib/leads/intake.ts (kolom `kategori_poi` di brand_deals punya check
 // constraint dengan nilai identik).
 
-export const OPS_NAMES = ["Fajri", "Aliya", "Tammy"] as const;
+export const OPS_NAMES = ["Fajri", "Aliya", "Tammy", "Fifas"] as const;
 export type OpsName = (typeof OPS_NAMES)[number];
 
 export const BENTUK_KERJASAMA = ["Berbayar", "Free/Barter"] as const;

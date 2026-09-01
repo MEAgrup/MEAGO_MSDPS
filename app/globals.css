@@ -193,6 +193,31 @@ details[open] > summary { margin-bottom: 10px; }
 .card { overflow-x: auto; }
 table { min-width: 560px; }
 
+/* ---- BizDev · POI Accommodation & TTD tracker ---- */
+.poi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.poi-card { cursor: pointer; transition: box-shadow .15s ease, border-color .15s ease; }
+.poi-card:hover { border-color: var(--brand); box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.poi-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+.poi-fields { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 12px; margin: 0 0 10px; }
+.poi-fields dt { color: var(--muted); font-weight: 500; }
+.poi-fields dd { margin: 0; text-align: right; }
+.poi-sla-row {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  border-top: 1px dashed var(--border); padding-top: 8px; font-size: 13px;
+}
+.poi-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.poi-step {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: #fff;
+}
+.poi-step.done { background: #f8fafc; opacity: .85; }
+.poi-step-body { flex: 1; }
+.poi-step-title { font-size: 13px; font-weight: 500; }
+.warn-box {
+  background: #fef3c7; color: #92400e; font-weight: 700; font-size: 13px;
+  border-radius: 8px; padding: 10px 12px; margin: 10px 0 0;
+}
+
 /* ---- Merchant Board kanban ---- */
 .kanban-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
 
