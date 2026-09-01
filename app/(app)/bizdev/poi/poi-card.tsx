@@ -22,6 +22,7 @@ export type PoiTransaction = {
   deal_id: string;
   code: string | null;
   brand_name: string;
+  pic_name: string | null;
   kategori_poi: PoiTabCategory;
   bd_name: string;
   ops_name: string | null;

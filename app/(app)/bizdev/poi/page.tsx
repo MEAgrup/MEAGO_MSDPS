@@ -2,12 +2,14 @@ import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { POI_TAB_CATEGORIES, POI_CATEGORY_LABELS, type PoiTabCategory } from "@/lib/mcn/poi-sop";
 import { OPS_NAMES } from "@/lib/deals/intake";
-import { PoiCard, type PoiTransaction } from "./poi-card";
+import { type PoiTransaction } from "./poi-card";
+import { PoiList } from "./poi-list";
 
 type DealRow = {
   id: string;
   code: string | null;
   brand_name: string;
+  pic_name: string | null;
   bd_id: string | null;
   ops_name: string | null;
   kategori_poi: string | null;
@@ -41,7 +43,7 @@ export default async function PoiSopPage() {
   const [{ data: dealsRaw }, { data: emps }] = await Promise.all([
     supabase
       .from("brand_deals")
-      .select("id, code, brand_name, bd_id, ops_name, kategori_poi, visit_start_date, visit_start_time")
+      .select("id, code, brand_name, pic_name, bd_id, ops_name, kategori_poi, visit_start_date, visit_start_time")
       .in("kategori_poi", Array.from(POI_TAB_CATEGORIES))
       .order("visit_start_date", { ascending: false }),
     supabase.from("employees").select("id, full_name"),
@@ -83,6 +85,7 @@ export default async function PoiSopPage() {
         deal_id: d.id,
         code: d.code,
         brand_name: d.brand_name,
+        pic_name: d.pic_name,
         kategori_poi: d.kategori_poi as PoiTabCategory,
         bd_name: (d.bd_id && bdNameById.get(d.bd_id)) ?? "—",
         ops_name: d.ops_name,
@@ -107,18 +110,14 @@ export default async function PoiSopPage() {
         — 15 step Ops mulai listing kreator sampai report bulanan, dengan SLA Total / Pre-Visit / Post-Visit.
       </p>
 
-      <div className="card">
-        <h2>Transaksi ({transactions.length})</h2>
-        {transactions.length === 0 ? (
+      {transactions.length === 0 ? (
+        <div className="card">
+          <h2>Transaksi (0)</h2>
           <p className="muted">Belum ada transaksi POI Accommodation/TTD.</p>
-        ) : (
-          <div className="poi-grid">
-            {transactions.map((t) => (
-              <PoiCard key={t.deal_id} tx={t} opsNames={OPS_NAMES} />
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <PoiList transactions={transactions} opsNames={OPS_NAMES} />
+      )}
     </>
   );
 }
