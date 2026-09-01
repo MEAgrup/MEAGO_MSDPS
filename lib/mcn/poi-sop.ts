@@ -75,7 +75,7 @@ const JAKARTA_OFFSET = "+07:00";
 
 // Geser "YYYY-MM-DD" sebanyak `delta` hari via kalkulasi UTC murni (tak
 // bergantung timezone server) — dipakai utk saran H-10 dari Tanggal Visit.
-function shiftYMD(ymd: string, delta: number): string {
+export function shiftYMD(ymd: string, delta: number): string {
   const [y, m, d] = ymd.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
   dt.setUTCDate(dt.getUTCDate() + delta);
@@ -119,6 +119,13 @@ export function toJakartaDatetimeLocalInput(d: Date | null): string {
   }).formatToParts(d);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
   return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+}
+
+// Bagian tanggal (YYYY-MM-DD) dari instant absolut, dalam kalender WIB —
+// dipakai utk filter jadwal ("Besok Visit"/"Besok Ops") tanpa bergantung
+// timezone browser/server.
+export function jakartaYMD(d: Date): string {
+  return toJakartaDatetimeLocalInput(d).slice(0, 10);
 }
 
 // Format instant absolut jadi label tampilan singkat ("22 Agu 2026, 14:30 WIB").
