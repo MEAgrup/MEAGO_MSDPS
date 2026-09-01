@@ -507,7 +507,6 @@ export function PoolLeadSection({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dealingNotificationOpen, setDealingNotificationOpen] = useState(true);
   const [notifQuery, setNotifQuery] = useState("");
-  const [notifMaximized, setNotifMaximized] = useState(false);
   const [notifPage, setNotifPage] = useState(1);
 
   const jenisUsahaValues = useMemo(
@@ -592,8 +591,7 @@ export function PoolLeadSection({
   // notifikasi — sudah tidak perlu ditindaklanjuti lewat "Catat Transaksi".
   const dealingLeads = leads.filter((l) => l.crm_status === "Dealing" && !recordedLeadIds.has(l.id));
 
-  // Hot search wildcard: kode brand (ID) atau nama BD (BDM PIC) — dipakai di
-  // tampilan normal maupun saat "Perbesar".
+  // Hot search wildcard: kode brand (ID) atau nama BD (BDM PIC).
   const notifFiltered = useMemo(() => {
     const q = notifQuery.trim().toLowerCase();
     if (!q) return dealingLeads;
@@ -607,9 +605,10 @@ export function PoolLeadSection({
   const NOTIF_PAGE_SIZE = 10;
   const notifPageCount = Math.max(1, Math.ceil(notifFiltered.length / NOTIF_PAGE_SIZE));
   const notifClampedPage = Math.min(notifPage, notifPageCount);
-  const notifPaginated = notifMaximized
-    ? notifFiltered.slice((notifClampedPage - 1) * NOTIF_PAGE_SIZE, notifClampedPage * NOTIF_PAGE_SIZE)
-    : notifFiltered;
+  const notifPaginated = notifFiltered.slice(
+    (notifClampedPage - 1) * NOTIF_PAGE_SIZE,
+    notifClampedPage * NOTIF_PAGE_SIZE
+  );
 
   const renderNotifTable = (rows: PoolLead[]) => (
     <div style={{ overflowX: "auto" }}>
@@ -682,36 +681,6 @@ export function PoolLeadSection({
                     style={{ marginBottom: 0 }}
                   />
                 </div>
-                <button type="button" className="sm ghost2" onClick={() => setNotifMaximized(true)}>
-                  ⤢ Perbesar
-                </button>
-              </div>
-              {renderNotifTable(notifFiltered)}
-            </div>
-          </details>
-        </div>
-      )}
-
-      {notifMaximized && (
-        <div className="modal-backdrop" onClick={() => setNotifMaximized(false)}>
-          <div className="modal modal-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3>📬 Notifikasi Brand Dealing ({notifFiltered.length})</h3>
-              <button type="button" className="sm ghost2" onClick={() => setNotifMaximized(false)}>
-                ✕
-              </button>
-            </div>
-            <div className="modal-body">
-              <div style={{ maxWidth: 340, marginBottom: 4 }}>
-                <label>Cari ID Brand / BD</label>
-                <input
-                  value={notifQuery}
-                  onChange={(e) => {
-                    setNotifQuery(e.target.value);
-                    setNotifPage(1);
-                  }}
-                  placeholder="wildcard, mis. LEAD-2026 atau nama BD"
-                />
               </div>
               {renderNotifTable(notifPaginated)}
               <div className="pagination">
@@ -739,7 +708,7 @@ export function PoolLeadSection({
                 </div>
               </div>
             </div>
-          </div>
+          </details>
         </div>
       )}
 
