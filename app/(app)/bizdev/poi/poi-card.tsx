@@ -8,14 +8,18 @@ import {
   POI_SOP_STEPS,
   REPORT_STATUS_OPTIONS,
   REPORT_WARNING_STEP,
+  PRE_VISIT_END_STEP,
+  POST_VISIT_END_STEP,
   effectiveOpsDatetime,
   visitDatetime,
   toJakartaDatetimeLocalInput,
   formatJakartaDatetime,
+  formatStepSla,
   sopProgressStatus,
   stepCompletedAt,
   computePoiSla,
   type PoiTabCategory,
+  type PoiSopStepDef,
 } from "@/lib/mcn/poi-sop";
 
 export type PoiTransaction = {
@@ -23,7 +27,7 @@ export type PoiTransaction = {
   code: string | null;
   brand_name: string;
   pic_name: string | null;
-  kategori_poi: PoiTabCategory;
+  kategori_poi: string;
   bd_name: string;
   ops_name: string | null;
   visit_start_date: string | null;
@@ -57,7 +61,7 @@ function StepItem({
   isCurrent,
 }: {
   progressId: string;
-  step: (typeof POI_SOP_STEPS)[number];
+  step: PoiSopStepDef;
   completedAt: string | null;
   isCurrent: boolean;
 }) {
@@ -71,7 +75,7 @@ function StepItem({
           Step {step.step} · {step.task}
         </div>
         <div className="muted" style={{ fontSize: 11 }}>
-          SLA {step.slaDays} hari
+          SLA {formatStepSla(step)}
           {done && <> · selesai {formatJakartaDatetime(new Date(completedAt))}</>}
         </div>
         {state && !state.ok && <div className="err" style={{ marginTop: 6 }}>{state.message}</div>}
@@ -91,22 +95,38 @@ function StepItem({
   );
 }
 
-export function PoiCard({ tx, opsNames }: { tx: PoiTransaction; opsNames: readonly string[] }) {
+export function PoiCard({
+  tx,
+  opsNames,
+  stepDefs = POI_SOP_STEPS,
+  preVisitEndStep = PRE_VISIT_END_STEP,
+  postVisitEndStep = POST_VISIT_END_STEP,
+  reportWarningStep = REPORT_WARNING_STEP,
+  badgeLabel,
+}: {
+  tx: PoiTransaction;
+  opsNames: readonly string[];
+  stepDefs?: PoiSopStepDef[];
+  preVisitEndStep?: number;
+  postVisitEndStep?: number;
+  reportWarningStep?: number;
+  badgeLabel?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(updatePoiSopProgress, null);
 
   const now = new Date();
   const opsEffective = effectiveOpsDatetime(tx.ops_datetime, tx.visit_start_date);
   const visitAt = visitDatetime(tx.visit_start_date, tx.visit_start_time);
-  const { lastCompletedStep, currentStep, allDone } = sopProgressStatus(tx.steps);
+  const { lastCompletedStep, currentStep, allDone } = sopProgressStatus(tx.steps, stepDefs);
   const sla = computePoiSla({
     opsDatetime: opsEffective,
     visitDatetime: visitAt,
-    step10CompletedAt: stepCompletedAt(tx.steps, 10),
-    step13CompletedAt: stepCompletedAt(tx.steps, 13),
+    preVisitEndCompletedAt: stepCompletedAt(tx.steps, preVisitEndStep),
+    postVisitEndCompletedAt: stepCompletedAt(tx.steps, postVisitEndStep),
     now,
   });
-  const showReportWarning = !allDone && !!currentStep && currentStep.step >= REPORT_WARNING_STEP;
+  const showReportWarning = !allDone && !!currentStep && currentStep.step >= reportWarningStep;
 
   const sopLabel = allDone
     ? `Selesai (${tx.steps.length}/${tx.steps.length} step)`
@@ -117,7 +137,9 @@ export function PoiCard({ tx, opsNames }: { tx: PoiTransaction; opsNames: readon
       <div className="subcard poi-card" onClick={() => setOpen(true)}>
         <div className="poi-card-head">
           <strong>{tx.brand_name}</strong>
-          <span className="badge indigo">{POI_CATEGORY_LABELS[tx.kategori_poi]}</span>
+          <span className="badge indigo">
+            {badgeLabel ?? (POI_CATEGORY_LABELS as Record<string, string>)[tx.kategori_poi] ?? tx.kategori_poi}
+          </span>
         </div>
         <div className="mono muted" style={{ fontSize: 11, marginBottom: 8 }}>
           {tx.code ?? "—"}
@@ -239,8 +261,8 @@ export function PoiCard({ tx, opsNames }: { tx: PoiTransaction; opsNames: readon
 
                 {showReportWarning && (
                   <p className="warn-box">
-                    Peringatan: Anda sudah mencapai Step 12. Harap segera melengkapi Link Report Monthly dan
-                    Statusnya di atas!
+                    Peringatan: Anda sudah mencapai Step {reportWarningStep}. Harap segera melengkapi Link Report
+                    Monthly dan Statusnya di atas!
                   </p>
                 )}
 
@@ -253,7 +275,7 @@ export function PoiCard({ tx, opsNames }: { tx: PoiTransaction; opsNames: readon
 
               <h3 style={{ marginTop: 20 }}>Task SOP ({tx.steps.length} step)</h3>
               <ul className="poi-steps">
-                {POI_SOP_STEPS.map((step) => (
+                {stepDefs.map((step) => (
                   <StepItem
                     key={step.step}
                     progressId={tx.progress_id}

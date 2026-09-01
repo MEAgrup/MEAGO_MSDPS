@@ -17,7 +17,15 @@ export function isPoiTabCategory(value: string | null): value is PoiTabCategory 
   return !!value && (POI_TAB_CATEGORIES as readonly string[]).includes(value);
 }
 
-export type PoiSopStepDef = { step: number; task: string; slaDays: number };
+// slaDays null = tidak ada SLA harian tetap (pakai slaLabel bila ada, mis. SLA
+// rentang "7-30 hari sesuai dealing" atau step opsional Dining Berbayar 1-5).
+export type PoiSopStepDef = { step: number; task: string; slaDays: number | null; slaLabel?: string };
+
+export function formatStepSla(step: PoiSopStepDef): string {
+  if (step.slaLabel) return step.slaLabel;
+  if (step.slaDays == null) return "—";
+  return `${step.slaDays} hari`;
+}
 
 // Step → Task → SLA per spesifikasi tim Ops.
 export const POI_SOP_STEPS: PoiSopStepDef[] = [
@@ -66,6 +74,81 @@ export const REPORT_WARNING_STEP = 12;
 
 export const REPORT_STATUS_OPTIONS = ["Approved", "Waiting Confirmation", "Request", "Revisi"] as const;
 export type ReportStatus = (typeof REPORT_STATUS_OPTIONS)[number];
+
+// ---- Tab "POI Dining" (BizDev Workspace) ------------------------------------
+// kategori_poi = 'Dining'. Dua alur berbeda menurut bentuk_kerjasama:
+//  - 'Free/Barter' (17 step, berurutan) — flow SAMA seperti Accommodation & TTD
+//    di atas, dipakai ulang tabel poi_sop_progress/poi_sop_steps (migrasi 0337
+//    memperluas constraint step_no dari 1..15 jadi 1..17).
+//  - 'Berbayar' (5 step opsional MOU/Invoice + 22 step total per SIKLUS
+//    BULANAN) — tabel terpisah poi_dining_cycles/poi_dining_steps (migrasi
+//    0337): lihat DiningStepRow & diningBerbayarStatus di bawah.
+// Kedua flow berbagi 17 task inti yang sama persis (cuma beda nomor mulai),
+// jadi didefinisikan sekali di DINING_CORE_STEP_DEFS lalu dipakai ulang.
+const DINING_CORE_STEP_DEFS: { task: string; slaDays: number | null; slaLabel?: string }[] = [
+  { task: "Membuat form listing kreator", slaDays: 1 },
+  { task: "Membuat info dining sesuai standar", slaDays: 1 },
+  { task: "Infokan ke grup kreator", slaDays: 1 },
+  { task: "Membuat Creator Package sesuai dealing BD", slaDays: 2 },
+  { task: "Cek & kurasi kreator koordinasi dengan BD", slaDays: 1 },
+  {
+    task:
+      "Jika masih kurang jumlah kreator akan di lempar ke grup batch & koordinasi dengan tim CM untuk kreator-kreator baru yang belum join grup kota",
+    slaDays: 1,
+  },
+  { task: "Mengumumkan ke grup kreator terpilih", slaDays: 1 },
+  { task: "Membuat grup khusus sementara untuk koordinasi", slaDays: 1 },
+  { task: "Memasukan kreator ke dalam grup & cek sudah masuk semua atau belum", slaDays: 1 },
+  { task: "Infokan perihal brief, SOW, & link pengumpulan VT di grup sementara", slaDays: 1 },
+  {
+    task:
+      "Memastikan VT sesuai brief merchant & koordinasi dengan BD & pihak brand terkait redeem produk & jika ada kendala di lapangan",
+    slaDays: 1,
+  },
+  {
+    task: "Reminder pengumpulan VT H+1, H+3, H+5 dst (sesuai timeline dealing dengan Brand) & check Creator Package",
+    slaDays: null,
+    slaLabel: "7–30 hari (sesuai dealing)",
+  },
+  { task: "Koordinasi secara berkala dengan PIC Merchant terkait project berjalan", slaDays: 1 },
+  { task: "Membuat & mengirimkan report pengumpulan VT ke BD", slaDays: 1 },
+  {
+    task: "Membuat Monthly Report untuk hotel & performa, koordinasi dengan data analis atau by AI ke depannya",
+    slaDays: 2,
+  },
+  {
+    task:
+      "Menarik data dari Lark request ke tim Data Tiktok setiap tanggal 3/4 awal bulan & update data laporan semua POI tiap bulan",
+    slaDays: 5,
+  },
+  { task: "Membuat report data terupdate poin 13 sesuai req BD", slaDays: 2 },
+];
+
+// Dining 'Free/Barter': 17 step berurutan, sama seperti flow Accommodation & TTD.
+export const POI_DINING_FREEBARTER_STEPS: PoiSopStepDef[] = DINING_CORE_STEP_DEFS.map((d, i) => ({
+  step: i + 1,
+  ...d,
+}));
+export const POI_DINING_FREEBARTER_TOTAL_STEPS = POI_DINING_FREEBARTER_STEPS.length;
+export const DINING_FREEBARTER_PRE_VISIT_END_STEP = 11;
+export const DINING_FREEBARTER_POST_VISIT_END_STEP = 15;
+
+// Dining 'Berbayar': step 1-5 (MOU/Invoice/Payment) opsional & tidak berurutan
+// + 17 step inti yang sama (nomor 6-22, berurutan, per siklus bulanan).
+const DINING_BERBAYAR_MOU_TASKS = [
+  "Membuat MOU",
+  "Request Invoice ke Finance",
+  "Kirim MOU ke klien",
+  "Kirim Invoice ke klien",
+  "Kirim bukti payment ke grup",
+];
+export const POI_DINING_BERBAYAR_STEPS: PoiSopStepDef[] = [
+  ...DINING_BERBAYAR_MOU_TASKS.map((task) => ({ task, slaDays: null as number | null })),
+  ...DINING_CORE_STEP_DEFS,
+].map((d, i) => ({ step: i + 1, ...d }));
+export const POI_DINING_BERBAYAR_TOTAL_STEPS = POI_DINING_BERBAYAR_STEPS.length; // 22
+export const DINING_BERBAYAR_OPTIONAL_STEPS_END = 5; // step 1..5: opsional, boleh di-skip (approval Director)
+export const DINING_BERBAYAR_FIRST_SEQUENTIAL_STEP = 6; // Tanggal Ops muncul setelah step ini selesai
 
 export type PoiSopStepRow = { step_no: number; completed_at: string | null };
 
@@ -143,20 +226,25 @@ export function formatJakartaDatetime(d: Date | null): string {
 }
 
 // Step terakhir yang sudah selesai (0 = belum ada) & step yang sedang berjalan
-// (step pertama yang belum selesai; null bila seluruh 15 step sudah selesai).
-export function sopProgressStatus(steps: PoiSopStepRow[]): {
+// (step pertama yang belum selesai; null bila seluruh step sudah selesai).
+// stepDefs default ke flow Accommodation & TTD (15 step); Dining Free/Barter
+// memanggil dengan POI_DINING_FREEBARTER_STEPS (17 step).
+export function sopProgressStatus(
+  steps: PoiSopStepRow[],
+  stepDefs: PoiSopStepDef[] = POI_SOP_STEPS
+): {
   lastCompletedStep: number;
   currentStep: PoiSopStepDef | null;
   allDone: boolean;
 } {
   const byStep = new Map(steps.map((s) => [s.step_no, s.completed_at]));
   let lastCompletedStep = 0;
-  for (const s of POI_SOP_STEPS) {
+  for (const s of stepDefs) {
     if (byStep.get(s.step)) lastCompletedStep = s.step;
     else break;
   }
-  const allDone = lastCompletedStep >= POI_SOP_TOTAL_STEPS;
-  const currentStep = allDone ? null : POI_SOP_STEPS.find((s) => s.step === lastCompletedStep + 1) ?? null;
+  const allDone = lastCompletedStep >= stepDefs.length;
+  const currentStep = allDone ? null : stepDefs.find((s) => s.step === lastCompletedStep + 1) ?? null;
   return { lastCompletedStep, currentStep, allDone };
 }
 
@@ -180,22 +268,58 @@ export function formatSlaDuration(from: Date | null, to: Date | null): string {
 
 export type PoiSlaSummary = { total: string; preVisit: string; postVisit: string };
 
-// SLA Total     : Tanggal Ops → selesai step 13 (atau `now` bila belum selesai).
-// Pre-Visit SLA : Tanggal Ops → selesai step 10 (atau `now` bila belum selesai).
-// Post-Visit SLA: Tanggal Visit → selesai step 13 (atau `now` bila belum selesai).
+// SLA Total     : Tanggal Ops → selesai "post-visit end step" (atau `now`).
+// Pre-Visit SLA : Tanggal Ops → selesai "pre-visit end step" (atau `now`).
+// Post-Visit SLA: Tanggal Visit → selesai "post-visit end step" (atau `now`).
+// Default step milestone Accommodation & TTD (10/13); Dining Free/Barter
+// memanggil dengan DINING_FREEBARTER_PRE/POST_VISIT_END_STEP (11/15) via
+// stepCompletedAt di call site.
 export function computePoiSla(args: {
   opsDatetime: Date | null;
   visitDatetime: Date | null;
-  step10CompletedAt: string | null;
-  step13CompletedAt: string | null;
+  preVisitEndCompletedAt: string | null;
+  postVisitEndCompletedAt: string | null;
   now: Date;
 }): PoiSlaSummary {
-  const { opsDatetime, visitDatetime, step10CompletedAt, step13CompletedAt, now } = args;
-  const step10End = step10CompletedAt ? new Date(step10CompletedAt) : now;
-  const step13End = step13CompletedAt ? new Date(step13CompletedAt) : now;
+  const { opsDatetime, visitDatetime, preVisitEndCompletedAt, postVisitEndCompletedAt, now } = args;
+  const preVisitEnd = preVisitEndCompletedAt ? new Date(preVisitEndCompletedAt) : now;
+  const postVisitEnd = postVisitEndCompletedAt ? new Date(postVisitEndCompletedAt) : now;
   return {
-    total: formatSlaDuration(opsDatetime, step13End),
-    preVisit: formatSlaDuration(opsDatetime, step10End),
-    postVisit: formatSlaDuration(visitDatetime, step13End),
+    total: formatSlaDuration(opsDatetime, postVisitEnd),
+    preVisit: formatSlaDuration(opsDatetime, preVisitEnd),
+    postVisit: formatSlaDuration(visitDatetime, postVisitEnd),
   };
+}
+
+// ---- Dining 'Berbayar': status siklus (step 1-5 opsional/skip + 6-22 berurutan) ----
+export type DiningStepRow = { step_no: number; completed_at: string | null; skipped_at: string | null };
+
+export function diningBerbayarStatus(steps: DiningStepRow[]): {
+  optionalResolvedCount: number; // dari 5 step MOU/Invoice (1-5), berapa yang selesai/di-skip
+  optionalDone: boolean; // seluruh step 1-5 sudah resolved (selesai atau di-skip)
+  lastCompletedSequentialStep: number; // step 6..22 terakhir yang selesai (5 = belum mulai)
+  currentStep: PoiSopStepDef | null; // step 6..22 berikutnya yang harus dikerjakan (null bila semua selesai)
+  allDone: boolean;
+} {
+  const byStep = new Map(steps.map((s) => [s.step_no, s]));
+  const optionalResolvedCount = [1, 2, 3, 4, 5].filter((n) => {
+    const s = byStep.get(n);
+    return !!s && (s.completed_at || s.skipped_at);
+  }).length;
+  const optionalDone = optionalResolvedCount >= DINING_BERBAYAR_OPTIONAL_STEPS_END;
+
+  let lastCompletedSequentialStep = DINING_BERBAYAR_OPTIONAL_STEPS_END;
+  if (optionalDone) {
+    for (let n = DINING_BERBAYAR_FIRST_SEQUENTIAL_STEP; n <= POI_DINING_BERBAYAR_TOTAL_STEPS; n++) {
+      if (byStep.get(n)?.completed_at) lastCompletedSequentialStep = n;
+      else break;
+    }
+  }
+  const allDone = optionalDone && lastCompletedSequentialStep >= POI_DINING_BERBAYAR_TOTAL_STEPS;
+  const currentStep = allDone
+    ? null
+    : optionalDone
+      ? POI_DINING_BERBAYAR_STEPS.find((s) => s.step === lastCompletedSequentialStep + 1) ?? null
+      : null;
+  return { optionalResolvedCount, optionalDone, lastCompletedSequentialStep, currentStep, allDone };
 }
