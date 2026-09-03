@@ -138,7 +138,11 @@ if (r1.ok) {
   eq("row: status TikTok", row.status, "valid");
   eq("row: taskType", row.taskType, "Collaboration package");
   eq("row: username di-lowercase (cocok konvensi mcn_creators)", row.creatorUsername, "ikanovi2");
-  eq("row: merchantRaw = platform OTA, BUKAN nama merchant", row.merchantRaw, "GoFood by Gojek");
+  // Jebakan istilah: kolom `Merchant` TikTok = platform OTA/delivery, BUKAN merchant
+  // MEA GO. Merchant MEA GO = Location. Dijaga tes supaya tidak tertukar diam-diam.
+  eq("row: kolom Merchant TikTok -> otaPlatformsRaw (Agoda/GoFood dst)", row.otaPlatformsRaw, "GoFood by Gojek");
+  eq("row: merchant MEA GO = Location name", row.locationName, "PONUT - MRT");
+  check("row: tidak ada field bernama merchant* (cegah tertukar)", !("merchantRaw" in row) && !("merchant" in row));
   eq("row: salesValue", row.salesValue, 1500.5);
   eq("row: videoViews", row.videoViews, 101);
   eq("row: durationSec", row.durationSec, 21);

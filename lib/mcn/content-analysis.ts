@@ -10,6 +10,22 @@
 // ke baris export berdasarkan `Post ID`. Menggantikan rumus Google Spreadsheet manual
 // (deteksi post id double, cek merchant tertaut, cek tanggal post).
 //
+// ⚠ JEBAKAN ISTILAH — BACA SEBELUM MENGUBAH FILE INI
+// Kata "merchant" berarti DUA HAL BERBEDA di dua kosakata yang bertemu di sini:
+//
+//   MSDPS / MEA GO : merchant = brand/POI yang bekerja sama (tabel `merchants`,
+//                    `merchants.nama_toko`; label UI "Brand / Merchant / POI").
+//                    → Di file export ini, padanannya adalah kolom **Location**
+//                      (`Location ID`, `Location name`), BUKAN kolom `Merchant`.
+//
+//   Export TikTok  : kolom `Merchant` = daftar platform OTA/delivery tempat POI itu
+//                    bisa dipesan ("Agoda,Expedia,Klook,Traveloka", "GoFood by Gojek").
+//                    Sama sekali bukan merchant dalam arti MSDPS.
+//
+// Supaya kekeliruan itu tidak mungkin terjadi diam-diam, kolom `Merchant` dipetakan ke
+// field bernama `otaPlatformsRaw` — bukan `merchant*`. Yang dipakai untuk mencocokkan
+// merchant MEA GO adalah `locationId`.
+//
 // Konvensi rumah: TIDAK PERNAH menebak. Header wajib tidak cocok -> ok:false; baris tak
 // lengkap -> masuk `skipped[]` beralasan, bukan dibuang diam-diam. Pure — tanpa import
 // DB/React, supaya bisa diuji tanpa infrastruktur.
@@ -68,18 +84,24 @@ export type ContentAnalysisRow = {
   creatorType: string | null;
 
   /**
-   * KUNCI PENCOCOKAN MERCHANT. Numerik & stabil.
+   * KUNCI PENCOCOKAN MERCHANT MEA GO. Numerik & stabil.
+   * Location (TikTok) = merchant/brand/POI (MSDPS) — lihat catatan jebakan istilah di atas.
    * JANGAN pakai `locationName` (ada varian kapitalisasi untuk Location ID yang sama)
-   * dan JANGAN pakai `merchantRaw` (itu daftar platform OTA/delivery, bukan POI).
+   * dan JANGAN pakai `otaPlatformsRaw` (itu Agoda/GoFood dst, bukan POI-nya).
    */
   locationId: string;
+  /** Nama POI/merchant. Display saja — tidak stabil, jangan dijadikan kunci. */
   locationName: string | null;
   locationCity: string | null;
   /** Industri baris ini, sudah dinormalisasi ke kanonik `INDUSTRIES`. */
   locationIndustry: Industry | null;
   locationIndustryRaw: string | null;
-  /** Daftar platform OTA/delivery ("Agoda,Klook,Traveloka"). BUKAN nama merchant. */
-  merchantRaw: string | null;
+  /**
+   * Kolom `Merchant` di file TikTok = daftar platform OTA/delivery tempat POI bisa
+   * dipesan ("Agoda,Klook,Traveloka"). BUKAN merchant dalam arti MSDPS — merchant
+   * MEA GO ada di `locationId`/`locationName`. Info-only.
+   */
+  otaPlatformsRaw: string | null;
 
   /** Username TikTok — sepadan dengan `mcn_creators.username`. */
   creatorUsername: string;
@@ -143,7 +165,7 @@ const DATA_FIELD_MAP: Record<string, Field> = {
   "location id": "locationId",
   "location name": "locationName",
   "location city": "locationCity",
-  merchant: "merchantRaw",
+  merchant: "otaPlatformsRaw",
   "creator name": "creatorName",
   "creator id": "creatorUsername",
   "creator link status": "creatorLinkStatus",
@@ -319,7 +341,7 @@ export function parseContentAnalysisWorkbook(sheets: WorkbookSheet[]): ContentAn
       locationCity: values.locationCity ?? null,
       locationIndustry: industryRow,
       locationIndustryRaw: industryRawRow,
-      merchantRaw: values.merchantRaw ?? null,
+      otaPlatformsRaw: values.otaPlatformsRaw ?? null,
       creatorUsername: creatorUsername.toLowerCase(),
       creatorName: values.creatorName ?? null,
       creatorLinkStatus: values.creatorLinkStatus ?? null,
