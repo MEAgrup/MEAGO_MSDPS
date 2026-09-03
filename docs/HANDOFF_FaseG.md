@@ -1,0 +1,261 @@
+# HANDOFF — Fase G: Campaign Kreator MEA GO
+
+Status per 2026-09-02. Dokumen ini cukup untuk melanjutkan tanpa membaca ulang chat lama.
+PR #24 sudah **merged** ke `main`; migrasi `0320`/`0339`/`0340` sudah **applied ke staging
+dan production**.
+
+---
+
+## 1. Masalah yang sedang dipecahkan
+
+Tim MEA GO punya campaign berbayar dari dua sumber (**Campaign Specialist** = budget
+internal MEA, **BizDev** = budget brand). Alurnya masih manual: blast WA ke kreator →
+kreator balas link video → operasional cek di Google Spreadsheet ber-rumus → ACC →
+minta bayar ke Finance. Tujuan Fase G: pindahkan seluruh alur itu ke MSDPS.
+
+Rencana lengkap + hasil interview 4 ronde (semua keputusan sudah TERKUNCI, jangan
+re-litigasi) ada di plan file sesi lama. Ringkasan keputusan ada di §5 dokumen ini.
+
+---
+
+## 2. Yang SUDAH selesai (PR #24, merged)
+
+### 2.1 Bug besar: rantai migrasi repo tidak bisa jalan dari nol — DIPERBAIKI
+Terbukti empiris, bukan dugaan. Menjalankan `0001`→`0338` di PostgreSQL 16 bersih gagal:
+```
+0332_deal_transactions.sql:56  ERROR: column "bentuk_kerjasama" does not exist
+```
+21 kolom `brand_deals` ada di live tapi tidak pernah dibuat migrasi mana pun (di-apply
+langsung ke live; diakui di komentar `0332`/`0333`). Artinya `supabase db reset`,
+provisioning environment baru, dan CI dari nol semuanya mati.
+
+- `0320_brand_deals_poi_reconcile.sql` — 21 kolom + constraint + 2 FK + 2 index, ditaruh
+  pada posisi kronologis yang benar (sesudah `0316`, **sebelum** `0332` yang memakainya).
+- `0339_schema_reconcile.sql` — `mcn_creators.status_kontrak` NOT NULL DEFAULT `'kontrak'`,
+  view `v_poi_deal_summary`.
+
+**Hasil: 58 migrasi lolos dari nol; 79 objek identik struktur kolomnya dengan live.**
+
+Uji ulang kapan saja: `bash scripts/pg_test_reset.sh`
+Cara bandingkan dengan live: `docs/SCHEMA_DRIFT.md`
+
+### 2.2 Kebocoran ke Portal Kreator — DITUTUP (`0340`)
+`v_portal_deals` menampilkan SEMUA deal `running` ke setiap kreator yang login.
+Live: **80 tampil, hanya 10 yang siap ditawarkan.** 70 sisanya hasil Import Master Deal
+yang belum dilengkapi — nama brand-nya nyata ("Staycationku Premium Villa", "Harris Hotel
+& Conventions Gubeng"), jadi tampak sah, tapi tanpa kategori/brief/PIC/jadwal visit.
+Disaring `kategori_poi is not null`.
+
+### 2.3 Visibilitas hilir
+| Temuan | Bukti live | Perbaikan |
+|---|---|---|
+| 70 dari 80 deal tak pernah masuk tracker operasional (kedua tracker POI memfilter `kategori_poi`) | 70 baris | Stat "Belum Lengkap" di `/deals` + badge amber di nav |
+| SOP dicentang tapi hasil tak diisi | `DEAL-202608-0001` 15/15 step, `actual_vt` & `total_gmv` NULL di SELURUH transaksi | Badge merah "Hasil belum diisi" di `PoiCard` |
+| Card "Routing Campaign" kosong permanen | `campaign_requests` **0 baris** sejak dibuat | Disembunyikan saat kosong, ditandai DEPRECATED |
+| Card "Brand Report" kosong permanen | `cooperating_shops` 0 baris (form deal tak pernah isi `shop_id`, 0/80) | Disembunyikan saat kosong |
+
+### 2.4 Parser bukti campaign — SIAP
+`lib/mcn/content-analysis.ts` — export TikTok **"Content Analysis › Video List"**, format
+KETIGA (beda dari `creator-analysis.ts` dan `video-ingest.ts`).
+
+Diuji ke dua file export nyata, **75 QC assertion lolos**:
+| File | Baris | Window | Industri | Valid TikTok | Lokasi | Kreator |
+|---|---|---|---|---|---|---|
+| Dining 1–3 Agu | 3.334 | `2026-08-01..03` | Dining | 2.590 | 1.728 | 594 |
+| Accommodation 1–7 Agu | 2.085 | `2026-08-01..07` | Accommodation | 2.005 | 693 | 287 |
+
+Jalankan: `node scripts/qc_content_analysis.mjs <file1.xlsx> <file2.xlsx>`
+
+Temuan yang membentuk desainnya:
+- **Kunci merchant = `Location ID`** (numerik, stabil). BUKAN kolom `Merchant` (itu daftar
+  OTA: Agoda/GoFood) dan BUKAN `Location name` (satu ID bisa punya 2 ejaan kapitalisasi).
+- Window tarikan dibaca dari sheet `Filter`; post di luar window memang tidak ada di file —
+  inilah mekanisme "kolom merchant kosong = tanggal upload salah".
+- `Status` = verdict TikTok sendiri (Valid/Invalid posts). `Task type` = Collaboration
+  package vs Others → persis pembeda `campaign_mode`.
+- `Post ID` unik dalam file (3334/3334) → deteksi duplikat murni soal submit ganda di MSDPS.
+- **594 kreator di file vs 34 di `mcn_creators` production** → ingest DILARANG auto-create
+  kreator.
+
+### 2.5 Glosarium istilah — DIKUNCI (`docs/GLOSARIUM.md`)
+"Merchant" berarti dua hal berlawanan:
+- **MSDPS/MEA GO**: merchant = brand/POI yang bekerja sama → padanannya **`Location`** di
+  file TikTok.
+- **Kolom `Merchant` di file TikTok**: daftar platform OTA/delivery (Agoda, GoFood).
+
+Build yang ada sudah konsisten memakai arti MEA GO. Parser baru karena itu menamai
+field-nya `otaPlatformsRaw`, dengan assertion yang menolak field bernama `merchant*`.
+Glosarium juga mengunci ejaan Accommodation (**3 varian**: `Accomodation` di leads /
+`Accommodation` di INDUSTRIES / `Accommodations` di export TikTok — dinormalisasi lewat
+`lib/mcn/industry-normalize.ts`), tiga arti "campaign", dan dua master creator.
+
+---
+
+## 3. ⚠ MASALAH DATA TERBUKA — kerjakan lebih dulu
+
+### Roster kreator ada di environment yang SALAH
+```
+production mcn_creators : 34    (era QA, termasuk QA Dummy Creator & 'udin')
+staging    mcn_creators : 3.505 (roster asli, dibuat 22–27 Juli 2026)
+```
+Sementara SELURUH data operasional lain ada di production dan staging kosong:
+leads 608 vs 1 · brand_deals 80 vs 0 · lead_status_history 1.163 vs 0 ·
+poi_sop_steps 120 vs 0 · creator_period_summary 63 vs 0.
+
+**Jadi database-nya TIDAK tertukar.** Production memang sistem yang hidup. Yang terjadi:
+impor master kreator mendarat di staging dan tidak pernah dibawa ke production. Nama &
+username-nya nyata dan cocok dengan file export TikTok (`yesiwd`, `aline_1905`,
+`mamazil77`, `bintangmalvino2`). 29 dari 34 kreator production ada juga di staging.
+
+**Dampak ke Fase G:** segmentasi kelayakan pendaftar campaign membaca `mcn_creators`.
+Dengan 34 baris di production (2 dummy), fitur pendaftaran tidak akan berguna.
+
+**Roster staging TIDAK bersih:**
+- 1.296 username diawali `@` (impor kedua tidak memotong `@`); **1.248 di antaranya
+  duplikat** dari versi bersihnya (`@babyanggiii` vs `babyanggiii`)
+- 11 baris uji
+- → hasil bersih **~2.248 kreator unik**, bukan 3.505
+
+**Cara menjalankan** (`scripts/migrate_creators_staging_to_prod.sh`, sudah ditulis & di-commit,
+**belum dijalankan**): ambil connection string mode Session dari Supabase Dashboard →
+Project Settings → Database, lalu
+```bash
+export STAGING_URL='postgresql://postgres:PASS@db.vgjzvdpxrdoefoncuazw.supabase.co:5432/postgres'
+export PROD_URL='postgresql://postgres:PASS@db.mvcckptntrvzujqaoxxh.supabase.co:5432/postgres'
+bash scripts/migrate_creators_staging_to_prod.sh --dry-run
+bash scripts/migrate_creators_staging_to_prod.sh
+```
+Memakai pipe COPY langsung antar-database — nama kreator (penuh emoji, `&`, tanda kutip)
+tidak melewati chat sehingga tidak ada risiko salah transkripsi.
+
+### Catatan jujur soal `status_kontrak`
+Migrasi `0339` menyamakan skema staging ke production (`NOT NULL DEFAULT 'kontrak'`).
+Di production itu NO-OP (34 baris, semuanya sudah `'kontrak'`). **Di staging, itu mengubah
+3.504 baris dari NULL menjadi `'kontrak'`** — nilai asumsi, bukan fakta bisnis. Keputusan
+user: **biarkan**, karena mayoritas kreator MEA GO memang berkontrak; koreksi per kreator
+lewat form Edit. Perlu diingat kalau roster ini dipindah: status kontraknya ikut terbawa
+sebagai `'kontrak'`.
+
+Catatan lain: ini bertentangan dengan `docs/BUILD_PLAN.md:42` yang mendokumentasikan
+`status_kontrak` sebagai **nullable**. Production sudah menyimpang dari keputusan itu
+sebelum sesi ini.
+
+---
+
+## 4. Keputusan terbuka lain (belum dikerjakan)
+
+1. **`crm_leads` + `crm_transaksi`** — live-only, 0 baris di production (5 & 1 di staging),
+   tidak dirujuk `app/` maupun `lib/`. Modul Leads yang dipakai adalah `leads` M1.
+   Drop dari live menunggu konfirmasi (tidak bisa dibatalkan). Perintahnya ada di
+   `0339_schema_reconcile.sql` bagian bawah.
+2. **Dua model realisasi bertabrakan (B2/B4).** `brand_deals.poin` dihitung trigger dari
+   `visit_checked` + `kreator_realized`, tapi **tidak ada satu baris kode pun** yang menulis
+   kolom-kolom itu; yang benar-benar diisi tim adalah `poi_sop_progress.actual_vt`
+   (form di `app/(app)/bizdev/poi/poi-card.tsx`). Jadi skor BD tidak akan pernah keluar,
+   dan `v_poi_deal_summary` selalu nol. Menyatukannya = perubahan perilaku, butuh keputusan
+   sumber kebenaran mana yang menang. **Fase G.4 menutup ini sendiri** karena realisasi jadi
+   turunan bukti per-kreator, bukan angka ketikan.
+3. **70 deal belum lengkap** — dilengkapi manual, import ulang, atau dibiarkan? Data produksi.
+
+---
+
+## 5. Keputusan Fase G yang TERKUNCI (hasil interview, jangan re-litigasi)
+
+| # | Keputusan |
+|---|---|
+| 1 | Campaign = **extend `brand_deals`**, satu entitas dengan Merchant Deals |
+| 2 | Sumber: Campaign Specialist (budget internal) & BizDev (budget brand) |
+| 3 | Divisi: **`CampaignSpecialist` enum BARU**; penerima campaign BizDev = divisi `Account` |
+| 4 | CS kerjakan sendiri; BizDev **lempar** ke AM. Penerima = "bagian operasional" |
+| 5 | Over-budget: **hard block staff**, Lead+ override → wajib alasan + label `[Over Budget]` + log |
+| 6 | Alokasi = **`base_fee × kuota slot`** ≤ `creator_budget` |
+| 7 | `ads_budget`: realisasi **input manual** multi-entri → dipakai hitung ROAS |
+| 8 | Base fee **flat per campaign, tanpa kelipatan** |
+| 9 | Segmentasi: Industry, Kota, Level, Jenis kreator, Roster live, Status kontrak, ambang GMV. **Follower TIDAK dipakai** |
+| 10 | Pendaftaran **wajib login Portal Kreator**, hanya kreator yang ada di `mcn_creators` |
+| 11 | Rekening kreator **diisi sekali di profil** portal |
+| 12 | Bukti live: **tabel submission sendiri**, `live_schedule_slots` tidak dicampur |
+| 13 | Kurasi: **batch periode formal** → tutup periode → satu pengajuan ke Finance |
+| 14 | Bukti boleh diubah kreator **bebas sampai deadline**, lalu terkunci otomatis |
+| 15 | Payout: **tabel baru `campaign_payouts`** — `creator_payouts` M5/M9 tidak disentuh |
+| 16 | Realisasi GMV/Views/ROAS **otomatis dari ingest export TikTok** |
+| 17 | Campaign "Creator Package (TikTok)": MSDPS **berhenti di kurasi pendaftar** |
+| 18 | Deliverable video & live **terpisah, tidak bentrok** |
+
+**Kenapa `creator_payouts` tidak dipakai ulang:** `0103_module5_finance.sql:48-67` —
+`referenced_bookings uuid[] NOT NULL` (isi `creator_bookings` KOL M9), `creator_id` FK ke
+`creators` M9 **bukan `mcn_creators`**, `milestone_unit_value` generated hardcoded 10/5.
+Enum `payout_status` tetap dipakai ulang supaya antrian Finance seragam.
+
+---
+
+## 6. Langkah berikutnya (G.1 → G.5)
+
+Nomor migrasi berikutnya mulai **`0341`** (terakhir dipakai: `0340`).
+
+- **G.1 Fondasi campaign + budget guard**
+  `0341` enum `CampaignSpecialist` (transaksi terpisah — aturan rumah `0300:5-8`).
+  `0342` extend `brand_deals`: `campaign_enabled`, `funding_source`, `campaign_mode`,
+  `campaign_track`, `operational_team`, `operational_owner_id`, `campaign_stage` +
+  `stage_changed_by/at`, `creator_budget`, `ads_budget_planned`, `base_fee`, `over_budget`
+  + alasan, target hasil, per-kreator, **`target_location_id`**, window post + deadline,
+  `brief`, `has_free_meal`, 9 kolom `eligible_*`/`min_gmv*`.
+  Tabel `campaign_budget_log`, `campaign_ads_spend`.
+  Lib: `campaign-budget.ts`, `campaign-stage.ts`. Actions `go-campaigns.ts`.
+  Route `/meago/campaigns` + `[id]`.
+- **G.2 Pendaftaran & kurasi** — `campaign_participants` (`CPT-`), gate kelayakan/stage/kuota
+  di trigger, `v_portal_campaigns`, portal `/kreator/campaign`. Campaign `tiktok_package`
+  selesai di sini. Setelah rilis: hapus card "Routing Campaign" + tabel `campaign_requests`.
+- **G.3 Bukti + rekening** — `campaign_video_submissions`, `campaign_live_submissions`,
+  bucket privat `campaign-proofs`, `mcn_creators` + 3 kolom rekening, trigger gate deadline,
+  trigger tandai duplikat post_id.
+- **G.4 Batch kurasi + payout** — `campaign_curation_batches` (`CUR-`), `campaign_payouts`
+  (`CPY-`), `close_curation_batch()` idempoten, antrian di `/finance`.
+  `campaign-completion.ts` **wajib unit test — ini logika uang.**
+- **G.5 Ingest** — `tiktok_post_index` GLOBAL (PK `post_id`, bukan per-campaign),
+  `validate_campaign_posts()` dengan urutan verdict: `tidak_ditemukan` → `di_luar_periode`
+  → `merchant_tidak_sesuai` → `bukan_milik_kreator` → `ditolak_tiktok` → `duplikat` → `valid`.
+  View `v_campaign_result` (guard div-0 → null, **null ≠ 0**). Parser sudah siap.
+
+---
+
+## 7. Jebakan yang WAJIB dihindari
+
+1. **`enforce_status_transition()` hardcode kolom `status`** (`0004:44,49-51`), dan
+   `brand_deals.status` sudah dipakai entity `brand_deal` (`0305:126`). `campaign_stage`
+   **butuh fungsi trigger sendiri** yang tetap membaca tabel `status_transitions`.
+   Jangan ubah `enforce_status_transition()` — dipakai belasan tabel live.
+2. **JANGAN pakai `brand_deals.shop_id`** untuk merchant target campaign: ada partial unique
+   index `brand_deals_shop_uniq` (`0305:52`) → dua campaign untuk merchant sama gagal insert,
+   dan `brand_deals_sync_shop()` akan menulis `cooperating_shops` palsu.
+   Pakai **`target_location_id`** (TikTok Location ID).
+3. **RLS `brand_deals`**: update hanya BizDev + mgmt (`0305:161`). Perlu diperluas ke
+   `CampaignSpecialist`, dan akses tulis `Account` **dibatasi ke baris campaign miliknya**
+   (`campaign_enabled and operational_owner_id = auth_emp_id()`).
+4. **`ALTER TYPE … ADD VALUE` harus migrasi terpisah** (`0300:5-8`).
+5. **React 19/Next 15: `name`/`value` tombol submit tidak masuk FormData**
+   (`BUILD_PLAN.md:46`) — satu `<form>` per aksi + hidden input.
+6. **Kreator update `mcn_creators`**: RLS Postgres tidak bisa membatasi per kolom. Pakai pola
+   terbukti `createAdminClient` service-role di server action (`lib/actions/portal.ts`).
+7. **`npm run build` JANGAN saat `npm run dev` menyala** (`BUILD_PLAN.md:48`).
+8. **Setiap perubahan skema live WAJIB punya file migrasi** — lihat `docs/SCHEMA_DRIFT.md`.
+   Jalankan `bash scripts/pg_test_reset.sh` sebelum merge migrasi apa pun.
+
+---
+
+## 8. Verifikasi baseline hari ini
+
+- `bash scripts/pg_test_reset.sh` → 58 migrasi lolos dari nol
+- `npx tsc --noEmit` → bersih
+- `npm run build` → bersih (37 halaman)
+- `node scripts/qc_content_analysis.mjs <2 file export>` → 75/75
+
+## 9. File kunci
+
+**Baru:** `lib/mcn/content-analysis.ts`, `lib/mcn/industry-normalize.ts`,
+`scripts/qc_content_analysis.mjs`, `scripts/pg_test_reset.sh`,
+`scripts/migrate_creators_staging_to_prod.sh`, `docs/SCHEMA_DRIFT.md`, `docs/GLOSARIUM.md`,
+`supabase/migrations/0320`, `0339`, `0340`
+
+**Diubah:** `app/(app)/layout.tsx`, `app/(app)/deals/page.tsx`, `app/(app)/bizdev/page.tsx`,
+`app/(app)/bizdev/poi/poi-card.tsx`
