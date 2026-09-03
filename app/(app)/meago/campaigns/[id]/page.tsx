@@ -1,6 +1,12 @@
 import { redirect, notFound } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { CampaignDetail, type CampaignDetailRow, type BudgetLogRow, type AdsSpendRow } from "./detail";
+import {
+  CampaignDetail,
+  type CampaignDetailRow,
+  type BudgetLogRow,
+  type AdsSpendRow,
+  type ParticipantRow,
+} from "./detail";
 
 const CAMPAIGN_COLUMNS =
   "id, code, brand_name, funding_source, campaign_track, campaign_mode, operational_team, " +
@@ -24,21 +30,29 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
 
   const canManageBudgetStage = mgmt || div === "BizDev" || div === "CampaignSpecialist";
 
+  const canCurate = mgmt || ["BizDev", "CampaignSpecialist", "Account"].includes(div);
+
   const supabase = await getCachedClient();
-  const [{ data: deal }, { data: budgetLogRaw }, { data: adsSpendRaw }, { data: emps }] = await Promise.all([
-    supabase.from("brand_deals").select(CAMPAIGN_COLUMNS).eq("id", id).eq("campaign_enabled", true).maybeSingle(),
-    supabase
-      .from("campaign_budget_log")
-      .select("id, creator_budget, base_fee, creator_quota, allocated_amount, over_budget, over_budget_reason, actor, created_at")
-      .eq("deal_id", id)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("campaign_ads_spend")
-      .select("id, spend_date, amount, note, entered_by, created_at")
-      .eq("deal_id", id)
-      .order("spend_date", { ascending: false }),
-    supabase.from("employees").select("id, full_name"),
-  ]);
+  const [{ data: deal }, { data: budgetLogRaw }, { data: adsSpendRaw }, { data: emps }, { data: participantsRaw }] =
+    await Promise.all([
+      supabase.from("brand_deals").select(CAMPAIGN_COLUMNS).eq("id", id).eq("campaign_enabled", true).maybeSingle(),
+      supabase
+        .from("campaign_budget_log")
+        .select("id, creator_budget, base_fee, creator_quota, allocated_amount, over_budget, over_budget_reason, actor, created_at")
+        .eq("deal_id", id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("campaign_ads_spend")
+        .select("id, spend_date, amount, note, entered_by, created_at")
+        .eq("deal_id", id)
+        .order("spend_date", { ascending: false }),
+      supabase.from("employees").select("id, full_name"),
+      supabase
+        .from("campaign_participants")
+        .select("id, code, mcn_creator_id, status, rejection_reason, reviewed_by, reviewed_at, created_at")
+        .eq("deal_id", id)
+        .order("created_at", { ascending: false }),
+    ]);
 
   if (!deal) notFound();
 
@@ -46,14 +60,27 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     ((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name])
   );
 
+  const participants = (participantsRaw as ParticipantRow[] | null) ?? [];
+  const creatorIds = [...new Set(participants.map((p) => p.mcn_creator_id))];
+  const { data: creatorsRaw } = creatorIds.length
+    ? await supabase.from("mcn_creators").select("id, name, username, code").in("id", creatorIds)
+    : { data: [] as { id: string; name: string; username: string | null; code: string | null }[] };
+  const creatorById: Record<string, { name: string; username: string | null; code: string | null }> =
+    Object.fromEntries(
+      (creatorsRaw ?? []).map((c) => [c.id, { name: c.name, username: c.username, code: c.code }])
+    );
+
   return (
     <CampaignDetail
       deal={deal as unknown as CampaignDetailRow}
       budgetLog={(budgetLogRaw as BudgetLogRow[] | null) ?? []}
       adsSpend={(adsSpendRaw as AdsSpendRow[] | null) ?? []}
+      participants={participants}
+      creatorById={creatorById}
       nameById={nameById}
       me={me ? { rank: me.rank, is_od: !!me.is_od, is_director: !!me.is_director } : null}
       canManageBudgetStage={canManageBudgetStage}
+      canCurate={canCurate}
     />
   );
 }

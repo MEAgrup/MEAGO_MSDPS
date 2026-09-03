@@ -8,6 +8,7 @@ import {
   addAdsSpend,
   type ActionResult,
 } from "@/lib/actions/go-campaigns";
+import { curateCampaignParticipant, type ActionResult as ParticipantActionResult } from "@/lib/actions/campaign-participants";
 import {
   CAMPAIGN_STAGE_LABEL,
   isCampaignStage,
@@ -65,6 +66,17 @@ export type BudgetLogRow = {
   over_budget: boolean;
   over_budget_reason: string | null;
   actor: string | null;
+  created_at: string;
+};
+
+export type ParticipantRow = {
+  id: string;
+  code: string | null;
+  mcn_creator_id: string;
+  status: string;
+  rejection_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
   created_at: string;
 };
 
@@ -242,20 +254,160 @@ function AdsSpendSection({ deal, adsSpend, canAdd }: { deal: CampaignDetailRow; 
   );
 }
 
+const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
+  registered: "Menunggu Kurasi",
+  approved: "Disetujui",
+  rejected: "Ditolak",
+  withdrawn: "Dibatalkan",
+};
+
+const PARTICIPANT_STATUS_BADGE: Record<string, string> = {
+  registered: "amber",
+  approved: "green",
+  rejected: "red",
+  withdrawn: "gray",
+};
+
+function CurateRow({
+  deal,
+  participant,
+  creator,
+}: {
+  deal: CampaignDetailRow;
+  participant: ParticipantRow;
+  creator: { name: string; username: string | null; code: string | null } | undefined;
+}) {
+  const [state, action, pending] = useActionState<ParticipantActionResult | null, FormData>(
+    curateCampaignParticipant,
+    null
+  );
+  const [rejectOpen, setRejectOpen] = useState(false);
+
+  return (
+    <tr>
+      <td>
+        {creator?.name ?? "—"}
+        {creator?.username ? <span className="hint"> · @{creator.username}</span> : null}
+      </td>
+      <td>{participant.code ?? "—"}</td>
+      <td>{tanggal(participant.created_at)}</td>
+      <td>
+        <span className={`badge ${PARTICIPANT_STATUS_BADGE[participant.status] ?? "gray"}`}>
+          {PARTICIPANT_STATUS_LABEL[participant.status] ?? participant.status}
+        </span>
+        {participant.status === "rejected" && participant.rejection_reason && (
+          <div className="hint">{participant.rejection_reason}</div>
+        )}
+      </td>
+      <td>
+        {participant.status === "registered" && (
+          <>
+            <form action={action} style={{ display: "inline" }}>
+              <input type="hidden" name="participant_id" value={participant.id} />
+              <input type="hidden" name="deal_id" value={deal.id} />
+              <input type="hidden" name="decision" value="approved" />
+              <button type="submit" disabled={pending} className="sm">
+                {pending ? "…" : "Setujui"}
+              </button>
+            </form>{" "}
+            <button type="button" className="sm ghost2" onClick={() => setRejectOpen((v) => !v)}>
+              Tolak
+            </button>
+            {rejectOpen && (
+              <form action={action} style={{ marginTop: 6, display: "flex", gap: 6 }}>
+                <input type="hidden" name="participant_id" value={participant.id} />
+                <input type="hidden" name="deal_id" value={deal.id} />
+                <input type="hidden" name="decision" value="rejected" />
+                <input name="rejection_reason" placeholder="Alasan penolakan" required style={{ marginBottom: 0 }} />
+                <button type="submit" disabled={pending} className="sm dangerbtn">
+                  {pending ? "…" : "Kirim"}
+                </button>
+              </form>
+            )}
+          </>
+        )}
+        {state && !state.ok && <div className="err" style={{ marginTop: 6 }}>{state.message}</div>}
+      </td>
+    </tr>
+  );
+}
+
+function ParticipantsSection({
+  deal,
+  participants,
+  creatorById,
+  canCurate,
+}: {
+  deal: CampaignDetailRow;
+  participants: ParticipantRow[];
+  creatorById: Record<string, { name: string; username: string | null; code: string | null }>;
+  canCurate: boolean;
+}) {
+  const approvedCount = participants.filter((p) => p.status === "approved").length;
+
+  return (
+    <div className="card">
+      <h2>Pendaftar ({participants.length})</h2>
+      <p className="hint">
+        Disetujui: {approvedCount}/{deal.creator_quota ?? "—"}
+      </p>
+      {participants.length === 0 ? (
+        <p className="hint">Belum ada kreator mendaftar.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Kreator</th>
+              <th>Kode</th>
+              <th>Daftar</th>
+              <th>Status</th>
+              {canCurate && <th>Aksi</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {participants.map((p) =>
+              canCurate ? (
+                <CurateRow key={p.id} deal={deal} participant={p} creator={creatorById[p.mcn_creator_id]} />
+              ) : (
+                <tr key={p.id}>
+                  <td>{creatorById[p.mcn_creator_id]?.name ?? "—"}</td>
+                  <td>{p.code ?? "—"}</td>
+                  <td>{tanggal(p.created_at)}</td>
+                  <td>
+                    <span className={`badge ${PARTICIPANT_STATUS_BADGE[p.status] ?? "gray"}`}>
+                      {PARTICIPANT_STATUS_LABEL[p.status] ?? p.status}
+                    </span>
+                  </td>
+                </tr>
+              )
+            )}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export function CampaignDetail({
   deal,
   budgetLog,
   adsSpend,
+  participants,
+  creatorById,
   nameById,
   me,
   canManageBudgetStage,
+  canCurate,
 }: {
   deal: CampaignDetailRow;
   budgetLog: BudgetLogRow[];
   adsSpend: AdsSpendRow[];
+  participants: ParticipantRow[];
+  creatorById: Record<string, { name: string; username: string | null; code: string | null }>;
   nameById: Record<string, string>;
   me: { rank: string | null; is_od: boolean; is_director: boolean } | null;
   canManageBudgetStage: boolean;
+  canCurate: boolean;
 }) {
   const stage = (isCampaignStage(deal.campaign_stage) ? deal.campaign_stage : "draft") as CampaignStage;
 
@@ -338,6 +490,8 @@ export function CampaignDetail({
           </details>
         )}
       </div>
+
+      <ParticipantsSection deal={deal} participants={participants} creatorById={creatorById} canCurate={canCurate} />
 
       <AdsSpendSection deal={deal} adsSpend={adsSpend} canAdd={canManageBudgetStage} />
 
