@@ -56,6 +56,11 @@ export default async function DealsPage() {
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   const totalTransaksi = deals.length;
+  // Baris hasil Import Master Deal berhenti tanpa kategori_poi. Setiap tracker hilir
+  // memfilter kolom itu (bizdev/poi, bizdev/poi-dining), jadi baris seperti ini TIDAK
+  // pernah masuk alur operasional sampai dilengkapi. Per-baris sudah ditandai di tabel;
+  // angka agregat di sini supaya tidak perlu menelusuri seluruh daftar untuk sadar.
+  const belumLengkap = deals.filter((d) => !d.kategori_poi).length;
   const totalNominalDeals = deals.reduce((sum, d) => sum + (d.nominal_harga ?? 0), 0);
   const berbayarCount = deals.filter((d) => d.bentuk_kerjasama === "Berbayar").length;
   const freeBarterCount = deals.filter((d) => d.bentuk_kerjasama === "Free/Barter").length;
@@ -79,6 +84,17 @@ export default async function DealsPage() {
         <div className="stat">
           <div className="k">Total Nominal Deals</div>
           <div className="v small">{rupiah(totalNominalDeals)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Belum Lengkap</div>
+          <div className="v" style={belumLengkap > 0 ? { color: "#dc2626" } : undefined}>
+            {num(belumLengkap)}
+          </div>
+          {belumLengkap > 0 && (
+            <div className="muted" style={{ fontSize: 11, fontWeight: 500 }}>
+              belum masuk tracker operasional
+            </div>
+          )}
         </div>
         <div className="stat">
           <div className="k">Skema Berbayar</div>
