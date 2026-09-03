@@ -128,6 +128,12 @@ export function PoiCard({
   });
   const showReportWarning = !allDone && !!currentStep && currentStep.step >= reportWarningStep;
 
+  // Seluruh step dicentang tapi hasilnya tidak pernah diisi. Tanpa penanda ini,
+  // transaksi seperti itu tampak "beres" padahal deliverable vs realisasi tidak bisa
+  // dibandingkan sama sekali — kondisi yang ditemukan di semua transaksi live saat
+  // audit 2026-09-02 (SOP 15/15 selesai, actual_vt & total_gmv masih NULL).
+  const hasilKosong = allDone && tx.actual_vt === null && tx.total_gmv === null;
+
   const sopLabel = allDone
     ? `Selesai (${tx.steps.length}/${tx.steps.length} step)`
     : `Step ${lastCompletedStep}/${tx.steps.length} selesai · sedang: Step ${currentStep!.step} — ${currentStep!.task}`;
@@ -140,6 +146,11 @@ export function PoiCard({
           <span className="badge indigo">
             {badgeLabel ?? (POI_CATEGORY_LABELS as Record<string, string>)[tx.kategori_poi] ?? tx.kategori_poi}
           </span>
+          {hasilKosong && (
+            <span className="badge red" title="Semua step SOP sudah dicentang, tapi Actual VT & Total GMV belum diisi">
+              Hasil belum diisi
+            </span>
+          )}
         </div>
         <div className="mono muted" style={{ fontSize: 11, marginBottom: 8 }}>
           {tx.code ?? "—"}

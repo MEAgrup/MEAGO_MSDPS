@@ -281,6 +281,12 @@ export default async function BizDevPage() {
         </div>
       </div>
 
+      {/* Routing Campaign — `campaign_requests` 0 baris sejak dibuat (audit 2026-09-02):
+          fitur ini tidak pernah dipakai. Card disembunyikan saat kosong supaya tidak jadi
+          tabel kosong permanen yang menutupi kartu lain. Form tetap dapat dipakai lewat
+          mgmt/BizDev bila memang ada campaign yang perlu di-route. DEPRECATED — akan
+          digantikan pendaftaran & kurasi kreator (Fase G.2); hapus setelah itu rilis. */}
+      {campaignRequests.length > 0 && (
       <div className="card">
         <h2>Routing Campaign</h2>
         <CampaignRequestForm
@@ -333,22 +339,21 @@ export default async function BizDevPage() {
                 </tr>
               );
             })}
-            {campaignRequests.length === 0 && (
-              <tr>
-                <td colSpan={6} className="muted">
-                  Belum ada campaign request.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
+      )}
 
       <div className="card">
         <h2>Lead Shop → Pool Leads</h2>
         <ShopLeadForm />
       </div>
 
+      {/* Brand Report — bersumber dari `cooperating_shops`, yang diisi trigger
+          brand_deals_sync_shop() hanya bila `shop_id` terisi. Form deal saat ini tidak
+          pernah mengisi shop_id (0 dari 77 baris live), jadi tabel ini selalu kosong.
+          Disembunyikan saat kosong; akan hidup sendiri begitu ada deal ber-shop_id. */}
+      {brandReport.length > 0 && (
       <div className="card">
         <h2>Brand Report Ringkas (GMV per shop ber-deal)</h2>
         <table>
@@ -367,16 +372,10 @@ export default async function BizDevPage() {
                 <td className="right">{rupiah(r.gmv)}</td>
               </tr>
             ))}
-            {brandReport.length === 0 && (
-              <tr>
-                <td colSpan={3} className="muted">
-                  Belum ada shop ber-deal.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
+      )}
 
       <div className="card">
         <h2>Special Project</h2>

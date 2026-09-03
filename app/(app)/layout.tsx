@@ -50,19 +50,37 @@ export default async function AppLayout({
   // penuh) karena RLS brand_deals tidak mengizinkan Marketing SELECT — badge
   // untuk Marketing akan selalu tampak "penuh" (dealtSet kosong) kalau dipaksa.
   let missingDealCount = 0;
+  // Deal yang berhenti tanpa kategori_poi (baris Import Master Deal belum dilengkapi).
+  // Tracker operasional memfilter kolom itu, jadi baris seperti ini tak pernah
+  // dikerjakan siapa pun sampai ada yang membuka /deals dan sadar. Badge ini yang
+  // membuatnya terlihat dari nav.
+  let incompleteDealCount = 0;
   if (mgmt || div === "BizDev") {
     const supabase = await getCachedClient();
-    const [{ data: dealingLeads }, { data: dealtLeads }] = await Promise.all([
+    const [{ data: dealingLeads }, { data: dealtLeads }, { count: incompleteCount }] = await Promise.all([
       supabase.from("leads").select("id").in("crm_status", ["Dealing", "Renewal"]),
       supabase.from("brand_deals").select("lead_id").not("lead_id", "is", null),
+      supabase.from("brand_deals").select("id", { count: "exact", head: true }).is("kategori_poi", null),
     ]);
     const dealtSet = new Set((dealtLeads ?? []).map((d) => d.lead_id));
     missingDealCount = (dealingLeads ?? []).filter((l) => !dealtSet.has(l.id)).length;
+    incompleteDealCount = incompleteCount ?? 0;
   }
 
   const NotifBadge = ({ count }: { count: number }) =>
     count > 0 ? (
       <span className="badge red" style={{ marginLeft: 6 }} title="Dealing/Renewal belum ada transaksi deal">
+        {count}
+      </span>
+    ) : null;
+
+  const IncompleteBadge = ({ count }: { count: number }) =>
+    count > 0 ? (
+      <span
+        className="badge amber"
+        style={{ marginLeft: 6 }}
+        title="Transaksi deal belum dilengkapi — belum masuk tracker operasional"
+      >
         {count}
       </span>
     ) : null;
@@ -114,6 +132,7 @@ export default async function AppLayout({
           <Link href="/deals">
             Merchant Deals
             <NotifBadge count={missingDealCount} />
+            <IncompleteBadge count={incompleteDealCount} />
           </Link>
         )}
         {seeBD && <Link href="/bizdev">BizDev Workspace</Link>}
