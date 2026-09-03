@@ -1,0 +1,388 @@
+"use client";
+
+import { useActionState, useEffect, useState } from "react";
+import { rupiah, num, tanggal } from "@/lib/format";
+import {
+  updateCampaignBudget,
+  changeCampaignStage,
+  addAdsSpend,
+  type ActionResult,
+} from "@/lib/actions/go-campaigns";
+import {
+  CAMPAIGN_STAGE_LABEL,
+  isCampaignStage,
+  nextStagesFor,
+  stageTransitionRequiresLeadPlus,
+  missingFieldsForActivation,
+  type CampaignStage,
+} from "@/lib/campaign-stage";
+import { FUNDING_SOURCE_LABEL, CAMPAIGN_TRACK_LABEL, type FundingSource, type CampaignTrack } from "@/lib/campaign-budget";
+
+export type CampaignDetailRow = {
+  id: string;
+  code: string | null;
+  brand_name: string;
+  funding_source: string | null;
+  campaign_track: string | null;
+  campaign_mode: string | null;
+  operational_team: string | null;
+  operational_owner_id: string | null;
+  campaign_stage: string;
+  stage_changed_at: string | null;
+  base_fee: number | null;
+  creator_quota: number | null;
+  creator_budget: number | null;
+  ads_budget_planned: number | null;
+  allocated_amount: number | null;
+  over_budget: boolean;
+  over_budget_reason: string | null;
+  target_location_id: string | null;
+  target_gmv: number | null;
+  target_views: number | null;
+  post_window_start: string | null;
+  post_window_end: string | null;
+  submission_deadline: string | null;
+  brief: string | null;
+  has_free_meal: boolean;
+  eligible_industries: string[] | null;
+  eligible_cities: string[] | null;
+  eligible_levels: string[] | null;
+  eligible_creator_types: string[] | null;
+  eligible_roster_status: string[] | null;
+  eligible_status_kontrak: string[] | null;
+  min_gmv: number | null;
+  min_gmv_metric: string | null;
+  min_gmv_period_days: number | null;
+  created_at: string;
+};
+
+export type BudgetLogRow = {
+  id: string;
+  creator_budget: number | null;
+  base_fee: number | null;
+  creator_quota: number | null;
+  allocated_amount: number | null;
+  over_budget: boolean;
+  over_budget_reason: string | null;
+  actor: string | null;
+  created_at: string;
+};
+
+export type AdsSpendRow = {
+  id: string;
+  spend_date: string;
+  amount: number;
+  note: string | null;
+  entered_by: string | null;
+  created_at: string;
+};
+
+function Msg({ state }: { state: ActionResult | null }) {
+  if (!state) return null;
+  return (
+    <div className={state.ok ? "ok-msg" : "err"} style={{ whiteSpace: "pre-wrap" }}>
+      {state.message}
+    </div>
+  );
+}
+
+function Tag({ list }: { list: string[] | null }) {
+  if (!list || list.length === 0) return <span className="hint">semua boleh</span>;
+  return (
+    <>
+      {list.map((v) => (
+        <span key={v} className="badge slate" style={{ marginRight: 4 }}>
+          {v}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function StageSwitcher({
+  deal,
+  canManage,
+  me,
+}: {
+  deal: CampaignDetailRow;
+  canManage: boolean;
+  me: { rank: string | null; is_od: boolean; is_director: boolean } | null;
+}) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(changeCampaignStage, null);
+  const stage = (isCampaignStage(deal.campaign_stage) ? deal.campaign_stage : "draft") as CampaignStage;
+  const options = nextStagesFor(stage);
+  const missing = missingFieldsForActivation(deal);
+
+  if (!canManage || options.length === 0) return null;
+
+  return (
+    <form action={action} style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+      <input type="hidden" name="deal_id" value={deal.id} />
+      <div>
+        <label>Ubah Stage</label>
+        <select name="campaign_stage" defaultValue="">
+          <option value="">— pilih —</option>
+          {options.map((s) => {
+            const leadPlus = stageTransitionRequiresLeadPlus(stage, s);
+            const isLeadPlus = !!me && (me.rank === "lead" || me.is_od || me.is_director);
+            const disabled = leadPlus && !isLeadPlus;
+            return (
+              <option key={s} value={s} disabled={disabled}>
+                {CAMPAIGN_STAGE_LABEL[s]}
+                {leadPlus ? " (Lead+)" : ""}
+                {s === "active" && missing.length > 0 ? " — data belum lengkap" : ""}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+      <button type="submit" disabled={pending} className="sm">
+        {pending ? "Menyimpan…" : "Ubah Stage"}
+      </button>
+      {stage === "draft" && missing.length > 0 && (
+        <p className="hint" style={{ width: "100%" }}>
+          Belum bisa Aktif — lengkapi dulu: {missing.join(", ")}.
+        </p>
+      )}
+      <Msg state={state} />
+    </form>
+  );
+}
+
+function BudgetForm({ deal, canManage }: { deal: CampaignDetailRow; canManage: boolean }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(updateCampaignBudget, null);
+  if (!canManage) return null;
+
+  return (
+    <form action={action}>
+      <input type="hidden" name="deal_id" value={deal.id} />
+      <Msg state={state} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        <div>
+          <label>Base Fee / kreator (Rp)</label>
+          <input name="base_fee" inputMode="numeric" defaultValue={deal.base_fee ?? ""} />
+        </div>
+        <div>
+          <label>Kuota Kreator</label>
+          <input name="creator_quota" inputMode="numeric" defaultValue={deal.creator_quota ?? ""} />
+        </div>
+        <div>
+          <label>Creator Budget (Rp)</label>
+          <input name="creator_budget" inputMode="numeric" defaultValue={deal.creator_budget ?? ""} />
+        </div>
+      </div>
+      <label>Ads Budget Rencana (Rp)</label>
+      <input name="ads_budget_planned" inputMode="numeric" defaultValue={deal.ads_budget_planned ?? ""} />
+      <label>Alasan Over Budget (isi/ubah hanya kalau alokasi melebihi creator budget)</label>
+      <input name="over_budget_reason" defaultValue={deal.over_budget_reason ?? ""} />
+      <button type="submit" disabled={pending} className="sm">
+        {pending ? "Menyimpan…" : "Simpan Budget"}
+      </button>
+    </form>
+  );
+}
+
+function AdsSpendSection({ deal, adsSpend, canAdd }: { deal: CampaignDetailRow; adsSpend: AdsSpendRow[]; canAdd: boolean }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(addAdsSpend, null);
+  const total = adsSpend.reduce((sum, s) => sum + (s.amount ?? 0), 0);
+
+  return (
+    <div className="card">
+      <h2>Ads Spend (Realisasi)</h2>
+      <p className="hint">
+        Rencana: {rupiah(deal.ads_budget_planned)} · Realisasi tercatat: {rupiah(total)}
+        {deal.ads_budget_planned ? ` (${Math.round((total / deal.ads_budget_planned) * 100)}%)` : ""}
+      </p>
+
+      {canAdd && (
+        <form action={action} className="inline-form" style={{ marginBottom: 14 }}>
+          <input type="hidden" name="deal_id" value={deal.id} />
+          <div>
+            <label>Tanggal</label>
+            <input name="spend_date" type="date" required />
+          </div>
+          <div>
+            <label>Nominal (Rp)</label>
+            <input name="amount" inputMode="numeric" required style={{ width: 140 }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label>Catatan</label>
+            <input name="note" placeholder="opsional" />
+          </div>
+          <button type="submit" disabled={pending} className="sm">
+            {pending ? "Menyimpan…" : "+ Entri"}
+          </button>
+        </form>
+      )}
+      <Msg state={state} />
+
+      {adsSpend.length === 0 ? (
+        <p className="hint">Belum ada entri ads spend.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>Nominal</th>
+              <th>Catatan</th>
+            </tr>
+          </thead>
+          <tbody>
+            {adsSpend.map((s) => (
+              <tr key={s.id}>
+                <td>{tanggal(s.spend_date)}</td>
+                <td>{rupiah(s.amount)}</td>
+                <td>{s.note ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+export function CampaignDetail({
+  deal,
+  budgetLog,
+  adsSpend,
+  nameById,
+  me,
+  canManageBudgetStage,
+}: {
+  deal: CampaignDetailRow;
+  budgetLog: BudgetLogRow[];
+  adsSpend: AdsSpendRow[];
+  nameById: Record<string, string>;
+  me: { rank: string | null; is_od: boolean; is_director: boolean } | null;
+  canManageBudgetStage: boolean;
+}) {
+  const stage = (isCampaignStage(deal.campaign_stage) ? deal.campaign_stage : "draft") as CampaignStage;
+
+  return (
+    <>
+      <h1>
+        {deal.code ?? "—"} · {deal.brand_name}
+      </h1>
+      <p className="page-sub">
+        {deal.funding_source ? FUNDING_SOURCE_LABEL[deal.funding_source as FundingSource] : "Funding belum diisi"} ·{" "}
+        {deal.campaign_track ? CAMPAIGN_TRACK_LABEL[deal.campaign_track as CampaignTrack] : "Track belum diisi"} ·{" "}
+        Tim ops: {deal.operational_team ?? "—"}
+        {deal.operational_owner_id && nameById[deal.operational_owner_id] ? ` (${nameById[deal.operational_owner_id]})` : ""}
+      </p>
+
+      <div className="stats">
+        <div className="stat">
+          <div className="k">Stage</div>
+          <div className="v small">{CAMPAIGN_STAGE_LABEL[stage]}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Alokasi (base fee × kuota)</div>
+          <div className="v small">{rupiah(deal.allocated_amount)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Creator Budget</div>
+          <div className="v small">{rupiah(deal.creator_budget)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Over Budget</div>
+          <div className="v small">{deal.over_budget ? "Ya" : "Tidak"}</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Stage Campaign</h2>
+        <StageSwitcher deal={deal} canManage={canManageBudgetStage} me={me} />
+      </div>
+
+      <div className="card">
+        <h2>Budget</h2>
+        <BudgetForm deal={deal} canManage={canManageBudgetStage} />
+        {deal.over_budget && deal.over_budget_reason && (
+          <p className="hint">
+            <span className="badge red">Over Budget</span> {deal.over_budget_reason}
+          </p>
+        )}
+
+        {budgetLog.length > 0 && (
+          <details className="disclose" style={{ marginTop: 14 }}>
+            <summary>Riwayat Budget ({budgetLog.length})</summary>
+            <table>
+              <thead>
+                <tr>
+                  <th>Waktu</th>
+                  <th>Base Fee</th>
+                  <th>Kuota</th>
+                  <th>Alokasi</th>
+                  <th>Creator Budget</th>
+                  <th>Over Budget</th>
+                  <th>Alasan</th>
+                  <th>Actor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {budgetLog.map((l) => (
+                  <tr key={l.id}>
+                    <td>{tanggal(l.created_at)}</td>
+                    <td>{rupiah(l.base_fee)}</td>
+                    <td>{num(l.creator_quota)}</td>
+                    <td>{rupiah(l.allocated_amount)}</td>
+                    <td>{rupiah(l.creator_budget)}</td>
+                    <td>{l.over_budget ? "Ya" : "Tidak"}</td>
+                    <td>{l.over_budget_reason ?? "—"}</td>
+                    <td>{(l.actor && nameById[l.actor]) ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        )}
+      </div>
+
+      <AdsSpendSection deal={deal} adsSpend={adsSpend} canAdd={canManageBudgetStage} />
+
+      <div className="card">
+        <h2>Target &amp; Window</h2>
+        <p>
+          Target Location ID: <strong>{deal.target_location_id ?? "—"}</strong>
+        </p>
+        <p>
+          Target GMV: {rupiah(deal.target_gmv)} · Target Views: {num(deal.target_views)}
+        </p>
+        <p>
+          Window Post: {deal.post_window_start ? tanggal(deal.post_window_start) : "—"} –{" "}
+          {deal.post_window_end ? tanggal(deal.post_window_end) : "—"}
+        </p>
+        <p>Deadline Submit Bukti: {deal.submission_deadline ? tanggal(deal.submission_deadline) : "—"}</p>
+        <p>Free Meal: {deal.has_free_meal ? "Ya" : "Tidak"}</p>
+        {deal.brief && <p style={{ whiteSpace: "pre-wrap" }}>{deal.brief}</p>}
+      </div>
+
+      <div className="card">
+        <h2>Segmentasi Kelayakan Pendaftar</h2>
+        <p className="hint">Dipakai gerbang pendaftaran kreator di Fase G.2. Follower tidak dipakai.</p>
+        <p>
+          Industry: <Tag list={deal.eligible_industries} />
+        </p>
+        <p>
+          Kota: <Tag list={deal.eligible_cities} />
+        </p>
+        <p>
+          Level: <Tag list={deal.eligible_levels} />
+        </p>
+        <p>
+          Jenis Kreator: <Tag list={deal.eligible_creator_types} />
+        </p>
+        <p>
+          Roster Live: <Tag list={deal.eligible_roster_status} />
+        </p>
+        <p>
+          Status Kontrak: <Tag list={deal.eligible_status_kontrak} />
+        </p>
+        <p>
+          Ambang GMV: {deal.min_gmv ? `${rupiah(deal.min_gmv)} (${deal.min_gmv_metric ?? "-"}, ${deal.min_gmv_period_days ?? "-"} hari)` : "—"}
+        </p>
+      </div>
+    </>
+  );
+}
