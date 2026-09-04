@@ -1,10 +1,61 @@
 # HANDOFF — Fase G: Campaign Kreator MEA GO
 
-## STATUS UPDATE 2026-09-04 — G.1 sampai G.5 SELESAI, roadmap §6 di bawah ini rampung
+## STATUS UPDATE 2026-09-04 (sore) — tabrakan nomor migrasi dengan PR #27, sudah direkonsiliasi
+
+Branch ini di-merge dengan `main` (yang sudah memuat PR #26 dan **PR #27**, "Nominal
+suggestion, director-only deal edit/delete, POI notes+SLA settings, Excel export, CRM
+table, deal filters"). PR #27 memakai nomor file `0341`-`0343` untuk migrasi yang **sama
+sekali berbeda** dari punya Fase G (nama file beda jadi tidak bentrok di git, cuma
+membingungkan dibaca manusia — lihat header `0348` untuk daftar lengkap kedua sisi).
+
+**Dampak nyata yang ditemukan:** kedua sisi sama-sama `drop policy + create policy` dengan
+nama **sama** (`brand_deals_update`) pada tabel yang sama. Karena diterapkan ke production
+di waktu berbeda (Fase G lebih dulu, PR #27 menyusul beberapa jam kemudian), production
+sempat berakhir di kebijakan **director-only murni** dari PR #27 — BizDev/CampaignSpecialist/
+Account tidak bisa lagi mengubah budget/stage campaign mereka sendiri lewat
+`/meago/campaigns/[id]`, meskipun Fase G "terlihat" sudah di-deploy. Sebaliknya, reset dari
+nol (`pg_test_reset.sh`, file diproses alfabetis) berakhir di urutan **terbalik** dan
+menghasilkan state yang **berbeda dari production** — kelas bug: dua penulis migrasi
+paralel berbagi skema penomoran tanpa koordinasi, dan reset-dari-nol tidak menjamin urutan
+yang sama dengan urutan apply sungguhan.
+
+**Perbaikan:** `0348_reconcile_brand_deals_update_rls.sql` — kebijakan final eksplisit,
+tidak bergantung urutan file mana pun. Keputusan (dikonfirmasi user): **gabungkan kedua
+niat**, bukan pilih salah satu — Merchant Deals biasa (`campaign_enabled=false`) tetap
+director-only sesuai PR #27; baris campaign (`campaign_enabled=true`) kembali terbuka untuk
+BizDev/CampaignSpecialist (semua) dan Account (miliknya sendiri), persis cakupan
+`0342_go_campaigns_foundation.sql`. DELETE `brand_deals` sengaja tidak disentuh (tetap
+director-only murni — Fase G tidak butuh pengecualian di situ). **Sudah diverifikasi via
+query `pg_policies` langsung di production: qual cocok dengan yang dimaksud.** Diterapkan
+ke staging DAN production.
+
+**Pelajaran untuk migrasi berikutnya:** kalau ada kemungkinan sesi/PR paralel menyentuh
+tabel yang sama, jangan asumsikan nomor file berikutnya "aman" hanya karena nama filenya
+beda — cek `git log`/PR terbuka lain untuk migrasi yang menimpa nama policy/trigger yang
+sama sebelum push, terutama untuk `brand_deals` (tabel paling ramai penulisnya di repo ini).
+
+### ⚠ Temuan terpisah, BELUM diperbaiki — staging kehilangan tabel POI
+Saat mencoba apply `0342_poi_notes.sql` (punya PR #27) ke **staging**, gagal:
+`ERROR: 42P01: relation "poi_sop_progress" does not exist`. Staging punya *riwayat migrasi*
+yang mencatat `poi_sop_tracking`/`poi_dining_sop_tracking` sebagai sudah diterapkan, tapi
+tabel `poi_sop_progress`, `poi_sop_steps`, `poi_dining_cycles`, `poi_dining_steps` benar-benar
+tidak ada di staging (dicek langsung via `information_schema.tables`). Ini **drift lama,
+tidak terkait Fase G maupun PR #27** — kemungkinan migrasi pernah gagal sebagian atau tabel
+sempat di-drop manual di staging. **Belum diperbaiki di sesi ini** — `0342_poi_notes.sql`
+dan `0343_poi_sla_settings.sql` (PR #27) **TIDAK diterapkan ke staging** (prasyaratnya tidak
+ada di sana), tapi **sudah diterapkan ke production** (bagian dari `main` sebelum sesi ini,
+tabelnya ada & terisi di production — dikonfirmasi via `list_tables`). Staging jadi tidak
+representatif untuk fitur POI SOP/SLA settings sampai drift ini diinvestigasi dan diperbaiki
+terpisah — jangan andalkan staging untuk uji fitur itu sebelum ada migrasi perbaikan.
+
+---
+
+## STATUS UPDATE 2026-09-04 (siang) — G.1 sampai G.5 SELESAI, roadmap §6 di bawah ini rampung
 
 Seluruh roadmap §6 (G.1→G.5) sudah dibangun, diuji, dan **di-apply ke staging + production**
-di branch `claude/baca-handoff-task-n7zv4p` (belum di-PR-kan ke `main` — belum diminta).
-Migrasi `0341`-`0347`. `bash scripts/pg_test_reset.sh` → 65 migrasi lolos dari nol.
+di branch `claude/baca-handoff-task-n7zv4p`.
+Migrasi `0341`-`0347` (Fase G). Migrasi `0348` (rekonsiliasi RLS, lihat status update di atas).
+`bash scripts/pg_test_reset.sh` → 69 migrasi lolos dari nol (setelah merge `main`/PR #27).
 
 | Fase | Migrasi | Isi |
 |---|---|---|
