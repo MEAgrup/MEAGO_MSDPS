@@ -17,6 +17,30 @@ export function isPoiTabCategory(value: string | null): value is PoiTabCategory 
   return !!value && (POI_TAB_CATEGORIES as readonly string[]).includes(value);
 }
 
+// ---- Tab "Setting Bizdev & Admin Ops" — SLA per step dapat diatur Director --
+// (poi_sla_settings, migrasi 0343). Step/task tetap tidak berubah (terikat
+// check constraint DB); hanya sla_days/sla_label per step yang bisa ditimpa.
+export const POI_SLA_FLOWS = ["poi_accommodation_ttd", "poi_dining_freebarter", "poi_dining_berbayar"] as const;
+export type PoiSlaFlow = (typeof POI_SLA_FLOWS)[number];
+
+export const POI_SLA_FLOW_LABELS: Record<PoiSlaFlow, string> = {
+  poi_accommodation_ttd: "POI Accommodation & TTD",
+  poi_dining_freebarter: "POI Dining — Free/Barter",
+  poi_dining_berbayar: "POI Dining — Berbayar",
+};
+
+export type PoiSlaOverrideRow = { step_no: number; sla_days: number | null; sla_label: string | null };
+
+export function applySlaOverrides(steps: PoiSopStepDef[], overrides: PoiSlaOverrideRow[]): PoiSopStepDef[] {
+  if (overrides.length === 0) return steps;
+  const byStep = new Map(overrides.map((o) => [o.step_no, o]));
+  return steps.map((s) => {
+    const o = byStep.get(s.step);
+    if (!o) return s;
+    return { ...s, slaDays: o.sla_days, slaLabel: o.sla_label ?? undefined };
+  });
+}
+
 // slaDays null = tidak ada SLA harian tetap (pakai slaLabel bila ada, mis. SLA
 // rentang "7-30 hari sesuai dealing" atau step opsional Dining Berbayar 1-5).
 export type PoiSopStepDef = { step: number; task: string; slaDays: number | null; slaLabel?: string };
@@ -250,6 +274,13 @@ export function sopProgressStatus(
 
 export function stepCompletedAt(steps: PoiSopStepRow[], stepNo: number): string | null {
   return steps.find((s) => s.step_no === stepNo)?.completed_at ?? null;
+}
+
+// Suggestion "isi Notes" pada form input GMV: muncul begitu step yang sedang
+// berjalan berada di 5 step terakhir sebelum SOP/siklus berakhir.
+export function isNearCompletion(currentStepNo: number | null, totalSteps: number): boolean {
+  if (currentStepNo == null) return false;
+  return totalSteps - currentStepNo <= 4;
 }
 
 // Durasi manusiawi ("12 hari 3 jam"), dibulatkan ke jam terdekat. null bila salah

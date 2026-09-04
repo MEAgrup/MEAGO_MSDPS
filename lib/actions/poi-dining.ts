@@ -62,10 +62,11 @@ export async function updatePoiDiningCycleProgress(
   const report_status_raw = String(formData.get("report_status") || "").trim();
   const report_status = report_status_raw ? (isReportStatus(report_status_raw) ? report_status_raw : undefined) : null;
   if (report_status === undefined) return { ok: false, message: "[status report tidak dikenal]" };
+  const notes = String(formData.get("notes") || "").trim() || null;
 
   const { error: cycleErr } = await supabase
     .from("poi_dining_cycles")
-    .update({ ops_datetime, actual_vt, total_gmv, report_link, report_status })
+    .update({ ops_datetime, actual_vt, total_gmv, report_link, report_status, notes })
     .eq("id", cycle_id);
   if (cycleErr) {
     const msg = cycleErr.message.match(/\[(.+)\]/)?.[0] ?? `Gagal menyimpan tracker POI Dining: ${cycleErr.message}`;

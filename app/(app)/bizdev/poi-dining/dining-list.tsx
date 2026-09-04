@@ -5,6 +5,7 @@ import { PoiCard, type PoiTransaction } from "../poi/poi-card";
 import { DiningBerbayarCard, type DiningBerbayarCycle } from "./dining-berbayar-card";
 import {
   POI_DINING_FREEBARTER_STEPS,
+  POI_DINING_BERBAYAR_STEPS,
   DINING_FREEBARTER_PRE_VISIT_END_STEP,
   DINING_FREEBARTER_POST_VISIT_END_STEP,
   effectiveOpsDatetime,
@@ -12,6 +13,7 @@ import {
   diningBerbayarStatus,
   jakartaYMD,
   shiftYMD,
+  type PoiSopStepDef,
 } from "@/lib/mcn/poi-sop";
 
 export type DiningCard =
@@ -59,10 +61,14 @@ export function DiningList({
   cards,
   opsNames,
   canApproveSkip,
+  freebarterStepDefs = POI_DINING_FREEBARTER_STEPS,
+  berbayarStepDefs = POI_DINING_BERBAYAR_STEPS,
 }: {
   cards: DiningCard[];
   opsNames: readonly string[];
   canApproveSkip: boolean;
+  freebarterStepDefs?: PoiSopStepDef[];
+  berbayarStepDefs?: PoiSopStepDef[];
 }) {
   const [query, setQuery] = useState("");
   const [bentuk, setBentuk] = useState<BentukFilter>("all");
@@ -172,7 +178,7 @@ export function DiningList({
                 key={`fb-${card.tx.deal_id}`}
                 tx={card.tx}
                 opsNames={opsNames}
-                stepDefs={POI_DINING_FREEBARTER_STEPS}
+                stepDefs={freebarterStepDefs}
                 preVisitEndStep={DINING_FREEBARTER_PRE_VISIT_END_STEP}
                 postVisitEndStep={DINING_FREEBARTER_POST_VISIT_END_STEP}
                 reportWarningStep={DINING_FREEBARTER_POST_VISIT_END_STEP - 1}
@@ -184,6 +190,7 @@ export function DiningList({
                 cycle={card.cycle}
                 opsNames={opsNames}
                 canApproveSkip={canApproveSkip}
+                stepDefs={berbayarStepDefs}
               />
             )
           )}

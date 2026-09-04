@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { hariDesimal, num, rupiah } from "@/lib/format";
+import { hariDesimal, num, rupiah, tanggal } from "@/lib/format";
 import { APPROACH_VIA, CRM_STATUSES, type CrmStatus } from "@/lib/leads/intake";
 import { BarChart, CHART_COLORS, LineChart, PieChart } from "@/components/charts";
+import { exportRowsToExcel } from "@/lib/xlsx-export";
 
 export type DashLead = {
   id: string;
@@ -13,6 +14,7 @@ export type DashLead = {
   bd_employee_id: string | null;
   brand_category: string | null;
   wilayah: string | null;
+  source: string | null;
   crm_status: string;
   approach_via: string | null;
   benefit_dealing: string | null;
@@ -325,6 +327,72 @@ export function CrmDashboard({
         <div className="stat">
           <div className="k">Total Deals (Revenue)</div>
           <div className="v small">{rupiah(totalDealsRevenue)}</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="table-toolbar">
+          <h2>Detail Leads ({filteredLeads.length})</h2>
+          <button
+            type="button"
+            className="sm ghost2"
+            disabled={filteredLeads.length === 0}
+            onClick={() =>
+              exportRowsToExcel(
+                "dashboard-crm-leads",
+                "Leads",
+                filteredLeads.map((l) => ({
+                  "Nama BD": (l.bd_employee_id && bdNameById[l.bd_employee_id]) ?? "",
+                  "Tanggal Scouting": l.created_at?.slice(0, 10) ?? "",
+                  Status: l.crm_status,
+                  "Brand / Merchant / POI": l.brand_name ?? l.lead_name,
+                  "Kategori Brand": l.brand_category ?? "",
+                  Source: l.source ?? "",
+                  Wilayah: l.wilayah ?? "",
+                  Nominal: l.nominal_bayar,
+                }))
+              )
+            }
+          >
+            Export Excel
+          </button>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Nama BD</th>
+                <th>Tanggal Scouting</th>
+                <th>Status</th>
+                <th>Brand / Merchant / POI</th>
+                <th>Kategori Brand</th>
+                <th>Source</th>
+                <th>Wilayah</th>
+                <th>Nominal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLeads.map((l) => (
+                <tr key={l.id}>
+                  <td>{(l.bd_employee_id && bdNameById[l.bd_employee_id]) ?? "—"}</td>
+                  <td className="muted">{tanggal(dateOnly(l.created_at))}</td>
+                  <td>{l.crm_status}</td>
+                  <td>{l.brand_name ?? l.lead_name}</td>
+                  <td className="muted">{l.brand_category ?? "—"}</td>
+                  <td className="muted">{l.source ?? "—"}</td>
+                  <td className="muted">{l.wilayah ?? "—"}</td>
+                  <td>{rupiah(l.nominal_bayar)}</td>
+                </tr>
+              ))}
+              {filteredLeads.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="muted">
+                    Tidak ada lead yang cocok dengan filter.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

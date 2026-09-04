@@ -24,10 +24,19 @@ async function ctx() {
   return { supabase, user, me: me as Me | null };
 }
 
-// canManageDeals: siapa boleh "Daftarkan Transaksi" / edit — sama seperti
+// canManageDeals: siapa boleh "Daftarkan Transaksi" (insert) — sama seperti
 // canRegister di page.tsx (mgmt/BizDev/CreatorManagement).
 function canManageDeals(me: Me | null): boolean {
   return !!me && (me.is_od || me.is_director || me.division === "BizDev" || me.division === "CreatorManagement");
+}
+
+// canEditDeleteDeals: Edit & Hapus transaksi deal dibatasi ke role "leader dan
+// atasnya" — konsep leader lintas divisi belum ada di skema, jadi untuk saat
+// ini dipakai is_director() saja (sesuai instruksi eksplisit). RLS brand_deals
+// (migrasi 0341) sudah menegakkan ini juga di level DB; ini hanya utk pesan
+// error yang ramah.
+function canEditDeleteDeals(me: Me | null): boolean {
+  return !!me && me.is_director;
 }
 
 type SupabaseClientLike = Awaited<ReturnType<typeof createClient>>;
@@ -210,7 +219,7 @@ export async function updateDealTransaction(
 ): Promise<ActionResult> {
   const { supabase, user, me } = await ctx();
   if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
-  if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang mengedit transaksi deal." };
+  if (!canEditDeleteDeals(me)) return { ok: false, message: "Hanya Director yang dapat mengedit transaksi deal." };
 
   const deal_id = String(formData.get("deal_id") || "").trim();
   if (!deal_id) return { ok: false, message: "Deal tidak valid." };
@@ -236,7 +245,7 @@ export async function deleteDealTransaction(
 ): Promise<ActionResult> {
   const { supabase, user, me } = await ctx();
   if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
-  if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang menghapus transaksi deal." };
+  if (!canEditDeleteDeals(me)) return { ok: false, message: "Hanya Director yang dapat menghapus transaksi deal." };
 
   const deal_id = String(formData.get("deal_id") || "").trim();
   if (!deal_id) return { ok: false, message: "Deal tidak valid." };
@@ -256,7 +265,7 @@ export async function deleteDealTransactionsBulk(
 ): Promise<ActionResult> {
   const { supabase, user, me } = await ctx();
   if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
-  if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang menghapus transaksi deal." };
+  if (!canEditDeleteDeals(me)) return { ok: false, message: "Hanya Director yang dapat menghapus transaksi deal." };
 
   const deal_ids = formData.getAll("deal_ids") as string[];
   if (deal_ids.length === 0) return { ok: false, message: "Pilih deal yang akan dihapus." };
