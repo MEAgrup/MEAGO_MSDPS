@@ -31,6 +31,7 @@ export default async function KreatorLayout({
       <Link href="/kreator/request">Request Brand/Ads</Link>
       <Link href="/kreator/special-project">Special Project</Link>
       <Link href="/kreator/komplain">Komplain &amp; Feedback</Link>
+      <Link href="/kreator/profil">Profil</Link>
 
       <div className="spacer" />
       <div className="me">

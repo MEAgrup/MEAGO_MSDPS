@@ -80,6 +80,25 @@ export type ParticipantRow = {
   created_at: string;
 };
 
+export type VideoSubmissionRow = {
+  id: string;
+  participant_id: string;
+  post_url: string;
+  post_id: string | null;
+  is_duplicate: boolean;
+  duplicate_of_id: string | null;
+  submitted_at: string;
+};
+
+export type LiveSubmissionRow = {
+  id: string;
+  participant_id: string;
+  live_date: string;
+  duration_minutes: number;
+  proof_url: string | null;
+  submitted_at: string;
+};
+
 export type AdsSpendRow = {
   id: string;
   spend_date: string;
@@ -388,11 +407,110 @@ function ParticipantsSection({
   );
 }
 
+function SubmissionsSection({
+  participants,
+  videoSubmissions,
+  liveSubmissions,
+  creatorById,
+}: {
+  participants: ParticipantRow[];
+  videoSubmissions: VideoSubmissionRow[];
+  liveSubmissions: LiveSubmissionRow[];
+  creatorById: Record<string, { name: string; username: string | null; code: string | null }>;
+}) {
+  const participantCreator = new Map(participants.map((p) => [p.id, p.mcn_creator_id]));
+  const creatorName = (participantId: string) => {
+    const cid = participantCreator.get(participantId);
+    return (cid && creatorById[cid]?.name) ?? "—";
+  };
+
+  if (videoSubmissions.length === 0 && liveSubmissions.length === 0) {
+    return (
+      <div className="card">
+        <h2>Bukti Deliverable</h2>
+        <p className="hint">Belum ada bukti yang disubmit kreator.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h2>Bukti Deliverable</h2>
+      {videoSubmissions.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 14 }}>Video ({videoSubmissions.length})</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Kreator</th>
+                <th>Link</th>
+                <th>Post ID</th>
+                <th>Submit</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {videoSubmissions.map((s) => (
+                <tr key={s.id}>
+                  <td>{creatorName(s.participant_id)}</td>
+                  <td>
+                    <a href={s.post_url} target="_blank" rel="noreferrer">
+                      {s.post_url.length > 40 ? `${s.post_url.slice(0, 40)}…` : s.post_url}
+                    </a>
+                  </td>
+                  <td className="hint">{s.post_id ?? "—"}</td>
+                  <td>{tanggal(s.submitted_at)}</td>
+                  <td>{s.is_duplicate && <span className="badge red">Duplikat</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      {liveSubmissions.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 14, marginTop: 14 }}>Live ({liveSubmissions.length})</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Kreator</th>
+                <th>Tanggal</th>
+                <th>Durasi</th>
+                <th>Bukti</th>
+              </tr>
+            </thead>
+            <tbody>
+              {liveSubmissions.map((s) => (
+                <tr key={s.id}>
+                  <td>{creatorName(s.participant_id)}</td>
+                  <td>{tanggal(s.live_date)}</td>
+                  <td>{s.duration_minutes} menit</td>
+                  <td>
+                    {s.proof_url ? (
+                      <a href={s.proof_url} target="_blank" rel="noreferrer">
+                        link
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function CampaignDetail({
   deal,
   budgetLog,
   adsSpend,
   participants,
+  videoSubmissions,
+  liveSubmissions,
   creatorById,
   nameById,
   me,
@@ -403,6 +521,8 @@ export function CampaignDetail({
   budgetLog: BudgetLogRow[];
   adsSpend: AdsSpendRow[];
   participants: ParticipantRow[];
+  videoSubmissions: VideoSubmissionRow[];
+  liveSubmissions: LiveSubmissionRow[];
   creatorById: Record<string, { name: string; username: string | null; code: string | null }>;
   nameById: Record<string, string>;
   me: { rank: string | null; is_od: boolean; is_director: boolean } | null;
@@ -492,6 +612,13 @@ export function CampaignDetail({
       </div>
 
       <ParticipantsSection deal={deal} participants={participants} creatorById={creatorById} canCurate={canCurate} />
+
+      <SubmissionsSection
+        participants={participants}
+        videoSubmissions={videoSubmissions}
+        liveSubmissions={liveSubmissions}
+        creatorById={creatorById}
+      />
 
       <AdsSpendSection deal={deal} adsSpend={adsSpend} canAdd={canManageBudgetStage} />
 

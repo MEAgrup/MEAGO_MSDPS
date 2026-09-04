@@ -6,6 +6,8 @@ import {
   type BudgetLogRow,
   type AdsSpendRow,
   type ParticipantRow,
+  type VideoSubmissionRow,
+  type LiveSubmissionRow,
 } from "./detail";
 
 const CAMPAIGN_COLUMNS =
@@ -62,9 +64,28 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
 
   const participants = (participantsRaw as ParticipantRow[] | null) ?? [];
   const creatorIds = [...new Set(participants.map((p) => p.mcn_creator_id))];
-  const { data: creatorsRaw } = creatorIds.length
-    ? await supabase.from("mcn_creators").select("id, name, username, code").in("id", creatorIds)
-    : { data: [] as { id: string; name: string; username: string | null; code: string | null }[] };
+  const participantIds = participants.map((p) => p.id);
+
+  const [{ data: creatorsRaw }, { data: videoRaw }, { data: liveRaw }] = await Promise.all([
+    creatorIds.length
+      ? supabase.from("mcn_creators").select("id, name, username, code").in("id", creatorIds)
+      : Promise.resolve({ data: [] as { id: string; name: string; username: string | null; code: string | null }[] }),
+    participantIds.length
+      ? supabase
+          .from("campaign_video_submissions")
+          .select("id, participant_id, post_url, post_id, is_duplicate, duplicate_of_id, submitted_at")
+          .in("participant_id", participantIds)
+          .order("submitted_at", { ascending: false })
+      : Promise.resolve({ data: [] as VideoSubmissionRow[] }),
+    participantIds.length
+      ? supabase
+          .from("campaign_live_submissions")
+          .select("id, participant_id, live_date, duration_minutes, proof_url, submitted_at")
+          .in("participant_id", participantIds)
+          .order("submitted_at", { ascending: false })
+      : Promise.resolve({ data: [] as LiveSubmissionRow[] }),
+  ]);
+
   const creatorById: Record<string, { name: string; username: string | null; code: string | null }> =
     Object.fromEntries(
       (creatorsRaw ?? []).map((c) => [c.id, { name: c.name, username: c.username, code: c.code }])
@@ -76,6 +97,8 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       budgetLog={(budgetLogRaw as BudgetLogRow[] | null) ?? []}
       adsSpend={(adsSpendRaw as AdsSpendRow[] | null) ?? []}
       participants={participants}
+      videoSubmissions={(videoRaw as VideoSubmissionRow[] | null) ?? []}
+      liveSubmissions={(liveRaw as LiveSubmissionRow[] | null) ?? []}
       creatorById={creatorById}
       nameById={nameById}
       me={me ? { rank: me.rank, is_od: !!me.is_od, is_director: !!me.is_director } : null}
