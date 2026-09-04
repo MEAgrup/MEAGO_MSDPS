@@ -26,7 +26,7 @@ export default async function LeadsPage() {
       supabase.from("employees").select("id, full_name, division, active"),
       supabase.from("lead_business_types").select("brand_category, label").order("label"),
       supabase.from("lead_benefit_options").select("label").order("label"),
-      supabase.from("brand_deals").select("lead_id").not("lead_id", "is", null),
+      supabase.from("brand_deals").select("lead_id, nominal_harga").not("lead_id", "is", null),
     ]);
 
   const bdNameById: Record<string, string> = Object.fromEntries(
@@ -52,6 +52,13 @@ export default async function LeadsPage() {
   const recordedLeadIds = new Set(
     (recordedDeals ?? []).map((d) => d.lead_id).filter((id): id is string => !!id)
   );
+  // Riwayat nominal transaksi per lead — jadi saran "Nominal Deals" di form
+  // "Catat Transaksi", dibatasi ke lead yang bersangkutan saja.
+  const nominalHistoryByLead: Record<string, number[]> = {};
+  for (const d of recordedDeals ?? []) {
+    if (!d.lead_id || !d.nominal_harga) continue;
+    (nominalHistoryByLead[d.lead_id] ??= []).push(d.nominal_harga);
+  }
 
   return (
     <>
@@ -100,6 +107,7 @@ export default async function LeadsPage() {
         businessTypeOptions={businessTypeOptions}
         benefitOptions={benefitOptions}
         recordedLeadIds={recordedLeadIds}
+        nominalHistoryByLead={nominalHistoryByLead}
         isBizDev={isBizDev}
         canManage={canManage}
       />

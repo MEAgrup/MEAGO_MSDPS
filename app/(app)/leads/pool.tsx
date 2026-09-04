@@ -484,6 +484,7 @@ export function PoolLeadSection({
   businessTypeOptions,
   benefitOptions,
   recordedLeadIds,
+  nominalHistoryByLead,
   isBizDev,
   canManage,
 }: {
@@ -493,6 +494,7 @@ export function PoolLeadSection({
   businessTypeOptions: BusinessTypeOptions;
   benefitOptions: string[];
   recordedLeadIds: Set<string>;
+  nominalHistoryByLead?: Record<string, number[]>;
   isBizDev: boolean;
   canManage: boolean;
 }) {
@@ -643,6 +645,7 @@ export function PoolLeadSection({
                   dealingLeads={leads}
                   bdOptions={bdOptions}
                   benefitOptions={benefitOptions}
+                  nominalHistoryByLead={nominalHistoryByLead}
                   fixedLead={l}
                 />
               </td>

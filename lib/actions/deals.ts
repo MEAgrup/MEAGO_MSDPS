@@ -30,13 +30,59 @@ function canManageDeals(me: Me | null): boolean {
   return !!me && (me.is_od || me.is_director || me.division === "BizDev" || me.division === "CreatorManagement");
 }
 
-// canEditDeleteDeals: Edit & Hapus transaksi deal dibatasi ke role "leader dan
-// atasnya" — konsep leader lintas divisi belum ada di skema, jadi untuk saat
-// ini dipakai is_director() saja (sesuai instruksi eksplisit). RLS brand_deals
-// (migrasi 0341) sudah menegakkan ini juga di level DB; ini hanya utk pesan
-// error yang ramah.
+// canEditDeleteDeals: siapa boleh MENERAPKAN Edit & Hapus transaksi deal
+// langsung — dibatasi ke role "leader dan atasnya"; konsep leader lintas
+// divisi belum ada di skema, jadi untuk saat ini dipakai is_director() saja
+// (sesuai instruksi eksplisit). RLS brand_deals (migrasi 0341/0348) sudah
+// menegakkan ini juga di level DB; ini hanya utk pesan error yang ramah.
 function canEditDeleteDeals(me: Me | null): boolean {
   return !!me && me.is_director;
+}
+
+// canRequestDealChange: BD/CM boleh MENGAJUKAN edit/hapus (tombol "Edit",
+// "Lengkapi Data", "Hapus" muncul lagi untuk mereka), tapi hasilnya menunggu
+// approval Director — lihat migrasi 0349 (deal_change_requests).
+function canRequestDealChange(me: Me | null): boolean {
+  return canManageDeals(me) && !canEditDeleteDeals(me);
+}
+
+// Field form "Daftarkan Transaksi" apa adanya (belum dinormalisasi) — dipakai
+// sebagai payload permintaan approval, supaya saat Director menyetujui,
+// validasinya diulang lewat readDealFields() yang sama persis, bukan percaya
+// nilai yang sudah tersimpan di DB.
+const DEAL_FORM_KEYS = [
+  "lead_id",
+  "bd_id",
+  "ops_name",
+  "kategori_poi",
+  "pic_name",
+  "pic_whatsapp",
+  "bentuk_kerjasama",
+  "nominal_harga",
+  "benefit",
+  "visit_mulai",
+  "visit_berakhir",
+  "kreator_needed",
+  "konten_needed",
+  "total_jam_live",
+  "brief_link",
+  "tanggal_mulai_kontrak",
+  "tanggal_akhir_kontrak",
+] as const;
+
+export type DealFormSnapshot = Partial<Record<(typeof DEAL_FORM_KEYS)[number], string>>;
+
+function dealFormSnapshot(formData: FormData): DealFormSnapshot {
+  const snapshot: DealFormSnapshot = {};
+  for (const key of DEAL_FORM_KEYS) snapshot[key] = String(formData.get(key) ?? "").trim();
+  return snapshot;
+}
+
+function formDataFromSnapshot(payload: unknown): FormData {
+  const formData = new FormData();
+  const obj = (payload ?? {}) as Record<string, unknown>;
+  for (const key of DEAL_FORM_KEYS) formData.set(key, String(obj[key] ?? ""));
+  return formData;
 }
 
 type SupabaseClientLike = Awaited<ReturnType<typeof createClient>>;
@@ -211,21 +257,68 @@ export async function registerDealTransaction(
   return { ok: true, message: `Transaksi deal ${deal.code} — ${parsed.brand_name} tersimpan.` };
 }
 
+// dealLabels — snapshot kode & nama POI utk baris deal_change_requests, supaya
+// permintaan "Hapus" yang sudah disetujui tetap terbaca setelah deal-nya hilang.
+async function dealLabels(
+  supabase: SupabaseClientLike,
+  dealIds: string[]
+): Promise<Map<string, { code: string | null; brand_name: string }>> {
+  const { data } = await supabase.from("brand_deals").select("id, code, brand_name").in("id", dealIds);
+  return new Map(
+    ((data as { id: string; code: string | null; brand_name: string }[] | null) ?? []).map((d) => [
+      d.id,
+      { code: d.code, brand_name: d.brand_name },
+    ])
+  );
+}
+
+// Pesan error insert antrian approval yang ramah — pelanggaran yang paling
+// mungkin terjadi adalah unique index deal_change_requests_one_pending.
+function requestInsertError(message: string): string {
+  if (message.includes("deal_change_requests_one_pending")) {
+    return "Sudah ada permintaan perubahan yang menunggu approval Director untuk deal ini.";
+  }
+  return `Gagal mengirim permintaan: ${message}`;
+}
+
 // updateDealTransaction — edit transaksi, termasuk jalur "Lengkapi Data" untuk
 // baris hasil Import Master Deal (kategori_poi dkk masih kosong).
+// Director menerapkan langsung; BD/CM masuk antrian approval (migrasi 0349).
 export async function updateDealTransaction(
   _prev: ActionResult | null,
   formData: FormData
 ): Promise<ActionResult> {
   const { supabase, user, me } = await ctx();
   if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
-  if (!canEditDeleteDeals(me)) return { ok: false, message: "Hanya Director yang dapat mengedit transaksi deal." };
+  if (!canEditDeleteDeals(me) && !canRequestDealChange(me)) {
+    return { ok: false, message: "Tidak berwenang mengubah transaksi deal." };
+  }
 
   const deal_id = String(formData.get("deal_id") || "").trim();
   if (!deal_id) return { ok: false, message: "Deal tidak valid." };
 
   const parsed = await readDealFields(supabase, formData);
   if ("error" in parsed) return { ok: false, message: parsed.error };
+
+  if (!canEditDeleteDeals(me)) {
+    const label = (await dealLabels(supabase, [deal_id])).get(deal_id);
+    if (!label) return { ok: false, message: "Deal tidak ditemukan." };
+    const { error } = await supabase.from("deal_change_requests").insert({
+      deal_id,
+      deal_code: label.code,
+      deal_brand_name: label.brand_name,
+      action: "update",
+      payload: dealFormSnapshot(formData),
+      requested_by: me.id,
+    });
+    if (error) return { ok: false, message: requestInsertError(error.message) };
+
+    revalidatePath("/deals");
+    return {
+      ok: true,
+      message: "Perubahan dikirim ke Director untuk disetujui — data belum berubah sampai di-accept.",
+    };
+  }
 
   const { error } = await supabase
     .from("brand_deals")
@@ -238,17 +331,39 @@ export async function updateDealTransaction(
   return { ok: true, message: "Transaksi deal diperbarui." };
 }
 
-// deleteDealTransaction — hapus satu transaksi deal
+// deleteDealTransaction — hapus satu transaksi deal (Director), atau ajukan
+// penghapusan untuk disetujui Director (BD/CM).
 export async function deleteDealTransaction(
   _prev: ActionResult | null,
   formData: FormData
 ): Promise<ActionResult> {
   const { supabase, user, me } = await ctx();
   if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
-  if (!canEditDeleteDeals(me)) return { ok: false, message: "Hanya Director yang dapat menghapus transaksi deal." };
+  if (!canEditDeleteDeals(me) && !canRequestDealChange(me)) {
+    return { ok: false, message: "Tidak berwenang menghapus transaksi deal." };
+  }
 
   const deal_id = String(formData.get("deal_id") || "").trim();
   if (!deal_id) return { ok: false, message: "Deal tidak valid." };
+
+  if (!canEditDeleteDeals(me)) {
+    const label = (await dealLabels(supabase, [deal_id])).get(deal_id);
+    if (!label) return { ok: false, message: "Deal tidak ditemukan." };
+    const { error } = await supabase.from("deal_change_requests").insert({
+      deal_id,
+      deal_code: label.code,
+      deal_brand_name: label.brand_name,
+      action: "delete",
+      requested_by: me.id,
+    });
+    if (error) return { ok: false, message: requestInsertError(error.message) };
+
+    revalidatePath("/deals");
+    return {
+      ok: true,
+      message: "Permintaan hapus dikirim ke Director — deal belum dihapus sampai di-accept.",
+    };
+  }
 
   const { error } = await supabase.from("brand_deals").delete().eq("id", deal_id);
   if (error) return { ok: false, message: `Gagal menghapus transaksi: ${error.message}` };
@@ -258,17 +373,42 @@ export async function deleteDealTransaction(
   return { ok: true, message: "Transaksi deal dihapus." };
 }
 
-// deleteDealTransactionsBulk — hapus multiple transaksi deals
+// deleteDealTransactionsBulk — hapus multiple transaksi deals (Director), atau
+// ajukan penghapusannya sekaligus untuk disetujui Director (BD/CM).
 export async function deleteDealTransactionsBulk(
   _prev: ActionResult | null,
   formData: FormData
 ): Promise<ActionResult> {
   const { supabase, user, me } = await ctx();
   if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
-  if (!canEditDeleteDeals(me)) return { ok: false, message: "Hanya Director yang dapat menghapus transaksi deal." };
+  if (!canEditDeleteDeals(me) && !canRequestDealChange(me)) {
+    return { ok: false, message: "Tidak berwenang menghapus transaksi deal." };
+  }
 
   const deal_ids = formData.getAll("deal_ids") as string[];
   if (deal_ids.length === 0) return { ok: false, message: "Pilih deal yang akan dihapus." };
+
+  if (!canEditDeleteDeals(me)) {
+    const labels = await dealLabels(supabase, deal_ids);
+    const rows = deal_ids
+      .filter((id) => labels.has(id))
+      .map((id) => ({
+        deal_id: id,
+        deal_code: labels.get(id)!.code,
+        deal_brand_name: labels.get(id)!.brand_name,
+        action: "delete" as const,
+        requested_by: me.id,
+      }));
+    if (rows.length === 0) return { ok: false, message: "Deal tidak ditemukan." };
+    const { error } = await supabase.from("deal_change_requests").insert(rows);
+    if (error) return { ok: false, message: requestInsertError(error.message) };
+
+    revalidatePath("/deals");
+    return {
+      ok: true,
+      message: `${rows.length} permintaan hapus dikirim ke Director — deal belum dihapus sampai di-accept.`,
+    };
+  }
 
   const { error } = await supabase.from("brand_deals").delete().in("id", deal_ids);
   if (error) return { ok: false, message: `Gagal menghapus transaksi: ${error.message}` };
@@ -276,6 +416,144 @@ export async function deleteDealTransactionsBulk(
   revalidatePath("/deals");
   revalidatePath("/leads");
   return { ok: true, message: `${deal_ids.length} transaksi deal dihapus.` };
+}
+
+// ---------------------------------------------------------------------------
+// Antrian approval Director (deal_change_requests, migrasi 0349)
+// ---------------------------------------------------------------------------
+
+type ChangeRequestRow = {
+  id: string;
+  deal_id: string | null;
+  deal_brand_name: string;
+  action: "update" | "delete";
+  payload: unknown;
+  status: string;
+};
+
+// approveDealChangeRequest — Director meng-accept permintaan BD/CM. Perubahan
+// diterapkan LEWAT SESI DIRECTOR INI, jadi RLS brand_deals (director-only)
+// tetap jadi penjaga terakhir; payload divalidasi ulang dari nol dengan
+// readDealFields() yang sama seperti saat form disubmit.
+export async function approveDealChangeRequest(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canEditDeleteDeals(me)) {
+    return { ok: false, message: "Hanya Director yang dapat menyetujui perubahan transaksi deal." };
+  }
+
+  const request_id = String(formData.get("request_id") || "").trim();
+  if (!request_id) return { ok: false, message: "Permintaan tidak valid." };
+
+  const { data: reqRaw } = await supabase
+    .from("deal_change_requests")
+    .select("id, deal_id, deal_brand_name, action, payload, status")
+    .eq("id", request_id)
+    .maybeSingle();
+  const req = reqRaw as ChangeRequestRow | null;
+  if (!req) return { ok: false, message: "Permintaan tidak ditemukan." };
+  if (req.status !== "pending") return { ok: false, message: "Permintaan ini sudah ditinjau." };
+  if (!req.deal_id) return { ok: false, message: "Deal terkait sudah tidak ada." };
+
+  if (req.action === "update") {
+    const parsed = await readDealFields(supabase, formDataFromSnapshot(req.payload));
+    if ("error" in parsed) return { ok: false, message: `Permintaan tidak lagi valid: ${parsed.error}` };
+
+    const { error } = await supabase
+      .from("brand_deals")
+      .update({ brand_name: parsed.brand_name, ...parsed.fields })
+      .eq("id", req.deal_id);
+    if (error) return { ok: false, message: `Gagal menerapkan perubahan: ${error.message}` };
+  } else {
+    const { error } = await supabase.from("brand_deals").delete().eq("id", req.deal_id);
+    if (error) return { ok: false, message: `Gagal menghapus transaksi: ${error.message}` };
+  }
+
+  // Ditandai SETELAH perubahan diterapkan: kalau update/delete-nya gagal,
+  // permintaan tetap pending dan bisa dicoba lagi — bukan hilang diam-diam.
+  const { error: markErr } = await supabase
+    .from("deal_change_requests")
+    .update({
+      status: "approved",
+      reviewed_by: me.id,
+      reviewed_at: new Date().toISOString(),
+      review_note: String(formData.get("review_note") || "").trim() || null,
+    })
+    .eq("id", request_id);
+  if (markErr) {
+    return {
+      ok: false,
+      message: `Perubahan sudah diterapkan, tapi status permintaan gagal diperbarui: ${markErr.message}`,
+    };
+  }
+
+  revalidatePath("/deals");
+  revalidatePath("/leads");
+  revalidatePath("/bizdev/poi");
+  revalidatePath("/bizdev/poi-dining");
+  return {
+    ok: true,
+    message:
+      req.action === "update"
+        ? `Perubahan ${req.deal_brand_name} disetujui & diterapkan.`
+        : `Penghapusan ${req.deal_brand_name} disetujui & diterapkan.`,
+  };
+}
+
+// rejectDealChangeRequest — Director menolak; data deal tidak disentuh.
+export async function rejectDealChangeRequest(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canEditDeleteDeals(me)) {
+    return { ok: false, message: "Hanya Director yang dapat menolak perubahan transaksi deal." };
+  }
+
+  const request_id = String(formData.get("request_id") || "").trim();
+  if (!request_id) return { ok: false, message: "Permintaan tidak valid." };
+
+  const { error } = await supabase
+    .from("deal_change_requests")
+    .update({
+      status: "rejected",
+      reviewed_by: me.id,
+      reviewed_at: new Date().toISOString(),
+      review_note: String(formData.get("review_note") || "").trim() || null,
+    })
+    .eq("id", request_id)
+    .eq("status", "pending");
+  if (error) return { ok: false, message: `Gagal menolak permintaan: ${error.message}` };
+
+  revalidatePath("/deals");
+  return { ok: true, message: "Permintaan ditolak." };
+}
+
+// cancelDealChangeRequest — pemohon menarik kembali permintaannya sendiri
+// selama belum ditinjau (RLS deal_change_requests_delete).
+export async function cancelDealChangeRequest(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+
+  const request_id = String(formData.get("request_id") || "").trim();
+  if (!request_id) return { ok: false, message: "Permintaan tidak valid." };
+
+  const { error } = await supabase
+    .from("deal_change_requests")
+    .delete()
+    .eq("id", request_id)
+    .eq("status", "pending");
+  if (error) return { ok: false, message: `Gagal membatalkan permintaan: ${error.message}` };
+
+  revalidatePath("/deals");
+  return { ok: true, message: "Permintaan dibatalkan." };
 }
 
 // setPipelineStage — DIPAKAI BizDev Workspace (app/(app)/bizdev), bukan lagi

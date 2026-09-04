@@ -25,11 +25,13 @@ export function RegisterDealModal({
   dealingLeads,
   bdOptions,
   benefitOptions,
+  nominalHistoryByLead,
   fixedLead,
 }: {
   dealingLeads: PoolLead[];
   bdOptions: BdOption[];
   benefitOptions: string[];
+  nominalHistoryByLead?: Record<string, number[]>;
   fixedLead?: PoolLead;
 }) {
   const [open, setOpen] = useState(false);
@@ -67,6 +69,7 @@ export function RegisterDealModal({
                   dealingLeads={dealingLeads}
                   bdOptions={bdOptions}
                   benefitOptions={benefitOptions}
+                  nominalHistoryByLead={nominalHistoryByLead}
                   defaults={
                     fixedLead
                       ? {
@@ -102,16 +105,23 @@ export function DealsToolbar({
   dealingLeads,
   bdOptions,
   benefitOptions,
+  nominalHistoryByLead,
 }: {
   dealingLeads: PoolLead[];
   bdOptions: BdOption[];
   benefitOptions: string[];
+  nominalHistoryByLead?: Record<string, number[]>;
 }) {
   return (
     <div className="card">
       <div className="table-toolbar">
         <h2>Catat Transaksi Baru</h2>
-        <RegisterDealModal dealingLeads={dealingLeads} bdOptions={bdOptions} benefitOptions={benefitOptions} />
+        <RegisterDealModal
+          dealingLeads={dealingLeads}
+          bdOptions={bdOptions}
+          benefitOptions={benefitOptions}
+          nominalHistoryByLead={nominalHistoryByLead}
+        />
       </div>
     </div>
   );

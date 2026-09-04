@@ -6,13 +6,20 @@ import {
   POI_TAB_CATEGORIES,
   POI_CATEGORY_LABELS,
   POI_SOP_STEPS,
+  PRE_VISIT_END_STEP,
+  POST_VISIT_END_STEP,
   effectiveOpsDatetime,
+  visitDatetime,
   sopProgressStatus,
+  stepCompletedAt,
+  computePoiSla,
+  formatJakartaDatetime,
   jakartaYMD,
   shiftYMD,
   type PoiTabCategory,
   type PoiSopStepDef,
 } from "@/lib/mcn/poi-sop";
+import { exportRowsToExcel } from "@/lib/xlsx-export";
 
 const PAGE_SIZE = 9;
 
@@ -77,9 +84,55 @@ export function PoiList({
     };
   }
 
+  // Export mengikuti hasil filter & search yang sedang aktif (bukan seluruh
+  // transaksi) — sama seperti tombol Export Excel di tab Merchant Deals.
+  function exportExcel() {
+    const now = new Date();
+    const rows = filtered.map((t) => {
+      const opsEffective = effectiveOpsDatetime(t.ops_datetime, t.visit_start_date);
+      const { lastCompletedStep, currentStep, allDone } = sopProgressStatus(t.steps, stepDefs);
+      const sla = computePoiSla({
+        opsDatetime: opsEffective,
+        visitDatetime: visitDatetime(t.visit_start_date, t.visit_start_time),
+        preVisitEndCompletedAt: stepCompletedAt(t.steps, PRE_VISIT_END_STEP),
+        postVisitEndCompletedAt: stepCompletedAt(t.steps, POST_VISIT_END_STEP),
+        now,
+      });
+      return {
+        "ID Merchant": t.code ?? "",
+        "POI / Merchant": t.brand_name,
+        Kategori: (POI_CATEGORY_LABELS as Record<string, string>)[t.kategori_poi] ?? t.kategori_poi,
+        BD: t.bd_name,
+        "Nama Ops": t.ops_name ?? "",
+        PIC: t.pic_name ?? "",
+        "Tanggal Visit": t.visit_start_date ?? "",
+        "Jam Visit": (t.visit_start_time ?? "").slice(0, 5),
+        "Tanggal Ops": formatJakartaDatetime(opsEffective),
+        "Tanggal Ops Terisi": t.ops_datetime ? "Ya" : "Belum (saran H-10)",
+        "Step Selesai": allDone ? stepDefs.length : lastCompletedStep,
+        "Total Step": stepDefs.length,
+        "Step Berjalan": allDone ? "Selesai" : `Step ${currentStep?.step} — ${currentStep?.task}`,
+        "SLA Total": sla.total,
+        "Pre-Visit SLA": sla.preVisit,
+        "Post-Visit SLA": sla.postVisit,
+        "Actual VT": t.actual_vt ?? "",
+        "Total GMV": t.total_gmv ?? "",
+        "Status Report": t.report_status ?? "",
+        "Link Report": t.report_link ?? "",
+        Notes: t.notes ?? "",
+      };
+    });
+    exportRowsToExcel("poi-accommodation-ttd", "POI", rows);
+  }
+
   return (
     <div className="card">
-      <h2>Transaksi ({filtered.length})</h2>
+      <div className="table-toolbar">
+        <h2>Transaksi ({filtered.length})</h2>
+        <button type="button" className="sm ghost2" onClick={exportExcel} disabled={filtered.length === 0}>
+          Export Excel
+        </button>
+      </div>
 
       <div className="filters-row">
         <div>
