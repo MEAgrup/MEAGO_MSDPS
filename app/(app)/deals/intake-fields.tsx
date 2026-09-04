@@ -30,17 +30,23 @@ export type DealIntakeDefaults = {
 // RegisterDealModal dan EditDealModal — satu tempat supaya kedua
 // form tidak pernah menyimpang. Memilih POI/Merchant otomatis menyarankan
 // Nama BD / Kategori POI / PIC / WhatsApp dari data Pool Lead yang sudah ada.
+//
+// nominalHistoryByLead: nominal transaksi brand_deals yang sudah pernah
+// tercatat, dikelompokkan per lead_id — dipakai sebagai saran "Nominal Deals"
+// bersama nominal_bayar lead-nya sendiri.
 export function DealIntakeFields({
   idPrefix,
   dealingLeads,
   bdOptions,
   benefitOptions,
+  nominalHistoryByLead,
   defaults,
 }: {
   idPrefix: string;
   dealingLeads: PoolLead[];
   bdOptions: BdOption[];
   benefitOptions: string[];
+  nominalHistoryByLead?: Record<string, number[]>;
   defaults?: DealIntakeDefaults;
 }) {
   const [leadId, setLeadId] = useState(defaults?.lead_id ?? "");
@@ -55,16 +61,26 @@ export function DealIntakeFields({
   const waDatalistId = `${idPrefix}-wa-options`;
   const nominalDatalistId = `${idPrefix}-nominal-options`;
 
-  // Suggestion nominal deals dari data leads (nominal_bayar yang sudah dicatat
-  // BD saat status Dealing/Renewal) — dipakai sebagai datalist & auto-isi saat
-  // memilih POI/Merchant, supaya BD tidak input ulang angka yang sama.
-  const nominalOptions = useMemo(
-    () =>
-      Array.from(new Set(dealingLeads.map((l) => l.nominal_bayar).filter((n): n is number => !!n && n > 0))).sort(
-        (a, b) => b - a
-      ),
-    [dealingLeads]
-  );
+  // Saran nominal deals SELALU terikat ke POI/Merchant yang sedang dipilih —
+  // bukan seluruh nominal yang pernah ada di pipeline (itu cuma bikin BD
+  // salah pilih angka milik brand lain). Sumbernya dua: nominal_bayar lead
+  // terkait (dicatat BD saat status Dealing/Renewal) + nominal transaksi
+  // brand_deals yang sudah pernah tercatat untuk lead yang sama (riwayat,
+  // mis. saat Renewal). Sebelum POI dipilih, datalist sengaja kosong.
+  const nominalOptions = useMemo(() => {
+    if (!leadId) return [];
+    const lead = dealingLeads.find((l) => l.id === leadId);
+    const values = [
+      ...(lead?.nominal_bayar ? [lead.nominal_bayar] : []),
+      ...(nominalHistoryByLead?.[leadId] ?? []),
+    ].filter((n): n is number => Number.isFinite(n) && n > 0);
+    return Array.from(new Set(values)).sort((a, b) => b - a);
+  }, [leadId, dealingLeads, nominalHistoryByLead]);
+
+  const selectedLeadLabel = useMemo(() => {
+    const lead = dealingLeads.find((l) => l.id === leadId);
+    return lead ? (lead.brand_name ?? lead.lead_name) : "";
+  }, [leadId, dealingLeads]);
 
   function onSelectLead(id: string) {
     setLeadId(id);
@@ -236,8 +252,17 @@ export function DealIntakeFields({
         ))}
       </datalist>
       {bentuk === "Free/Barter" && <p className="hint">Otomatis 0 untuk Free/Barter.</p>}
-      {bentuk !== "Free/Barter" && nominalOptions.length > 0 && (
-        <p className="hint">Saran nominal dari data Leads &amp; Prospek sebelumnya — pilih dari daftar atau ketik manual.</p>
+      {bentuk !== "Free/Barter" && !leadId && (
+        <p className="hint">Pilih POI/Merchant dulu untuk melihat saran nominal dari data sebelumnya.</p>
+      )}
+      {bentuk !== "Free/Barter" && leadId && nominalOptions.length > 0 && (
+        <p className="hint">
+          Saran nominal dari data sebelumnya milik {selectedLeadLabel || "POI/Merchant ini"} — pilih dari daftar
+          atau ketik manual.
+        </p>
+      )}
+      {bentuk !== "Free/Barter" && leadId && nominalOptions.length === 0 && (
+        <p className="hint">Belum ada nominal tercatat untuk {selectedLeadLabel || "POI/Merchant ini"} — isi manual.</p>
       )}
 
       <label>Benefit Diberikan *</label>

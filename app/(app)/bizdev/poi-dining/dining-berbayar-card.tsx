@@ -19,10 +19,10 @@ import {
   formatSlaDuration,
   diningBerbayarStatus,
   stepCompletedAt,
-  isNearCompletion,
   type DiningStepRow,
   type PoiSopStepDef,
 } from "@/lib/mcn/poi-sop";
+import { POI_NOTES_HINT } from "../poi/poi-card";
 
 export type DiningBerbayarCycle = {
   deal_id: string;
@@ -140,9 +140,6 @@ export function DiningBerbayarCard({
   const now = new Date();
   const { optionalResolvedCount, optionalDone, lastCompletedSequentialStep, currentStep, allDone } =
     diningBerbayarStatus(cycle.steps);
-  const suggestNotes =
-    isNearCompletion(allDone ? POI_DINING_BERBAYAR_TOTAL_STEPS : currentStep?.step ?? null, POI_DINING_BERBAYAR_TOTAL_STEPS) &&
-    !cycle.notes;
   const step6CompletedAt = stepCompletedAt(cycle.steps, 6);
   const opsVisible = !!step6CompletedAt;
   const opsAt = cycle.ops_datetime ? new Date(cycle.ops_datetime) : null;
@@ -276,19 +273,9 @@ export function DiningBerbayarCard({
                 <input type="url" name="report_link" placeholder="https://…" defaultValue={cycle.report_link ?? ""} />
 
                 <label>Notes</label>
-                <textarea
-                  name="notes"
-                  rows={3}
-                  defaultValue={cycle.notes ?? ""}
-                  placeholder={suggestNotes ? "Disarankan isi catatan penutup sebelum siklus selesai…" : undefined}
-                />
-                {suggestNotes && (
-                  <p className="hint">
-                    Disarankan isi Notes — siklus tersisa{" "}
-                    {POI_DINING_BERBAYAR_TOTAL_STEPS - (allDone ? POI_DINING_BERBAYAR_TOTAL_STEPS : currentStep!.step) + 1} step
-                    lagi sebelum selesai.
-                  </p>
-                )}
+                <textarea name="notes" rows={3} defaultValue={cycle.notes ?? ""} placeholder={POI_NOTES_HINT} />
+                {/* Sama dengan card POI lain: catatan ini selalu tampil. */}
+                <p className="hint">{POI_NOTES_HINT}</p>
 
                 <div className="modal-foot" style={{ padding: "14px 0 0", borderTop: "none" }}>
                   <button type="submit" disabled={pending}>

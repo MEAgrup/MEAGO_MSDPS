@@ -6,15 +6,23 @@ import { DiningBerbayarCard, type DiningBerbayarCycle } from "./dining-berbayar-
 import {
   POI_DINING_FREEBARTER_STEPS,
   POI_DINING_BERBAYAR_STEPS,
+  POI_DINING_BERBAYAR_TOTAL_STEPS,
   DINING_FREEBARTER_PRE_VISIT_END_STEP,
   DINING_FREEBARTER_POST_VISIT_END_STEP,
   effectiveOpsDatetime,
+  visitDatetime,
   sopProgressStatus,
   diningBerbayarStatus,
+  stepCompletedAt,
+  computePoiSla,
+  formatSlaDuration,
+  formatJakartaDatetime,
   jakartaYMD,
   shiftYMD,
   type PoiSopStepDef,
 } from "@/lib/mcn/poi-sop";
+import { exportRowsToExcel } from "@/lib/xlsx-export";
+import { tanggal } from "@/lib/format";
 
 export type DiningCard =
   | { kind: "freebarter"; tx: PoiTransaction }
@@ -124,9 +132,89 @@ export function DiningList({
     };
   }
 
+  // Satu sheet untuk dua alur SOP yang berbeda (Free/Barter linear vs Berbayar
+  // per-siklus bulanan): kolomnya disamakan, yang tidak berlaku dikosongkan —
+  // supaya hasil export bisa langsung di-pivot per POI tanpa menggabung file.
+  function exportExcel() {
+    const now = new Date();
+    const rows = filtered.map((card) => {
+      if (card.kind === "freebarter") {
+        const t = card.tx;
+        const opsEffective = effectiveOpsDatetime(t.ops_datetime, t.visit_start_date);
+        const { lastCompletedStep, currentStep, allDone } = sopProgressStatus(t.steps, freebarterStepDefs);
+        const sla = computePoiSla({
+          opsDatetime: opsEffective,
+          visitDatetime: visitDatetime(t.visit_start_date, t.visit_start_time),
+          preVisitEndCompletedAt: stepCompletedAt(t.steps, DINING_FREEBARTER_PRE_VISIT_END_STEP),
+          postVisitEndCompletedAt: stepCompletedAt(t.steps, DINING_FREEBARTER_POST_VISIT_END_STEP),
+          now,
+        });
+        return {
+          "ID Merchant": t.code ?? "",
+          "POI / Merchant": t.brand_name,
+          "Bentuk Kerja Sama": "Free/Barter",
+          Siklus: "",
+          "Periode Siklus": "",
+          BD: t.bd_name,
+          "Nama Ops": t.ops_name ?? "",
+          PIC: t.pic_name ?? "",
+          "Tanggal Visit": t.visit_start_date ?? "",
+          "Jam Visit": (t.visit_start_time ?? "").slice(0, 5),
+          "Tanggal Ops": formatJakartaDatetime(opsEffective),
+          "Step Selesai": allDone ? freebarterStepDefs.length : lastCompletedStep,
+          "Total Step": freebarterStepDefs.length,
+          "Step Berjalan": allDone ? "Selesai" : `Step ${currentStep?.step} — ${currentStep?.task}`,
+          "SLA Total": sla.total,
+          "Pre-Visit SLA": sla.preVisit,
+          "Post-Visit SLA": sla.postVisit,
+          "Actual VT": t.actual_vt ?? "",
+          "Total GMV": t.total_gmv ?? "",
+          "Status Report": t.report_status ?? "",
+          "Link Report": t.report_link ?? "",
+          Notes: t.notes ?? "",
+        };
+      }
+
+      const c = card.cycle;
+      const { lastCompletedSequentialStep, currentStep, allDone } = diningBerbayarStatus(c.steps);
+      const opsAt = c.ops_datetime ? new Date(c.ops_datetime) : null;
+      const lastStepCompletedAt = stepCompletedAt(c.steps, POI_DINING_BERBAYAR_TOTAL_STEPS);
+      return {
+        "ID Merchant": c.code ?? "",
+        "POI / Merchant": c.brand_name,
+        "Bentuk Kerja Sama": "Berbayar",
+        Siklus: c.cycle_no,
+        "Periode Siklus": `${tanggal(c.period_start)} – ${tanggal(c.period_end)}`,
+        BD: c.bd_name,
+        "Nama Ops": c.ops_name ?? "",
+        PIC: c.pic_name ?? "",
+        "Tanggal Visit": "",
+        "Jam Visit": "",
+        "Tanggal Ops": formatJakartaDatetime(opsAt),
+        "Step Selesai": allDone ? POI_DINING_BERBAYAR_TOTAL_STEPS : lastCompletedSequentialStep,
+        "Total Step": POI_DINING_BERBAYAR_TOTAL_STEPS,
+        "Step Berjalan": allDone ? "Selesai" : `Step ${currentStep?.step} — ${currentStep?.task}`,
+        "SLA Total": formatSlaDuration(opsAt, lastStepCompletedAt ? new Date(lastStepCompletedAt) : now),
+        "Pre-Visit SLA": "",
+        "Post-Visit SLA": "",
+        "Actual VT": c.actual_vt ?? "",
+        "Total GMV": c.total_gmv ?? "",
+        "Status Report": c.report_status ?? "",
+        "Link Report": c.report_link ?? "",
+        Notes: c.notes ?? "",
+      };
+    });
+    exportRowsToExcel("poi-dining", "POI Dining", rows);
+  }
+
   return (
     <div className="card">
-      <h2>Transaksi ({filtered.length})</h2>
+      <div className="table-toolbar">
+        <h2>Transaksi ({filtered.length})</h2>
+        <button type="button" className="sm ghost2" onClick={exportExcel} disabled={filtered.length === 0}>
+          Export Excel
+        </button>
+      </div>
 
       <div className="filters-row">
         <div>

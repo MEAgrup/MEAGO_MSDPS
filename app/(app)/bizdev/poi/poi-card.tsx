@@ -18,7 +18,6 @@ import {
   sopProgressStatus,
   stepCompletedAt,
   computePoiSla,
-  isNearCompletion,
   type PoiTabCategory,
   type PoiSopStepDef,
 } from "@/lib/mcn/poi-sop";
@@ -52,6 +51,11 @@ function visitLabel(date: string | null, time: string | null): string {
   if (!date) return "—";
   return `${tanggal(date)} ${(time ?? "").slice(0, 5)}`.trim();
 }
+
+// Catatan tetap di bawah field Notes seluruh card POI (Accommodation & TTD,
+// Dining Free/Barter, Dining Berbayar) — menggantikan hint lama "Disarankan
+// isi Notes — SOP tersisa N step lagi sebelum selesai."
+export const POI_NOTES_HINT = "Total GMV, Actual VT, Link Report diisi pada step akhir";
 
 // StepItem — satu baris checklist "Tandai Selesai". Urutan & imutabilitas
 // ditegakkan trigger DB; tombol hanya aktif utk step yang sedang berjalan
@@ -129,7 +133,6 @@ export function PoiCard({
     now,
   });
   const showReportWarning = !allDone && !!currentStep && currentStep.step >= reportWarningStep;
-  const suggestNotes = isNearCompletion(allDone ? stepDefs.length : currentStep?.step ?? null, stepDefs.length) && !tx.notes;
 
   // Seluruh step dicentang tapi hasilnya tidak pernah diisi. Tanpa penanda ini,
   // transaksi seperti itu tampak "beres" padahal deliverable vs realisasi tidak bisa
@@ -274,17 +277,11 @@ export function PoiCard({
                 <input type="url" name="report_link" placeholder="https://…" defaultValue={tx.report_link ?? ""} />
 
                 <label>Notes</label>
-                <textarea
-                  name="notes"
-                  rows={3}
-                  defaultValue={tx.notes ?? ""}
-                  placeholder={suggestNotes ? "Disarankan isi catatan penutup sebelum SOP selesai…" : undefined}
-                />
-                {suggestNotes && (
-                  <p className="hint">
-                    Disarankan isi Notes — SOP tersisa {stepDefs.length - (allDone ? stepDefs.length : currentStep!.step) + 1} step lagi sebelum selesai.
-                  </p>
-                )}
+                <textarea name="notes" rows={3} defaultValue={tx.notes ?? ""} placeholder={POI_NOTES_HINT} />
+                {/* Catatan ini SELALU tampil (bukan lagi hanya saat SOP mendekati
+                    selesai) — instruksi user 2026-09-04: yang perlu diingatkan
+                    bukan "sisa berapa step", tapi kapan hasilnya diisi. */}
+                <p className="hint">{POI_NOTES_HINT}</p>
 
                 {showReportWarning && (
                   <p className="warn-box">

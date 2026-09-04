@@ -2,7 +2,15 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { num, rupiah, tanggal } from "@/lib/format";
-import { updateDealTransaction, deleteDealTransaction, deleteDealTransactionsBulk, type ActionResult } from "@/lib/actions/deals";
+import {
+  updateDealTransaction,
+  deleteDealTransaction,
+  deleteDealTransactionsBulk,
+  approveDealChangeRequest,
+  rejectDealChangeRequest,
+  cancelDealChangeRequest,
+  type ActionResult,
+} from "@/lib/actions/deals";
 import { DealIntakeFields } from "./intake-fields";
 import { DealsToolbar } from "./forms";
 import type { BdOption } from "../leads/intake-fields";
@@ -38,6 +46,23 @@ export type Deal = {
   created_at: string;
 };
 
+// Satu baris antrian approval Director (tabel deal_change_requests, migrasi
+// 0349) — BD/CM mengajukan Edit/Lengkapi Data/Hapus, Director yang menerapkan.
+export type DealChangeRequest = {
+  id: string;
+  deal_id: string | null;
+  deal_code: string | null;
+  deal_brand_name: string;
+  action: "update" | "delete";
+  payload: Record<string, string> | null;
+  status: "pending" | "approved" | "rejected";
+  requested_by: string;
+  requested_at: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+};
+
 // Baris hasil Import Master Deal tidak pernah mengisi kategori_poi (lihat
 // importMasterDeal) — trigger brand_deals_validate mewajibkan seluruh
 // field POI begitu kategori_poi terisi, jadi kategori_poi kosong = pasti
@@ -67,21 +92,42 @@ function Msg({ state }: { state: ActionResult | null }) {
 // EditDealModal — tombol "Edit" (atau "Lengkapi Data" untuk baris hasil Import
 // Master Deal) per baris. Memakai DealIntakeFields yang sama dengan
 // RegisterDealModal supaya field tidak pernah menyimpang.
-function DeleteDealButton({ dealId, label }: { dealId: string; label: string }) {
+function DeleteDealButton({
+  dealId,
+  label,
+  needsApproval,
+  blocked,
+}: {
+  dealId: string;
+  label: string;
+  needsApproval: boolean;
+  blocked: boolean;
+}) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(deleteDealTransaction, null);
   return (
     <form
       action={action}
       className="inline-form"
       onSubmit={(e) => {
-        if (!confirm(`Hapus deal "${label}"? Tindakan ini tidak dapat dibatalkan.`)) {
-          e.preventDefault();
-        }
+        const msg = needsApproval
+          ? `Ajukan penghapusan deal "${label}" ke Director? Deal baru terhapus setelah di-accept.`
+          : `Hapus deal "${label}"? Tindakan ini tidak dapat dibatalkan.`;
+        if (!confirm(msg)) e.preventDefault();
       }}
     >
       <input type="hidden" name="deal_id" value={dealId} />
-      <button className="sm dangerbtn" disabled={pending}>
-        {pending ? "…" : "Hapus"}
+      <button
+        className="sm dangerbtn"
+        disabled={pending || blocked}
+        title={
+          blocked
+            ? "Masih ada permintaan yang menunggu approval Director untuk deal ini"
+            : needsApproval
+              ? "Butuh approval Director sebelum deal benar-benar dihapus"
+              : undefined
+        }
+      >
+        {pending ? "…" : needsApproval ? "Ajukan Hapus" : "Hapus"}
       </button>
       {state && !state.ok && (
         <span className="badge red" title={state.message}>
@@ -92,7 +138,7 @@ function DeleteDealButton({ dealId, label }: { dealId: string; label: string }) 
   );
 }
 
-function BulkDeleteBar({ ids }: { ids: string[] }) {
+function BulkDeleteBar({ ids, needsApproval }: { ids: string[]; needsApproval: boolean }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(
     deleteDealTransactionsBulk,
     null
@@ -102,16 +148,23 @@ function BulkDeleteBar({ ids }: { ids: string[] }) {
       action={action}
       className="inline-form"
       onSubmit={(e) => {
-        if (!confirm(`Hapus ${ids.length} deal terpilih? Tindakan ini tidak dapat dibatalkan.`)) {
-          e.preventDefault();
-        }
+        const msg = needsApproval
+          ? `Ajukan penghapusan ${ids.length} deal terpilih ke Director?`
+          : `Hapus ${ids.length} deal terpilih? Tindakan ini tidak dapat dibatalkan.`;
+        if (!confirm(msg)) e.preventDefault();
       }}
     >
       {ids.map((id) => (
         <input key={id} type="hidden" name="deal_ids" value={id} />
       ))}
       <button className="sm dangerbtn" disabled={pending || ids.length === 0}>
-        {pending ? "Menghapus…" : `Hapus ${ids.length} Terpilih`}
+        {pending
+          ? needsApproval
+            ? "Mengirim…"
+            : "Menghapus…"
+          : needsApproval
+            ? `Ajukan Hapus ${ids.length} Terpilih`
+            : `Hapus ${ids.length} Terpilih`}
       </button>
       {state && <Msg state={state} />}
     </form>
@@ -123,11 +176,17 @@ function EditDealModal({
   dealingLeads,
   bdOptions,
   benefitOptions,
+  nominalHistoryByLead,
+  needsApproval,
+  blocked,
 }: {
   deal: Deal;
   dealingLeads: PoolLead[];
   bdOptions: BdOption[];
   benefitOptions: string[];
+  nominalHistoryByLead?: Record<string, number[]>;
+  needsApproval: boolean;
+  blocked: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(
@@ -135,14 +194,30 @@ function EditDealModal({
     null
   );
   const incomplete = isIncomplete(deal);
+  // Jalur approval: modal TIDAK ditutup begitu sukses — yang terjadi bukan
+  // "tersimpan" tapi "menunggu di-accept Director", dan itu harus terbaca
+  // pemohonnya. Jalur Director tetap menutup modal seperti sebelumnya.
+  const sentForApproval = needsApproval && state?.ok === true;
 
   useEffect(() => {
-    if (state?.ok) setOpen(false);
-  }, [state]);
+    if (state?.ok && !needsApproval) setOpen(false);
+  }, [state, needsApproval]);
 
   return (
     <>
-      <button type="button" className={incomplete ? "sm" : "sm ghost2"} onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        className={incomplete ? "sm" : "sm ghost2"}
+        onClick={() => setOpen(true)}
+        disabled={blocked}
+        title={
+          blocked
+            ? "Masih ada permintaan yang menunggu approval Director untuk deal ini"
+            : needsApproval
+              ? "Perubahan dikirim ke Director untuk disetujui"
+              : undefined
+        }
+      >
         {incomplete ? "Lengkapi Data" : "Edit"}
       </button>
       {open && (
@@ -154,15 +229,33 @@ function EditDealModal({
                 ✕
               </button>
             </div>
+            {sentForApproval ? (
+              <>
+                <div className="modal-body">
+                  <div className="ok-msg">{state!.message}</div>
+                </div>
+                <div className="modal-foot">
+                  <button type="button" onClick={() => setOpen(false)}>
+                    Tutup
+                  </button>
+                </div>
+              </>
+            ) : (
             <form action={action}>
               <div className="modal-body">
                 {state && !state.ok && <div className="err">{state.message}</div>}
+                {needsApproval && (
+                  <p className="hint">
+                    Perubahan ini tidak langsung berlaku — dikirim dulu ke Director untuk di-accept.
+                  </p>
+                )}
                 <input type="hidden" name="deal_id" value={deal.id} />
                 <DealIntakeFields
                   idPrefix={`edit-${deal.id}`}
                   dealingLeads={dealingLeads}
                   bdOptions={bdOptions}
                   benefitOptions={benefitOptions}
+                  nominalHistoryByLead={nominalHistoryByLead}
                   defaults={{
                     lead_id: deal.lead_id ?? "",
                     bd_id: deal.bd_id ?? "",
@@ -189,14 +282,314 @@ function EditDealModal({
                   Batal
                 </button>
                 <button type="submit" disabled={pending}>
-                  {pending ? "Menyimpan…" : "Simpan"}
+                  {pending
+                    ? needsApproval
+                      ? "Mengirim…"
+                      : "Menyimpan…"
+                    : needsApproval
+                      ? "Kirim untuk Approval"
+                      : "Simpan"}
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Panel approval Director (deal_change_requests, migrasi 0349)
+// ---------------------------------------------------------------------------
+
+const CHANGE_FIELD_LABELS: { key: string; label: string }[] = [
+  { key: "bd_id", label: "Nama BD" },
+  { key: "ops_name", label: "Nama OPS" },
+  { key: "kategori_poi", label: "Kategori POI" },
+  { key: "bentuk_kerjasama", label: "Bentuk Kerja Sama" },
+  { key: "pic_name", label: "Nama PIC" },
+  { key: "pic_whatsapp", label: "WhatsApp" },
+  { key: "nominal_harga", label: "Nominal Deals" },
+  { key: "benefit", label: "Benefit" },
+  { key: "tanggal_mulai_kontrak", label: "Tanggal Awal Kerjasama" },
+  { key: "tanggal_akhir_kontrak", label: "Tanggal Akhir Kerjasama" },
+  { key: "visit_mulai", label: "Visit Dimulai" },
+  { key: "visit_berakhir", label: "Visit Berakhir" },
+  { key: "kreator_needed", label: "Jumlah Kreator" },
+  { key: "konten_needed", label: "Jumlah Konten" },
+  { key: "total_jam_live", label: "Total Jam Live" },
+  { key: "brief_link", label: "Link Brief" },
+];
+
+// Nilai deal SAAT INI dalam bentuk yang sama persis dengan payload form,
+// supaya perbandingan "sebelum → sesudah" tidak memunculkan perubahan palsu
+// gara-gara beda format.
+function currentFormValue(deal: Deal, key: string): string {
+  switch (key) {
+    case "bd_id":
+      return deal.bd_id ?? "";
+    case "ops_name":
+      return deal.ops_name ?? "";
+    case "kategori_poi":
+      return deal.kategori_poi ?? "";
+    case "bentuk_kerjasama":
+      return deal.bentuk_kerjasama ?? "";
+    case "pic_name":
+      return deal.pic_name ?? "";
+    case "pic_whatsapp":
+      return deal.pic_whatsapp ?? "";
+    case "nominal_harga":
+      return String(deal.nominal_harga ?? "");
+    case "benefit":
+      return deal.benefit ?? "";
+    case "tanggal_mulai_kontrak":
+      return deal.tanggal_mulai_kontrak ?? "";
+    case "tanggal_akhir_kontrak":
+      return deal.tanggal_akhir_kontrak ?? "";
+    case "visit_mulai":
+      return toDatetimeLocal(deal.visit_start_date, deal.visit_start_time);
+    case "visit_berakhir":
+      return toDatetimeLocal(deal.visit_end_date, deal.visit_end_time);
+    case "kreator_needed":
+      return deal.kreator_needed != null ? String(deal.kreator_needed) : "";
+    case "konten_needed":
+      return deal.konten_needed != null ? String(deal.konten_needed) : "";
+    case "total_jam_live":
+      return deal.total_jam_live != null ? String(deal.total_jam_live) : "";
+    case "brief_link":
+      return deal.brief_link ?? "";
+    default:
+      return "";
+  }
+}
+
+function displayValue(key: string, raw: string, bdNameById: Record<string, string>): string {
+  if (!raw) return "—";
+  if (key === "bd_id") return bdNameById[raw] ?? raw;
+  if (key === "nominal_harga") return rupiah(Number(raw) || 0);
+  return raw;
+}
+
+function changeRows(
+  req: DealChangeRequest,
+  deal: Deal | undefined,
+  bdNameById: Record<string, string>
+): { label: string; from: string; to: string }[] {
+  if (req.action !== "update" || !req.payload) return [];
+  const payload = req.payload;
+  return CHANGE_FIELD_LABELS.flatMap(({ key, label }) => {
+    const to = String(payload[key] ?? "");
+    const from = deal ? currentFormValue(deal, key) : "";
+    if (to === from) return [];
+    return [{ label, from: displayValue(key, from, bdNameById), to: displayValue(key, to, bdNameById) }];
+  });
+}
+
+function ReviewButtons({ requestId }: { requestId: string }) {
+  const [approveState, approve, approvePending] = useActionState<ActionResult | null, FormData>(
+    approveDealChangeRequest,
+    null
+  );
+  const [rejectState, reject, rejectPending] = useActionState<ActionResult | null, FormData>(
+    rejectDealChangeRequest,
+    null
+  );
+  const state = approveState ?? rejectState;
+  return (
+    <div>
+      <div className="actions-row" style={{ justifyContent: "flex-end" }}>
+        <form action={approve} className="inline-form">
+          <input type="hidden" name="request_id" value={requestId} />
+          <button className="sm" disabled={approvePending || rejectPending}>
+            {approvePending ? "…" : "Setujui"}
+          </button>
+        </form>
+        <form
+          action={reject}
+          className="inline-form"
+          onSubmit={(e) => {
+            if (!confirm("Tolak permintaan perubahan ini?")) e.preventDefault();
+          }}
+        >
+          <input type="hidden" name="request_id" value={requestId} />
+          <button className="sm ghost2" disabled={approvePending || rejectPending}>
+            {rejectPending ? "…" : "Tolak"}
+          </button>
+        </form>
+      </div>
+      {state && !state.ok && <div className="err">{state.message}</div>}
+    </div>
+  );
+}
+
+function CancelRequestButton({ requestId }: { requestId: string }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(cancelDealChangeRequest, null);
+  return (
+    <form
+      action={action}
+      className="inline-form"
+      onSubmit={(e) => {
+        if (!confirm("Batalkan permintaan ini?")) e.preventDefault();
+      }}
+    >
+      <input type="hidden" name="request_id" value={requestId} />
+      <button className="sm ghost2" disabled={pending}>
+        {pending ? "…" : "Batalkan"}
+      </button>
+      {state && !state.ok && (
+        <span className="badge red" title={state.message}>
+          gagal
+        </span>
+      )}
+    </form>
+  );
+}
+
+// ChangeRequestsPanel — antrian "Edit/Lengkapi Data & Hapus" yang menunggu
+// accept Director. Director melihat semua permintaan + tombol Setujui/Tolak;
+// pemohon (BD/CM) hanya melihat permintaannya sendiri (dijaga RLS) dan bisa
+// membatalkan selama belum ditinjau.
+function ChangeRequestsPanel({
+  requests,
+  dealById,
+  bdNameById,
+  empNameById,
+  canReview,
+}: {
+  requests: DealChangeRequest[];
+  dealById: Map<string, Deal>;
+  bdNameById: Record<string, string>;
+  empNameById: Record<string, string>;
+  canReview: boolean;
+}) {
+  const [showHistory, setShowHistory] = useState(false);
+  const pendingReqs = requests.filter((r) => r.status === "pending");
+  const reviewed = requests.filter((r) => r.status !== "pending").slice(0, 20);
+
+  if (pendingReqs.length === 0 && reviewed.length === 0) return null;
+
+  return (
+    <div className="card">
+      <div className="table-toolbar">
+        <h2>
+          Persetujuan Perubahan Deal ({pendingReqs.length} menunggu)
+        </h2>
+        {reviewed.length > 0 && (
+          <button type="button" className="sm ghost2" onClick={() => setShowHistory((v) => !v)}>
+            {showHistory ? "Sembunyikan Riwayat" : `Riwayat (${reviewed.length})`}
+          </button>
+        )}
+      </div>
+      <p className="hint">
+        Edit / Lengkapi Data / Hapus dari BizDev &amp; Creator Management baru berlaku setelah di-accept Director.
+      </p>
+
+      {pendingReqs.length === 0 ? (
+        <p className="muted">Tidak ada permintaan yang menunggu approval.</p>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Deal</th>
+                <th>Jenis</th>
+                <th>Diajukan</th>
+                <th>Perubahan</th>
+                <th className="right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingReqs.map((r) => {
+                const deal = r.deal_id ? dealById.get(r.deal_id) : undefined;
+                const rows = changeRows(r, deal, bdNameById);
+                return (
+                  <tr key={r.id}>
+                    <td>
+                      {r.deal_brand_name}
+                      <div className="mono muted" style={{ fontSize: 11 }}>
+                        {r.deal_code ?? "—"}
+                      </div>
+                    </td>
+                    <td>
+                      {r.action === "delete" ? (
+                        <span className="badge red">Hapus</span>
+                      ) : (
+                        <span className="badge amber">Edit</span>
+                      )}
+                    </td>
+                    <td className="muted">
+                      {empNameById[r.requested_by] ?? "—"}
+                      <div style={{ fontSize: 11 }}>{tanggal(r.requested_at)}</div>
+                    </td>
+                    <td>
+                      {r.action === "delete" ? (
+                        <span className="muted">Seluruh transaksi dihapus permanen.</span>
+                      ) : rows.length === 0 ? (
+                        <span className="muted">Tidak ada perbedaan terdeteksi.</span>
+                      ) : (
+                        <ul style={{ margin: 0, paddingLeft: 16 }}>
+                          {rows.map((row) => (
+                            <li key={row.label} style={{ fontSize: 12 }}>
+                              <strong>{row.label}</strong>: <span className="muted">{row.from}</span> → {row.to}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                    <td className="right">
+                      {canReview ? <ReviewButtons requestId={r.id} /> : <CancelRequestButton requestId={r.id} />}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showHistory && reviewed.length > 0 && (
+        <div style={{ overflowX: "auto", marginTop: 14 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Deal</th>
+                <th>Jenis</th>
+                <th>Diajukan</th>
+                <th>Ditinjau</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reviewed.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    {r.deal_brand_name}
+                    <div className="mono muted" style={{ fontSize: 11 }}>
+                      {r.deal_code ?? "—"}
+                    </div>
+                  </td>
+                  <td className="muted">{r.action === "delete" ? "Hapus" : "Edit"}</td>
+                  <td className="muted">{empNameById[r.requested_by] ?? "—"}</td>
+                  <td className="muted">
+                    {(r.reviewed_by && empNameById[r.reviewed_by]) ?? "—"}
+                    <div style={{ fontSize: 11 }}>{r.reviewed_at ? tanggal(r.reviewed_at) : "—"}</div>
+                  </td>
+                  <td>
+                    {r.status === "approved" ? (
+                      <span className="badge green">Disetujui</span>
+                    ) : (
+                      <span className="badge red">Ditolak</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -236,16 +629,24 @@ export function DealsBoard({
   bdOptions,
   bdNameById,
   benefitOptions,
+  nominalHistoryByLead,
+  changeRequests = [],
+  empNameById = {},
   canRegister,
   canEditDelete,
+  canRequestChange = false,
 }: {
   deals: Deal[];
   dealingLeads: PoolLead[];
   bdOptions: BdOption[];
   bdNameById: Record<string, string>;
   benefitOptions: string[];
+  nominalHistoryByLead?: Record<string, number[]>;
+  changeRequests?: DealChangeRequest[];
+  empNameById?: Record<string, string>;
   canRegister: boolean;
   canEditDelete: boolean;
+  canRequestChange?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [bdFilter, setBdFilter] = useState("");
@@ -256,6 +657,18 @@ export function DealsBoard({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZES)[number]>(10);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // canAct: tombol Edit/Lengkapi Data & Hapus muncul untuk Director (langsung
+  // berlaku) maupun BD/CM (masuk antrian approval Director, migrasi 0349).
+  const canAct = canEditDelete || canRequestChange;
+  const dealById = useMemo(() => new Map(deals.map((d) => [d.id, d])), [deals]);
+  const pendingRequestByDeal = useMemo(() => {
+    const map = new Map<string, DealChangeRequest>();
+    for (const r of changeRequests) {
+      if (r.status === "pending" && r.deal_id) map.set(r.deal_id, r);
+    }
+    return map;
+  }, [changeRequests]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -346,7 +759,7 @@ export function DealsBoard({
     });
   }
 
-  const colCount = 9 + (canEditDelete ? 2 : 0);
+  const colCount = 9 + (canAct ? 2 : 0);
 
   function exportExcel() {
     const rows = sorted.map((d) => ({
@@ -408,7 +821,22 @@ export function DealsBoard({
       </div>
 
       {canRegister && (
-        <DealsToolbar dealingLeads={dealingLeads} bdOptions={bdOptions} benefitOptions={benefitOptions} />
+        <DealsToolbar
+          dealingLeads={dealingLeads}
+          bdOptions={bdOptions}
+          benefitOptions={benefitOptions}
+          nominalHistoryByLead={nominalHistoryByLead}
+        />
+      )}
+
+      {canAct && (
+        <ChangeRequestsPanel
+          requests={changeRequests}
+          dealById={dealById}
+          bdNameById={bdNameById}
+          empNameById={empNameById}
+          canReview={canEditDelete}
+        />
       )}
 
       <div className="card">
@@ -471,9 +899,9 @@ export function DealsBoard({
         </div>
       </div>
 
-      {canEditDelete && selected.size > 0 && (
+      {canAct && selected.size > 0 && (
         <div style={{ marginBottom: 12 }}>
-          <BulkDeleteBar ids={[...selected]} />
+          <BulkDeleteBar ids={[...selected]} needsApproval={!canEditDelete} />
         </div>
       )}
 
@@ -481,7 +909,7 @@ export function DealsBoard({
         <table>
           <thead>
             <tr>
-              {canEditDelete && (
+              {canAct && (
                 <th>
                   <input type="checkbox" checked={allPageSelected} onChange={toggleAllOnPage} />
                 </th>
@@ -495,13 +923,13 @@ export function DealsBoard({
               <SortHeader label="Nominal / Benefit" sortKey="nominal" active={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Visit" sortKey="visit" active={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Status" sortKey="status" active={sortKey} dir={sortDir} onSort={onSort} />
-              {canEditDelete && <th className="right">Aksi</th>}
+              {canAct && <th className="right">Aksi</th>}
             </tr>
           </thead>
           <tbody>
             {paginated.map((d) => (
               <tr key={d.id}>
-                {canEditDelete && (
+                {canAct && (
                   <td>
                     <input
                       type="checkbox"
@@ -541,8 +969,17 @@ export function DealsBoard({
                   ) : (
                     <span className="badge green">Lengkap</span>
                   )}
+                  {pendingRequestByDeal.has(d.id) && (
+                    <div style={{ marginTop: 4 }}>
+                      <span className="badge indigo" title="Menunggu accept Director">
+                        {pendingRequestByDeal.get(d.id)!.action === "delete"
+                          ? "Menunggu approval hapus"
+                          : "Menunggu approval edit"}
+                      </span>
+                    </div>
+                  )}
                 </td>
-                {canEditDelete && (
+                {canAct && (
                   <td className="right">
                     <div className="actions-row" style={{ justifyContent: "flex-end" }}>
                       <EditDealModal
@@ -550,8 +987,16 @@ export function DealsBoard({
                         dealingLeads={dealingLeads}
                         bdOptions={bdOptions}
                         benefitOptions={benefitOptions}
+                        nominalHistoryByLead={nominalHistoryByLead}
+                        needsApproval={!canEditDelete}
+                        blocked={!canEditDelete && pendingRequestByDeal.has(d.id)}
                       />
-                      <DeleteDealButton dealId={d.id} label={d.brand_name} />
+                      <DeleteDealButton
+                        dealId={d.id}
+                        label={d.brand_name}
+                        needsApproval={!canEditDelete}
+                        blocked={!canEditDelete && pendingRequestByDeal.has(d.id)}
+                      />
                     </div>
                   </td>
                 )}

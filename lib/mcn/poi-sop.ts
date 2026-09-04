@@ -276,13 +276,6 @@ export function stepCompletedAt(steps: PoiSopStepRow[], stepNo: number): string 
   return steps.find((s) => s.step_no === stepNo)?.completed_at ?? null;
 }
 
-// Suggestion "isi Notes" pada form input GMV: muncul begitu step yang sedang
-// berjalan berada di 5 step terakhir sebelum SOP/siklus berakhir.
-export function isNearCompletion(currentStepNo: number | null, totalSteps: number): boolean {
-  if (currentStepNo == null) return false;
-  return totalSteps - currentStepNo <= 4;
-}
-
 // Durasi manusiawi ("12 hari 3 jam"), dibulatkan ke jam terdekat. null bila salah
 // satu ujung tidak diketahui.
 export function formatSlaDuration(from: Date | null, to: Date | null): string {
