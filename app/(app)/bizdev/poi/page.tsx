@@ -1,6 +1,13 @@
 import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
-import { POI_TAB_CATEGORIES, POI_CATEGORY_LABELS, type PoiTabCategory } from "@/lib/mcn/poi-sop";
+import {
+  POI_TAB_CATEGORIES,
+  POI_CATEGORY_LABELS,
+  POI_SOP_STEPS,
+  applySlaOverrides,
+  type PoiTabCategory,
+  type PoiSlaOverrideRow,
+} from "@/lib/mcn/poi-sop";
 import { OPS_NAMES } from "@/lib/deals/intake";
 import { type PoiTransaction } from "./poi-card";
 import { PoiList } from "./poi-list";
@@ -25,6 +32,7 @@ type ProgressRow = {
   total_gmv: number | null;
   report_link: string | null;
   report_status: string | null;
+  notes: string | null;
 };
 
 type StepRow = { progress_id: string; step_no: number; completed_at: string | null };
@@ -40,14 +48,16 @@ export default async function PoiSopPage() {
 
   const supabase = await getCachedClient();
 
-  const [{ data: dealsRaw }, { data: emps }] = await Promise.all([
+  const [{ data: dealsRaw }, { data: emps }, { data: slaRaw }] = await Promise.all([
     supabase
       .from("brand_deals")
       .select("id, code, brand_name, pic_name, bd_id, ops_name, kategori_poi, visit_start_date, visit_start_time")
       .in("kategori_poi", Array.from(POI_TAB_CATEGORIES))
       .order("visit_start_date", { ascending: false }),
     supabase.from("employees").select("id, full_name"),
+    supabase.from("poi_sla_settings").select("step_no, sla_days, sla_label").eq("flow", "poi_accommodation_ttd"),
   ]);
+  const stepDefs = applySlaOverrides(POI_SOP_STEPS, (slaRaw as PoiSlaOverrideRow[] | null) ?? []);
 
   const deals = (dealsRaw as DealRow[] | null) ?? [];
   const bdNameById = new Map(((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name]));
@@ -57,7 +67,7 @@ export default async function PoiSopPage() {
     dealIds.length > 0
       ? supabase
           .from("poi_sop_progress")
-          .select("id, deal_id, ops_datetime, actual_vt, total_gmv, report_link, report_status")
+          .select("id, deal_id, ops_datetime, actual_vt, total_gmv, report_link, report_status, notes")
           .in("deal_id", dealIds)
       : Promise.resolve({ data: [] as ProgressRow[] }),
   ]);
@@ -97,6 +107,7 @@ export default async function PoiSopPage() {
         total_gmv: progress.total_gmv,
         report_link: progress.report_link,
         report_status: progress.report_status,
+        notes: progress.notes,
         steps: (stepsByProgress.get(progress.id) ?? []).sort((a, b) => a.step_no - b.step_no),
       };
     })
@@ -116,7 +127,7 @@ export default async function PoiSopPage() {
           <p className="muted">Belum ada transaksi POI Accommodation/TTD.</p>
         </div>
       ) : (
-        <PoiList transactions={transactions} opsNames={OPS_NAMES} />
+        <PoiList transactions={transactions} opsNames={OPS_NAMES} stepDefs={stepDefs} />
       )}
     </>
   );

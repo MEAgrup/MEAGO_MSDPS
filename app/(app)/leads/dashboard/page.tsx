@@ -3,7 +3,7 @@ import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/ser
 import { CrmDashboard, type DashLead, type DashDeal, type DashHistory } from "./crm-dashboard";
 
 const LEAD_COLUMNS =
-  "id, code, brand_name, lead_name, bd_employee_id, brand_category, wilayah, crm_status, " +
+  "id, code, brand_name, lead_name, bd_employee_id, brand_category, wilayah, source, crm_status, " +
   "approach_via, benefit_dealing, nominal_bayar, created_at";
 
 const DEAL_COLUMNS = "id, brand_name, lead_id, bd_id, kategori_poi, bentuk_kerjasama, nominal_harga, created_at";

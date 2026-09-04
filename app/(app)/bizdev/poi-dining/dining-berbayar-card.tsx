@@ -19,6 +19,7 @@ import {
   formatSlaDuration,
   diningBerbayarStatus,
   stepCompletedAt,
+  isNearCompletion,
   type DiningStepRow,
   type PoiSopStepDef,
 } from "@/lib/mcn/poi-sop";
@@ -39,6 +40,7 @@ export type DiningBerbayarCycle = {
   total_gmv: number | null;
   report_link: string | null;
   report_status: string | null;
+  notes: string | null;
   steps: DiningStepRow[];
 };
 
@@ -125,10 +127,12 @@ export function DiningBerbayarCard({
   cycle,
   opsNames,
   canApproveSkip,
+  stepDefs = POI_DINING_BERBAYAR_STEPS,
 }: {
   cycle: DiningBerbayarCycle;
   opsNames: readonly string[];
   canApproveSkip: boolean;
+  stepDefs?: PoiSopStepDef[];
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(updatePoiDiningCycleProgress, null);
@@ -136,6 +140,9 @@ export function DiningBerbayarCard({
   const now = new Date();
   const { optionalResolvedCount, optionalDone, lastCompletedSequentialStep, currentStep, allDone } =
     diningBerbayarStatus(cycle.steps);
+  const suggestNotes =
+    isNearCompletion(allDone ? POI_DINING_BERBAYAR_TOTAL_STEPS : currentStep?.step ?? null, POI_DINING_BERBAYAR_TOTAL_STEPS) &&
+    !cycle.notes;
   const step6CompletedAt = stepCompletedAt(cycle.steps, 6);
   const opsVisible = !!step6CompletedAt;
   const opsAt = cycle.ops_datetime ? new Date(cycle.ops_datetime) : null;
@@ -268,6 +275,21 @@ export function DiningBerbayarCard({
                 <label>Link Report Monthly</label>
                 <input type="url" name="report_link" placeholder="https://…" defaultValue={cycle.report_link ?? ""} />
 
+                <label>Notes</label>
+                <textarea
+                  name="notes"
+                  rows={3}
+                  defaultValue={cycle.notes ?? ""}
+                  placeholder={suggestNotes ? "Disarankan isi catatan penutup sebelum siklus selesai…" : undefined}
+                />
+                {suggestNotes && (
+                  <p className="hint">
+                    Disarankan isi Notes — siklus tersisa{" "}
+                    {POI_DINING_BERBAYAR_TOTAL_STEPS - (allDone ? POI_DINING_BERBAYAR_TOTAL_STEPS : currentStep!.step) + 1} step
+                    lagi sebelum selesai.
+                  </p>
+                )}
+
                 <div className="modal-foot" style={{ padding: "14px 0 0", borderTop: "none" }}>
                   <button type="submit" disabled={pending}>
                     {pending ? "Menyimpan…" : "Simpan"}
@@ -281,7 +303,7 @@ export function DiningBerbayarCard({
                 6-22 berurutan, baru bisa mulai setelah step 1-5 selesai/dilewati.
               </p>
               <ul className="poi-steps">
-                {POI_DINING_BERBAYAR_STEPS.map((step) => (
+                {stepDefs.map((step) => (
                   <StepItem
                     key={step.step}
                     cycleId={cycle.cycle_id}

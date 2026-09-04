@@ -61,10 +61,11 @@ export async function updatePoiSopProgress(
   const report_status_raw = String(formData.get("report_status") || "").trim();
   const report_status = report_status_raw ? (isReportStatus(report_status_raw) ? report_status_raw : undefined) : null;
   if (report_status === undefined) return { ok: false, message: "[status report tidak dikenal]" };
+  const notes = String(formData.get("notes") || "").trim() || null;
 
   const { error: progressErr } = await supabase
     .from("poi_sop_progress")
-    .update({ ops_datetime, actual_vt, total_gmv, report_link, report_status })
+    .update({ ops_datetime, actual_vt, total_gmv, report_link, report_status, notes })
     .eq("id", progress_id);
   if (progressErr) return { ok: false, message: `Gagal menyimpan tracker POI: ${progressErr.message}` };
 
