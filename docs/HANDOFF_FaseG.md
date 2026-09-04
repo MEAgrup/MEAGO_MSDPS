@@ -1,5 +1,9 @@
 # HANDOFF — Fase G: Campaign Kreator MEA GO
 
+> **Melanjutkan di chat baru? Mulai dari `docs/HANDOFF_LANJUTAN.md`.**
+> Dokumen ini adalah riwayat + keputusan terkunci Fase G; `HANDOFF_LANJUTAN.md` adalah
+> titik mulai yang berisi keadaan terkini dan daftar kerja berikutnya.
+
 ## STATUS UPDATE 2026-09-04 (sore) — tabrakan nomor migrasi dengan PR #27, sudah direkonsiliasi
 
 Branch ini di-merge dengan `main` (yang sudah memuat PR #26 dan **PR #27**, "Nominal
