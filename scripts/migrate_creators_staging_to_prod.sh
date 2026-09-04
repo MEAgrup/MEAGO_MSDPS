@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# ⚠ SUDAH DIJALANKAN 2026-09-03 — production kini memuat seluruh roster staging
+#   (2.250 baris; 2.248 roster bersih staging semuanya ada). JANGAN jalankan lagi
+#   kecuali scripts/creator_roster_fingerprint.sql menunjukkan ada yang hilang.
+#   Skrip ini idempoten (ON CONFLICT DO NOTHING, tidak menimpa apa pun), tapi tiap
+#   kali jalan ia tetap membakar nomor id_sequences untuk baris yang di-skip.
+#   Rincian & bukti paritas: docs/HANDOFF_LANJUTAN.md item 1.
 # Pindahkan master kreator MEA GO dari STAGING ke PRODUCTION.
 #
 # LATAR (audit 2026-09-02): roster kreator asli ter-impor ke STAGING, bukan production.

@@ -21,7 +21,7 @@ dan sudah dikunci.
 
 ## 1. Keadaan sekarang (fakta terverifikasi, bukan asumsi)
 
-**Kode:** `main` = `2c7ad0b`. Migrasi terakhir `0350`. `bash scripts/pg_test_reset.sh`
+**Kode:** `main` = `984b814`. Migrasi terakhir `0350`. `bash scripts/pg_test_reset.sh`
 → **71 migrasi lolos dari nol**. `npx tsc --noEmit` bersih. `npm run build` bersih.
 `node scripts/test_campaign_completion.mjs` → **15/15**.
 
@@ -30,6 +30,10 @@ dan sudah dikunci.
 - staging `vgjzvdpxrdoefoncuazw` — **kini setara production** pada kolom, constraint, RLS
   policy, fungsi (106 signature), trigger (147), view (21), enum (158 label), bucket
   Storage (3), job pg_cron (4). Kecuali tiga objek di item 3 daftar kerja bawah.
+
+**Roster kreator:** ada di production — `mcn_creators` **2.250** baris, mencakup seluruh
+2.248 roster bersih staging (terverifikasi lewat sidik jari, lihat item 1). Tapi kolom
+segmentasi & akun portal masih kosong, jadi jangan simpulkan Fase G otomatis bisa dipakai.
 
 **Fase G (G.1–G.5):** selesai dibangun, di-apply ke staging + production, lolos unit test —
 tapi **0 baris di semua tabel campaign baru**. Belum pernah dipakai dengan data nyata.
@@ -46,29 +50,94 @@ Kedua belas diterapkan; drift `ops_name`/`'Fifas'` repo↔production diperbaiki 
 
 🔒 = **butuh input/keputusan user dulu. Jangan diputuskan sendiri, tanyakan.**
 
-### 1. 🔒 Pindahkan roster kreator staging → production
-**Kenapa penting:** production cuma punya 34 kreator (2 di antaranya dummy era QA);
-roster asli ~2.248 kreator unik mendarat di **staging** dan tidak pernah dibawa ke
-production. Selama begitu, segmentasi kelayakan pendaftar campaign Fase G membaca tabel
-yang praktis kosong — fiturnya hidup tapi tidak berguna.
+### 1. ✅ Pindahkan roster kreator staging → production — **SUDAH SELESAI**
+**Status per 2026-09-04:** sudah dijalankan **2026-09-03**, dan sekarang terverifikasi.
+Handoff versi sebelumnya salah di sini — ia menulis "production cuma punya 34 kreator"
+dan skripnya "belum pernah dijalankan". Keduanya keliru; percaya database.
 
-Skripnya **sudah ditulis & di-commit, belum pernah dijalankan**:
-`scripts/migrate_creators_staging_to_prod.sh`. Ia memakai pipe `COPY` langsung
-antar-database supaya nama kreator (emoji, `&`, tanda kutip) tidak melewati chat.
+Angka production hari ini:
 
-**Yang dibutuhkan dari user:** connection string mode **Session** kedua project, dari
-Supabase Dashboard → Project Settings → Database.
+| Ukuran | Nilai |
+|---|---|
+| `mcn_creators` total | **2.250** baris |
+| dibuat 2026-07 (era QA) | 34 |
+| dibuat 2026-09-03 (impor roster) | 2.216 |
+| roster bersih (filter sama dgn skrip) | 2.249 |
+| roster bersih di staging | 2.248 |
+| kreator staging yang BELUM ada di production | **0** |
+
+**Bukti paritas** (bukan sekadar jumlahnya kebetulan mirip): sidik jari
+`scripts/creator_roster_fingerprint.sql` dijalankan di kedua database — 14 dari 16
+bucket hash-nya **identik persis**, 2 bucket sisanya (`6b`, `d8`) berbeda hanya karena
+production punya 1 baris ekstra masing-masing. Production adalah **superset** roster
+staging.
+
+Dua baris ekstra itu sisa era QA, keduanya dari Juli, bukan kreator asli:
+
+| Code | Nama | Username | Catatan |
+|---|---|---|---|
+| `MCR-0032` | QA Dummy Creator | `qa.dummy.creator` | tersaring filter nama skrip |
+| `MCR-0033` | udin | `@udin` | **lolos** filter (namanya tidak mengandung test/dummy/qa/coba); satu-satunya baris production yang username-nya masih diawali `@` |
+
+Bukti independen bahwa skripnya benar-benar jalan lewat `ON CONFLICT DO NOTHING`:
+`id_sequences` prefix `MCR` = **2.282** sementara barisnya 2.250. Selisih **32** = kode
+yang terbakar trigger untuk baris yang lalu di-skip karena duplikat. Cocok dengan
+2.248 − 32 = 2.216 baris yang benar-benar masuk. `code` unik 2.250/2.250, tidak ada
+yang null — jadi tidak ada risiko bentrok kode di kemudian hari.
+
+**SISA PEKERJAAN — roster ada, tapi belum tentu berguna.** Ini yang harus dibaca
+sebelum menyatakan item ini beres untuk Fase G. `creator_meets_campaign_eligibility()`
+(migrasi `0343`) membandingkan kolom `eligible_*` di `brand_deals` langsung ke kolom
+kreator. Kolom itu di production **hampir seluruhnya kosong**:
+
+| Kolom kreator | Filter campaign yang memakainya | Terisi |
+|---|---|---|
+| `niche` | `eligible_industries` | **1** / 2.250 |
+| `city` | `eligible_cities` | 33 / 2.250 |
+| `creator_level` | `eligible_levels` | 32 / 2.250 |
+| `jenis_creator` | `eligible_creator_types` | **1** / 2.250 |
+| `live_roster` | `eligible_roster_status` | 5 bernilai true |
+| `status_kontrak` | `eligible_status_kontrak` | 2.250 — **semua `'kontrak'`** |
+| `creator_period_summary` | `min_gmv` | 63 baris untuk 2.250 kreator |
+| `auth_user_id` | (login portal) | **1** / 2.250 |
+
+Konsekuensinya, dan ini bukan bug melainkan data yang memang belum ada:
+1. Campaign yang mengisi `eligible_industries` / `cities` / `levels` /
+   `creator_types` / `min_gmv` akan meloloskan **nyaris nol** kreator. Yang bisa
+   dipakai sekarang hanya campaign yang membiarkan kolom `eligible_*` **NULL**
+   (= tanpa filter).
+2. `status_kontrak` seragam `'kontrak'` adalah **nilai asumsi hasil backfill `0339`**,
+   bukan fakta bisnis. Memfilter dengan kolom ini sekarang meloloskan semua orang,
+   jadi filternya terasa "jalan" padahal tidak menyaring apa pun.
+3. **Hanya 1 kreator yang punya `auth_user_id`**, jadi praktis tidak ada yang bisa
+   login ke Portal Kreator. Akun portal dibuat satu per satu oleh admin lewat
+   `createCreatorAccount` (`lib/actions/portal.ts`) yang butuh **email per kreator** —
+   dan roster ini tidak membawa email sama sekali. Ini **blocker sesungguhnya untuk
+   item 2**, bukan jumlah kreatornya.
+
+**Tanyakan ke user, jangan putuskan sendiri:**
+- Hapus `MCR-0032` + `MCR-0033` dari production? (menghapus baris produksi, perlu
+  konfirmasi eksplisit; keduanya belum pernah dipakai transaksi apa pun)
+- Dari mana email kreator untuk akun portal — ada sumbernya, atau portal dibuka
+  bertahap untuk sebagian kreator saja?
+- `niche`/`city`/`creator_level`/`jenis_creator` diisi dari export TikTok
+  "Creator Analysis" (ingest sudah bisa mengisinya), atau campaign pertama sengaja
+  dijalankan tanpa filter?
+
+**Cara memeriksa ulang kapan saja** — tanpa menarik nama kreator ke chat:
 ```bash
-export STAGING_URL='postgresql://postgres:PASS@db.vgjzvdpxrdoefoncuazw.supabase.co:5432/postgres'
-export PROD_URL='postgresql://postgres:PASS@db.mvcckptntrvzujqaoxxh.supabase.co:5432/postgres'
-bash scripts/migrate_creators_staging_to_prod.sh --dry-run   # WAJIB dulu
-bash scripts/migrate_creators_staging_to_prod.sh
+psql "$STAGING_URL" -tAqF'|' -f scripts/creator_roster_fingerprint.sql \
+  | LC_ALL=C sort > /tmp/roster_staging.txt
+psql "$PROD_URL"    -tAqF'|' -f scripts/creator_roster_fingerprint.sql \
+  | LC_ALL=C sort > /tmp/roster_prod.txt
+LC_ALL=C diff /tmp/roster_staging.txt /tmp/roster_prod.txt
 ```
-**Catatan kebersihan data staging** (skrip sudah menanganinya, tapi hasilnya harus dicek):
-1.296 username diawali `@` dari impor kedua, **1.248 di antaranya duplikat** dari versi
-bersihnya (`@babyanggiii` vs `babyanggiii`), plus 11 baris uji → hasil bersih ~2.248, bukan
-3.505. Ingat juga `status_kontrak` seluruh roster staging bernilai `'kontrak'` hasil
-backfill migrasi `0339` — itu **nilai asumsi, bukan fakta bisnis**, dan ikut terbawa.
+Tanpa psql: tempel isi file itu ke MCP Supabase `execute_sql` di kedua project.
+
+`scripts/migrate_creators_staging_to_prod.sh` **jangan dijalankan lagi** kecuali
+sidik jari di atas menunjukkan ada yang hilang. Ia idempoten (`ON CONFLICT DO NOTHING`,
+tidak menimpa apa pun), tapi setiap kali jalan ia tetap membakar nomor `id_sequences`
+untuk baris yang di-skip.
 
 ### 2. 🔒 Jalankan satu campaign end-to-end dengan data nyata
 Buat campaign → aktifkan → kreator daftar lewat portal → approve/kurasi → kreator submit
@@ -80,8 +149,15 @@ error".
 production) + file export TikTok **"Content Analysis › Video List"** asli.
 
 Sampai ini dilakukan, status yang jujur adalah "selesai dibangun & lolos unit test",
-**bukan** "teruji". Idealnya dikerjakan **sesudah** item 1, supaya ada kreator yang layak
-mendaftar. Parser bukti sudah siap & teruji (75 QC assertion ke 2 file export nyata):
+**bukan** "teruji".
+
+⚠ **Blocker yang baru ketahuan (2026-09-04).** Item 1 sudah selesai — roster 2.248
+kreator ada di production — tapi itu **tidak cukup** untuk menjalankan alur ini. Hanya
+**1 dari 2.250** kreator yang punya `auth_user_id`, jadi langkah "kreator daftar lewat
+portal" belum bisa dilakukan siapa pun. Akun portal dibuat per kreator oleh admin lewat
+`createCreatorAccount` dan butuh **email**, yang tidak ikut terbawa di roster. Selain itu
+seluruh kolom segmentasi (`niche`, `city`, `creator_level`, `jenis_creator`) kosong, jadi
+campaign uji pertama **harus** membiarkan kolom `eligible_*` NULL. Rinciannya di item 1. Parser bukti sudah siap & teruji (75 QC assertion ke 2 file export nyata):
 `node scripts/qc_content_analysis.mjs <file1.xlsx> <file2.xlsx>`.
 
 ### 3. 🔒 Putuskan dua kelompok drift staging-lebih-maju
@@ -177,7 +253,16 @@ node scripts/test_campaign_completion.mjs   # → 15/15 (logika uang, wajib lolo
 node scripts/qc_content_analysis.mjs <2 file export>   # → 75/75, bila menyentuh parser
 ```
 
-Paritas dua database:
+Paritas roster kreator staging ↔ production (sesudah menyentuh roster/ingest kreator):
+```bash
+psql "$STAGING_URL" -tAqF'|' -f scripts/creator_roster_fingerprint.sql \
+  | LC_ALL=C sort > /tmp/roster_staging.txt
+psql "$PROD_URL"    -tAqF'|' -f scripts/creator_roster_fingerprint.sql \
+  | LC_ALL=C sort > /tmp/roster_prod.txt
+LC_ALL=C diff /tmp/roster_staging.txt /tmp/roster_prod.txt
+```
+
+Paritas skema dua database:
 ```bash
 psql -h /tmp -p 55432 -U postgres -d msdps_reset -tAq \
   -f scripts/schema_fingerprint.sql | LC_ALL=C sort > /tmp/fp_local.txt
