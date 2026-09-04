@@ -28,7 +28,6 @@ export default async function DealsPage() {
   if (!canView) redirect("/dashboard");
 
   const canRegister = mgmt || div === "BizDev" || div === "CreatorManagement";
-  const canImport = mgmt || div === "BizDev";
 
   const supabase = await getCachedClient();
 
@@ -115,7 +114,6 @@ export default async function DealsPage() {
           dealingLeads={dealingLeads}
           bdOptions={bdOptions}
           benefitOptions={benefitOptions}
-          canImport={canImport}
         />
       )}
 

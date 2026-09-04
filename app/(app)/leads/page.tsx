@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { NewLeadModal, ImportCsvForm } from "./forms";
+import { NewLeadModal } from "./forms";
 import { PoolLeadSection, type PoolLead } from "./pool";
 import { BRAND_CATEGORIES, type BrandCategory } from "@/lib/leads/intake";
 import type { BusinessTypeOptions } from "./intake-fields";
@@ -103,15 +103,6 @@ export default async function LeadsPage() {
         isBizDev={isBizDev}
         canManage={canManage}
       />
-
-      {canManage && (
-        <div className="card">
-          <details className="disclose">
-            <summary>Impor Massal (CSV)</summary>
-            <ImportCsvForm />
-          </details>
-        </div>
-      )}
     </>
   );
 }
