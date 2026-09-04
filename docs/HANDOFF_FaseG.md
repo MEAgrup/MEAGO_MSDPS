@@ -34,19 +34,100 @@ tabel yang sama, jangan asumsikan nomor file berikutnya "aman" hanya karena nama
 beda — cek `git log`/PR terbuka lain untuk migrasi yang menimpa nama policy/trigger yang
 sama sebelum push, terutama untuk `brand_deals` (tabel paling ramai penulisnya di repo ini).
 
-### ⚠ Temuan terpisah, BELUM diperbaiki — staging kehilangan tabel POI
-Saat mencoba apply `0342_poi_notes.sql` (punya PR #27) ke **staging**, gagal:
-`ERROR: 42P01: relation "poi_sop_progress" does not exist`. Staging punya *riwayat migrasi*
-yang mencatat `poi_sop_tracking`/`poi_dining_sop_tracking` sebagai sudah diterapkan, tapi
-tabel `poi_sop_progress`, `poi_sop_steps`, `poi_dining_cycles`, `poi_dining_steps` benar-benar
-tidak ada di staging (dicek langsung via `information_schema.tables`). Ini **drift lama,
-tidak terkait Fase G maupun PR #27** — kemungkinan migrasi pernah gagal sebagian atau tabel
-sempat di-drop manual di staging. **Belum diperbaiki di sesi ini** — `0342_poi_notes.sql`
-dan `0343_poi_sla_settings.sql` (PR #27) **TIDAK diterapkan ke staging** (prasyaratnya tidak
-ada di sana), tapi **sudah diterapkan ke production** (bagian dari `main` sebelum sesi ini,
-tabelnya ada & terisi di production — dikonfirmasi via `list_tables`). Staging jadi tidak
-representatif untuk fitur POI SOP/SLA settings sampai drift ini diinvestigasi dan diperbaiki
-terpisah — jangan andalkan staging untuk uji fitur itu sebelum ada migrasi perbaikan.
+### ✅ Temuan terpisah, SUDAH diperbaiki — staging kehilangan 12 migrasi
+Status update lanjutan **2026-09-04 (malam)**, sesi `claude/baca-handoff-lanjutan-o0qlra`.
+
+Gejalanya seperti dicatat di atas (`0342_poi_notes.sql` gagal di staging:
+`ERROR: 42P01: relation "poi_sop_progress" does not exist`), tapi **diagnosis di atas
+keliru**. Staging BUKAN "punya riwayat migrasi yang mencatat `poi_sop_tracking` sebagai
+sudah diterapkan" — `supabase_migrations.schema_migrations` staging tidak pernah memuat
+nama itu sama sekali. Bukan pula migrasi yang gagal sebagian atau tabel yang di-drop
+manual. Staging sederhananya **melewatkan 12 migrasi**: seluruh rentang `0330`–`0338`
+plus `0315`, `0342_poi_notes`, dan `0343_poi_sla_settings`.
+
+Kenapa tidak ketahuan berbulan-bulan: `scripts/pg_test_reset.sh` hanya menguji rantai
+migrasi bisa jalan **dari nol**, dan prosedur perbandingan di `docs/SCHEMA_DRIFT.md`
+saat itu hanya membandingkan **repo ↔ production**, kolom saja. Tidak ada satu pun cek
+yang membandingkan **staging ↔ production**.
+
+Daftar lengkap yang hilang, apa akibatnya, dan langkah perbaikannya ada di
+`docs/SCHEMA_DRIFT.md` bagian "Temuan 2026-09-04". Ringkasnya: kedua belas file
+diterapkan ke staging berurutan nomor memakai isi file dari repo. Dua DDL yang tidak
+idempoten dibungkus guard saat apply (`add constraint` di `0332`, `cron.schedule` di
+`0315`) — file di repo tidak diubah. `0334` (create policy `brand_deals_delete`, guard
+`duplicate_object`) jadi no-op karena `0341_deals_edit_delete_director_only` sudah lebih
+dulu ada, jadi **rekonsiliasi RLS `0348` tidak tertimpa** — dicek ulang lewat
+`pg_policies` sesudahnya, `brand_deals_update`/`_delete` staging identik production.
+`0332` memuat `delete from brand_deals;`; aman karena `brand_deals` staging 0 baris
+(dicek dulu, bukan diasumsikan).
+
+**Hasil: staging sekarang setara production** pada kolom, constraint, RLS policy, fungsi
+(106 signature, identik), trigger (147, sidik jari sama), view (21), enum (158 label),
+bucket Storage (3), dan job pg_cron (4). Staging kembali representatif untuk uji fitur
+POI SOP/SLA — dan untuk seluruh modul Leads/CRM, yang sebelumnya juga tidak
+representatif tanpa ada yang sadar.
+
+### Drift lain yang ikut ketemu
+
+1. **Repo ↔ production: `ops_name` menerima `'Fifas'` di production, tidak di repo.**
+   Riwayat production mencatat `0336_ops_name_add_fifas` (2026-08-31) tapi filenya tidak
+   pernah ada di repo, jadi hasil `db reset` LEBIH KETAT dari production — form
+   "Daftarkan Transaksi" menolak ops `Fifas` di environment baru padahal production
+   menerimanya. Diperbaiki `0350_brand_deals_ops_name_fifas.sql` (idempoten, no-op di
+   production), sudah diterapkan ke staging + production.
+
+2. **Masih TERBUKA — dua kelompok objek staging-lebih-maju** yang tidak punya file di
+   repo dan tidak ada di production, jadi butuh keputusan (dipakai atau dibuang), bukan
+   sekadar apply: `acquisitions` (18 kolom vs 14) + policy `acquisitions_delete` +
+   tabel `acquisition_followups`, dan `creator_video_gmv` (23 kolom vs 16). Asalnya
+   migrasi staging-only `0317_acquisition_extra_fields`, `0318_acquisition_delete_policy`,
+   `0319_acquisition_followups`, `0317_gmv_video_weekly_tracking_fix`,
+   `0318_gmv_video_per_creator_week`, `0320_gmv_video_weekly` — nomornya bertabrakan
+   dengan file repo yang berbeda isi, kelas masalah yang sama dengan tabrakan
+   `0341`-`0343` Fase G. Detail di `docs/SCHEMA_DRIFT.md`.
+
+3. **Riwayat migrasi tidak bisa dipercaya sendirian.** Production punya kolom, bucket,
+   fungsi, dan job cron milik `0315_weekly_retention_dedup` tanpa pernah mencatat
+   migrasinya. Selalu konfirmasi dengan sidik jari struktur.
+
+### Alat baru supaya ini ketahuan sendiri berikutnya
+- **`scripts/schema_fingerprint.sql`** — satu kueri, satu baris `kind|nama|hash` per
+  objek, dijalankan di dua database lalu di-diff. Cakupannya jauh lebih luas dari
+  perbandingan kolom yang lama: kolom, constraint, index, RLS policy, status RLS,
+  fungsi (`pg_get_functiondef` — SECURITY DEFINER & `search_path` ikut terbandingkan),
+  trigger, view (termasuk `security_invoker`), enum, bucket Storage, job pg_cron, dan
+  daftar nama migrasi. Cara pakai + jebakan penamaan migrasi ada di
+  `docs/SCHEMA_DRIFT.md`.
+- **`scripts/pg_test_reset.sh`** diperluas: stub `cron.schedule()` sekarang benar-benar
+  menulis ke tabel `cron.job` (bukan fungsi yang membuang argumennya), dan setiap file
+  migrasi yang berhasil dicatat ke stub `supabase_migrations.schema_migrations`. Jadi
+  baris `cron_job|…` dan `migration|…` pada sidik jari hasil reset bisa langsung
+  dibandingkan dengan live — inilah yang menjawab "migrasi mana yang belum masuk ke
+  environment ini", pertanyaan yang tidak terjawab sebelum ini.
+
+### Verifikasi baseline sesi ini (2026-09-04 malam)
+- `bash scripts/pg_test_reset.sh` → **71 migrasi lolos dari nol**
+- `npx tsc --noEmit` → bersih
+- `npm run build` → bersih
+- `node scripts/test_campaign_completion.mjs` → **15/15 lolos**
+- Sidik jari staging ↔ production → identik, kecuali tiga objek pada poin 2 di atas
+
+---
+
+## SISA PEKERJAAN (per 2026-09-04 malam)
+
+Diurut dari yang paling siap dikerjakan. Yang bertanda 🔒 butuh input/keputusan user
+dulu — jangan diputuskan sendiri.
+
+| # | Pekerjaan | Kenapa belum |
+|---|---|---|
+| 1 | 🔒 **Pindahkan roster kreator staging → production.** `scripts/migrate_creators_staging_to_prod.sh` sudah ditulis & di-commit tapi **belum pernah dijalankan**. Production 34 kreator (2 dummy), staging ~2.248 unik. Selama ini belum beres, segmentasi kelayakan pendaftar campaign Fase G praktis tidak berguna. | Butuh connection string mode Session (password DB) kedua project dari Supabase Dashboard → Project Settings → Database. Tidak ada di environment sesi ini. Lihat §3. |
+| 2 | 🔒 **Jalankan satu campaign end-to-end dengan data nyata.** Buat → aktifkan → kreator daftar → approve → submit bukti → ingest export TikTok asli → validasi → tutup batch → payout, lalu cek angkanya masuk akal. | Fitur live tapi **0 baris di semua tabel campaign baru**. Butuh campaign sungguhan + file export TikTok asli. Sampai ini dilakukan, G.1–G.5 "selesai dibangun & diuji unit", belum "teruji di dunia nyata". |
+| 3 | 🔒 **Putuskan dua kelompok drift staging-lebih-maju**: `acquisitions`/`acquisition_followups` dan `creator_video_gmv`. Kalau dipakai → tulis file migrasinya di repo (nomor baru, jangan pakai nomor lama yang bentrok) lalu apply ke production. Kalau tidak → drop dari staging. | Keputusan produk, bukan teknis. Detail di `docs/SCHEMA_DRIFT.md`. |
+| 4 | 🔒 **Drop `crm_leads` + `crm_transaksi` dari live.** 0 baris di production, tidak dirujuk `app/` maupun `lib/`. Perintahnya siap di bagian bawah `0339_schema_reconcile.sql`. | Menghapus objek produksi tidak bisa dibatalkan — butuh konfirmasi eksplisit. Lihat §4.1. |
+| 5 | **Dua model realisasi bertabrakan (B2/B4).** `brand_deals.poin` dihitung dari `visit_checked`+`kreator_realized` yang tidak pernah ditulis kode mana pun; yang benar-benar diisi tim adalah `poi_sop_progress.actual_vt`. Jadi skor BD selalu nol dan `v_poi_deal_summary` selalu nol. | Menyatukannya = perubahan perilaku, butuh keputusan sumber kebenaran. Untuk jalur campuran Fase G masalah ini sudah tertutup sendiri (realisasi jadi turunan bukti per-kreator), tapi jalur POI non-campaign belum. Lihat §4.2. |
+| 6 | 🔒 **70 deal belum lengkap** (Import Master Deal tanpa kategori/brief/PIC/jadwal). Dilengkapi manual, import ulang, atau dibiarkan? | Data produksi. Lihat §4.3. |
+| 7 | **Rekonsiliasi riwayat migrasi production.** Production punya objek milik `0315_weekly_retention_dedup` & `0312_creator_portal_f2` tanpa mencatat migrasinya; sebaliknya ia mencatat `0336_ops_name_add_fifas` yang tak punya file (sudah digantikan `0350`). Strukturnya sudah terverifikasi cocok, jadi ini kebersihan catatan — tapi selama masih begitu, daftar nama migrasi tidak bisa dipakai sebagai satu-satunya sumber kebenaran. | Rendah risiko, belum dikerjakan supaya tidak menyisipkan baris riwayat palsu tanpa persetujuan. |
 
 ---
 
@@ -279,9 +360,13 @@ Enum `payout_status` tetap dipakai ulang supaya antrian Finance seragam.
 
 ---
 
-## 6. Langkah berikutnya (G.1 → G.5)
+## 6. Roadmap G.1 → G.5 (SUDAH SELESAI — lihat status update 2026-09-04 siang)
 
-Nomor migrasi berikutnya mulai **`0341`** (terakhir dipakai: `0340`).
+⚠ Baris "nomor migrasi berikutnya" di bawah sudah kedaluwarsa. **Per 2026-09-04 malam,
+nomor terakhir dipakai adalah `0350`** — jadi berikutnya `0351`. Tapi JANGAN percaya
+angka ini begitu saja: `git log` + branch remote + riwayat migrasi kedua environment
+wajib dicek dulu, karena sesi paralel sering mengklaim nomor yang sama (`0341`-`0343`
+bentrok di Fase G; `0349` diklaim PR #30 tepat saat sesi ini berjalan).
 
 - **G.1 Fondasi campaign + budget guard**
   `0341` enum `CampaignSpecialist` (transaksi terpisah — aturan rumah `0300:5-8`).
@@ -330,22 +415,40 @@ Nomor migrasi berikutnya mulai **`0341`** (terakhir dipakai: `0340`).
 7. **`npm run build` JANGAN saat `npm run dev` menyala** (`BUILD_PLAN.md:48`).
 8. **Setiap perubahan skema live WAJIB punya file migrasi** — lihat `docs/SCHEMA_DRIFT.md`.
    Jalankan `bash scripts/pg_test_reset.sh` sebelum merge migrasi apa pun.
+9. **Nomor migrasi berikutnya tidak pernah "aman" hanya karena file terakhir di repo
+   bernomor N.** Sesi/PR paralel rutin mengklaim nomor yang sama: `0341`-`0343` bentrok
+   di Fase G vs PR #27, dan `0349` diklaim PR #30 tepat saat sesi 2026-09-04 malam
+   berjalan. Sebelum memilih nomor, cek `git log` + `git branch -r` + riwayat migrasi
+   KEDUA environment. Waspada khusus bila menyentuh nama policy/trigger pada
+   `brand_deals` — tabel dengan penulis paling ramai di repo ini.
+10. **`pg_test_reset.sh` lolos ≠ environment setara.** Ia hanya menguji rantai bisa jalan
+   dari nol. Untuk memastikan staging setara production, jalankan
+   `scripts/schema_fingerprint.sql` di kedua sisi lalu diff — celah inilah yang membuat
+   staging kehilangan 12 migrasi tanpa terdeteksi.
 
 ---
 
-## 8. Verifikasi baseline hari ini
+## 8. Verifikasi baseline (2026-09-02, saat PR #24 — angka historis)
 
 - `bash scripts/pg_test_reset.sh` → 58 migrasi lolos dari nol
 - `npx tsc --noEmit` → bersih
 - `npm run build` → bersih (37 halaman)
 - `node scripts/qc_content_analysis.mjs <2 file export>` → 75/75
 
+Angka terbaru ada di "Verifikasi baseline sesi ini (2026-09-04 malam)" di bagian atas
+dokumen ini (71 migrasi).
+
 ## 9. File kunci
 
-**Baru:** `lib/mcn/content-analysis.ts`, `lib/mcn/industry-normalize.ts`,
+**Baru (PR #24):** `lib/mcn/content-analysis.ts`, `lib/mcn/industry-normalize.ts`,
 `scripts/qc_content_analysis.mjs`, `scripts/pg_test_reset.sh`,
 `scripts/migrate_creators_staging_to_prod.sh`, `docs/SCHEMA_DRIFT.md`, `docs/GLOSARIUM.md`,
 `supabase/migrations/0320`, `0339`, `0340`
+
+**Baru (2026-09-04 malam):** `scripts/schema_fingerprint.sql`,
+`supabase/migrations/0350_brand_deals_ops_name_fifas.sql`.
+**Diubah:** `scripts/pg_test_reset.sh` (stub `cron.job` sungguhan +
+`supabase_migrations.schema_migrations`), `docs/SCHEMA_DRIFT.md`.
 
 **Diubah:** `app/(app)/layout.tsx`, `app/(app)/deals/page.tsx`, `app/(app)/bizdev/page.tsx`,
 `app/(app)/bizdev/poi/poi-card.tsx`
