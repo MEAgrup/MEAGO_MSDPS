@@ -15,6 +15,7 @@ import {
   type ActionResult as PayoutActionResult,
 } from "@/lib/actions/campaign-payouts";
 import { computeCampaignCompletion, sumCompletionAmount } from "@/lib/campaign-completion";
+import { runValidateCampaignPosts, type ActionResult as IngestActionResult } from "@/lib/actions/campaign-ingest";
 import {
   CAMPAIGN_STAGE_LABEL,
   isCampaignStage,
@@ -117,7 +118,19 @@ export type VideoSubmissionRow = {
   post_id: string | null;
   is_duplicate: boolean;
   duplicate_of_id: string | null;
+  tiktok_verdict: string | null;
   submitted_at: string;
+};
+
+export type CampaignResultRow = {
+  deal_id: string;
+  valid_posts: number;
+  invalid_posts: number;
+  total_gmv: number;
+  total_views: number;
+  total_ads_spend: number;
+  roas: number | null;
+  gmv_per_valid_post: number | null;
 };
 
 export type LiveSubmissionRow = {
@@ -437,16 +450,53 @@ function ParticipantsSection({
   );
 }
 
+const VERDICT_LABEL: Record<string, string> = {
+  tidak_ditemukan: "Tidak Ditemukan",
+  di_luar_periode: "Di Luar Periode",
+  merchant_tidak_sesuai: "Merchant Tidak Sesuai",
+  bukan_milik_kreator: "Bukan Milik Kreator",
+  ditolak_tiktok: "Ditolak TikTok",
+  duplikat: "Duplikat",
+  valid: "Valid",
+};
+
+const VERDICT_BADGE: Record<string, string> = {
+  tidak_ditemukan: "gray",
+  di_luar_periode: "amber",
+  merchant_tidak_sesuai: "red",
+  bukan_milik_kreator: "red",
+  ditolak_tiktok: "red",
+  duplikat: "red",
+  valid: "green",
+};
+
+function ValidateButton({ dealId }: { dealId: string }) {
+  const [state, action, pending] = useActionState<IngestActionResult | null, FormData>(runValidateCampaignPosts, null);
+  return (
+    <form action={action} style={{ marginBottom: 12 }}>
+      <input type="hidden" name="deal_id" value={dealId} />
+      <button type="submit" disabled={pending} className="sm">
+        {pending ? "Memvalidasi…" : "Validasi Bukti dari Export TikTok"}
+      </button>
+      {state && <div className={state.ok ? "ok-msg" : "err"}>{state.message}</div>}
+    </form>
+  );
+}
+
 function SubmissionsSection({
+  deal,
   participants,
   videoSubmissions,
   liveSubmissions,
   creatorById,
+  canCurate,
 }: {
+  deal: CampaignDetailRow;
   participants: ParticipantRow[];
   videoSubmissions: VideoSubmissionRow[];
   liveSubmissions: LiveSubmissionRow[];
   creatorById: Record<string, { name: string; username: string | null; code: string | null }>;
+  canCurate: boolean;
 }) {
   const participantCreator = new Map(participants.map((p) => [p.id, p.mcn_creator_id]));
   const creatorName = (participantId: string) => {
@@ -466,6 +516,7 @@ function SubmissionsSection({
   return (
     <div className="card">
       <h2>Bukti Deliverable</h2>
+      {canCurate && videoSubmissions.length > 0 && <ValidateButton dealId={deal.id} />}
       {videoSubmissions.length > 0 && (
         <>
           <h3 style={{ fontSize: 14 }}>Video ({videoSubmissions.length})</h3>
@@ -476,7 +527,8 @@ function SubmissionsSection({
                 <th>Link</th>
                 <th>Post ID</th>
                 <th>Submit</th>
-                <th>Status</th>
+                <th>Duplikat</th>
+                <th>Verdict TikTok</th>
               </tr>
             </thead>
             <tbody>
@@ -491,6 +543,15 @@ function SubmissionsSection({
                   <td className="hint">{s.post_id ?? "—"}</td>
                   <td>{tanggal(s.submitted_at)}</td>
                   <td>{s.is_duplicate && <span className="badge red">Duplikat</span>}</td>
+                  <td>
+                    {s.tiktok_verdict ? (
+                      <span className={`badge ${VERDICT_BADGE[s.tiktok_verdict] ?? "gray"}`}>
+                        {VERDICT_LABEL[s.tiktok_verdict] ?? s.tiktok_verdict}
+                      </span>
+                    ) : (
+                      <span className="hint">belum divalidasi</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -707,6 +768,48 @@ function PayoutsSection({
   );
 }
 
+function ResultSection({ result }: { result: CampaignResultRow | null }) {
+  if (!result || (result.valid_posts === 0 && result.invalid_posts === 0)) {
+    return (
+      <div className="card">
+        <h2>Hasil Campaign</h2>
+        <p className="hint">Belum ada bukti yang divalidasi terhadap export TikTok.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="card">
+      <h2>Hasil Campaign</h2>
+      <p className="hint">
+        Dihitung dari post berverdict "valid" saja. ROAS/GMV per post tampil "—" (bukan 0) kalau
+        pembaginya nol — belum ada ads spend atau belum ada post valid berarti belum diketahui.
+      </p>
+      <div className="stats">
+        <div className="stat">
+          <div className="k">Post Valid</div>
+          <div className="v">{num(result.valid_posts)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Post Tidak Valid</div>
+          <div className="v">{num(result.invalid_posts)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Total GMV</div>
+          <div className="v small">{rupiah(result.total_gmv)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Total Views</div>
+          <div className="v small">{num(result.total_views)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">ROAS</div>
+          <div className="v small">{result.roas ?? "—"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CampaignDetail({
   deal,
   budgetLog,
@@ -716,6 +819,7 @@ export function CampaignDetail({
   liveSubmissions,
   curationBatches,
   payouts,
+  result,
   creatorById,
   nameById,
   me,
@@ -730,6 +834,7 @@ export function CampaignDetail({
   liveSubmissions: LiveSubmissionRow[];
   curationBatches: CurationBatchRow[];
   payouts: CampaignPayoutRow[];
+  result: CampaignResultRow | null;
   creatorById: Record<string, { name: string; username: string | null; code: string | null }>;
   nameById: Record<string, string>;
   me: { rank: string | null; is_od: boolean; is_director: boolean } | null;
@@ -821,11 +926,15 @@ export function CampaignDetail({
       <ParticipantsSection deal={deal} participants={participants} creatorById={creatorById} canCurate={canCurate} />
 
       <SubmissionsSection
+        deal={deal}
         participants={participants}
         videoSubmissions={videoSubmissions}
         liveSubmissions={liveSubmissions}
         creatorById={creatorById}
+        canCurate={canCurate}
       />
+
+      <ResultSection result={result} />
 
       <BatchesSection
         deal={deal}

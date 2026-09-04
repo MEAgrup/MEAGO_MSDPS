@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { CampaignsToolbar } from "./forms";
+import { CampaignsToolbar, CampaignIngestForm } from "./forms";
 import { CampaignsTable, type CampaignRow } from "./table";
 
 const CAMPAIGN_COLUMNS =
@@ -48,8 +48,8 @@ export default async function CampaignsPage() {
     <>
       <h1>Campaign MEA GO</h1>
       <p className="page-sub">
-        Fase G.1 — fondasi campaign kreator: funding source, budget guard, target lokasi &amp;
-        segmentasi kelayakan. Pendaftaran kreator, bukti, dan payout menyusul di fase berikutnya.
+        Campaign kreator MEA GO: funding source, budget guard, pendaftaran &amp; kurasi kreator,
+        bukti deliverable, payout, dan validasi hasil dari export TikTok.
       </p>
 
       <div className="stats">
@@ -77,6 +77,17 @@ export default async function CampaignsPage() {
         <h2>Daftar Campaign</h2>
         <CampaignsTable campaigns={campaigns} nameById={nameById} />
       </div>
+
+      {canCreate && (
+        <div className="card">
+          <h2>Ingest Export TikTok</h2>
+          <p className="hint">
+            Upload export "Content Analysis › Video List" untuk mengisi index post global (dipakai
+            validasi bukti per campaign di halaman detail).
+          </p>
+          <CampaignIngestForm />
+        </div>
+      )}
     </>
   );
 }

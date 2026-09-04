@@ -10,6 +10,7 @@ import {
   type LiveSubmissionRow,
   type CurationBatchRow,
   type CampaignPayoutRow,
+  type CampaignResultRow,
 } from "./detail";
 
 const CAMPAIGN_COLUMNS =
@@ -75,7 +76,9 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     participantIds.length
       ? supabase
           .from("campaign_video_submissions")
-          .select("id, participant_id, post_url, post_id, is_duplicate, duplicate_of_id, submitted_at")
+          .select(
+            "id, participant_id, post_url, post_id, is_duplicate, duplicate_of_id, tiktok_verdict, submitted_at"
+          )
           .in("participant_id", participantIds)
           .order("submitted_at", { ascending: false })
       : Promise.resolve({ data: [] as VideoSubmissionRow[] }),
@@ -106,6 +109,12 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       .order("requested_at", { ascending: false }),
   ]);
 
+  const { data: resultRow } = await supabase
+    .from("v_campaign_result")
+    .select("deal_id, valid_posts, invalid_posts, total_gmv, total_views, total_ads_spend, roas, gmv_per_valid_post")
+    .eq("deal_id", id)
+    .maybeSingle();
+
   return (
     <CampaignDetail
       deal={deal as unknown as CampaignDetailRow}
@@ -116,6 +125,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       liveSubmissions={(liveRaw as LiveSubmissionRow[] | null) ?? []}
       curationBatches={(batchesRaw as CurationBatchRow[] | null) ?? []}
       payouts={(payoutsRaw as CampaignPayoutRow[] | null) ?? []}
+      result={(resultRow as CampaignResultRow | null) ?? null}
       creatorById={creatorById}
       nameById={nameById}
       me={me ? { rank: me.rank, is_od: !!me.is_od, is_director: !!me.is_director } : null}

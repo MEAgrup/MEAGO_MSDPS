@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { createCampaign, type ActionResult } from "@/lib/actions/go-campaigns";
+import { runCampaignPostIngest, type ActionResult as IngestActionResult } from "@/lib/actions/campaign-ingest";
 import { FUNDING_SOURCE_LABEL, CAMPAIGN_TRACK_LABEL } from "@/lib/campaign-budget";
 
 export type AmOption = { id: string; full_name: string };
@@ -223,5 +224,19 @@ export function CampaignsToolbar({ amOptions }: { amOptions: AmOption[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+export function CampaignIngestForm() {
+  const [state, action, pending] = useActionState<IngestActionResult | null, FormData>(runCampaignPostIngest, null);
+  return (
+    <form action={action}>
+      <Msg state={state} />
+      <label>File Export (XLSX)</label>
+      <input type="file" name="file" accept=".xlsx,.xls" required />
+      <button type="submit" disabled={pending}>
+        {pending ? "Memproses…" : "Upload & Proses"}
+      </button>
+    </form>
   );
 }
