@@ -8,6 +8,8 @@ import {
   type ParticipantRow,
   type VideoSubmissionRow,
   type LiveSubmissionRow,
+  type CurationBatchRow,
+  type CampaignPayoutRow,
 } from "./detail";
 
 const CAMPAIGN_COLUMNS =
@@ -91,6 +93,19 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       (creatorsRaw ?? []).map((c) => [c.id, { name: c.name, username: c.username, code: c.code }])
     );
 
+  const [{ data: batchesRaw }, { data: payoutsRaw }] = await Promise.all([
+    supabase
+      .from("campaign_curation_batches")
+      .select("id, code, deal_id, period_start, period_end, status, total_completed, total_amount, closed_at")
+      .eq("deal_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("campaign_payouts")
+      .select("id, code, participant_id, mcn_creator_id, amount, status, requested_at, transfer_proof, cancellation_reason")
+      .eq("deal_id", id)
+      .order("requested_at", { ascending: false }),
+  ]);
+
   return (
     <CampaignDetail
       deal={deal as unknown as CampaignDetailRow}
@@ -99,6 +114,8 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       participants={participants}
       videoSubmissions={(videoRaw as VideoSubmissionRow[] | null) ?? []}
       liveSubmissions={(liveRaw as LiveSubmissionRow[] | null) ?? []}
+      curationBatches={(batchesRaw as CurationBatchRow[] | null) ?? []}
+      payouts={(payoutsRaw as CampaignPayoutRow[] | null) ?? []}
       creatorById={creatorById}
       nameById={nameById}
       me={me ? { rank: me.rank, is_od: !!me.is_od, is_director: !!me.is_director } : null}

@@ -10,6 +10,12 @@ import {
 } from "@/lib/actions/go-campaigns";
 import { curateCampaignParticipant, type ActionResult as ParticipantActionResult } from "@/lib/actions/campaign-participants";
 import {
+  createCurationBatch,
+  closeCurationBatch,
+  type ActionResult as PayoutActionResult,
+} from "@/lib/actions/campaign-payouts";
+import { computeCampaignCompletion, sumCompletionAmount } from "@/lib/campaign-completion";
+import {
   CAMPAIGN_STAGE_LABEL,
   isCampaignStage,
   nextStagesFor,
@@ -78,6 +84,30 @@ export type ParticipantRow = {
   reviewed_by: string | null;
   reviewed_at: string | null;
   created_at: string;
+};
+
+export type CurationBatchRow = {
+  id: string;
+  code: string | null;
+  deal_id: string;
+  period_start: string;
+  period_end: string;
+  status: string;
+  total_completed: number | null;
+  total_amount: number | null;
+  closed_at: string | null;
+};
+
+export type CampaignPayoutRow = {
+  id: string;
+  code: string | null;
+  participant_id: string;
+  mcn_creator_id: string;
+  amount: number;
+  status: string;
+  requested_at: string;
+  transfer_proof: string | null;
+  cancellation_reason: string | null;
 };
 
 export type VideoSubmissionRow = {
@@ -504,6 +534,179 @@ function SubmissionsSection({
   );
 }
 
+const PAYOUT_STATUS_CLASS: Record<string, string> = {
+  "[Menunggu Disbursement]": "amber",
+  "[Ditransfer]": "green",
+  "[Dibatalkan]": "red",
+};
+
+const BATCH_STATUS_CLASS: Record<string, string> = { draft: "gray", closed: "green" };
+
+function CreateBatchForm({ dealId }: { dealId: string }) {
+  const [state, action, pending] = useActionState<PayoutActionResult | null, FormData>(createCurationBatch, null);
+  return (
+    <form action={action} className="inline-form">
+      <input type="hidden" name="deal_id" value={dealId} />
+      <div>
+        <label>Periode Mulai</label>
+        <input name="period_start" type="date" required />
+      </div>
+      <div>
+        <label>Periode Selesai</label>
+        <input name="period_end" type="date" required />
+      </div>
+      <button type="submit" disabled={pending} className="sm">
+        {pending ? "Membuat…" : "+ Batch Kurasi"}
+      </button>
+      {state && !state.ok && <div className="err">{state.message}</div>}
+    </form>
+  );
+}
+
+function CloseBatchButton({
+  batch,
+  dealId,
+  preview,
+}: {
+  batch: CurationBatchRow;
+  dealId: string;
+  preview: { count: number; total: number };
+}) {
+  const [state, action, pending] = useActionState<PayoutActionResult | null, FormData>(closeCurationBatch, null);
+  return (
+    <form action={action}>
+      <input type="hidden" name="batch_id" value={batch.id} />
+      <input type="hidden" name="deal_id" value={dealId} />
+      <p className="hint">
+        Preview: {preview.count} kreator completed, total {rupiah(preview.total)}.
+      </p>
+      <button type="submit" disabled={pending} className="sm">
+        {pending ? "Menutup…" : "Tutup Periode"}
+      </button>
+      {state && <div className={state.ok ? "ok-msg" : "err"}>{state.message}</div>}
+    </form>
+  );
+}
+
+function BatchesSection({
+  deal,
+  batches,
+  participants,
+  videoSubmissions,
+  liveSubmissions,
+  payouts,
+  canCurate,
+}: {
+  deal: CampaignDetailRow;
+  batches: CurationBatchRow[];
+  participants: ParticipantRow[];
+  videoSubmissions: VideoSubmissionRow[];
+  liveSubmissions: LiveSubmissionRow[];
+  payouts: CampaignPayoutRow[];
+  canCurate: boolean;
+}) {
+  const alreadyPaidParticipantIds = payouts.map((p) => p.participant_id);
+  const completion = computeCampaignCompletion({
+    campaignTrack: deal.campaign_track as "video" | "live" | null,
+    baseFee: deal.base_fee,
+    participants: participants.map((p) => ({
+      participantId: p.id,
+      mcnCreatorId: p.mcn_creator_id,
+      status: p.status,
+    })),
+    videoSubmissions: videoSubmissions.map((s) => ({ participantId: s.participant_id, isDuplicate: s.is_duplicate })),
+    liveSubmissions: liveSubmissions.map((s) => ({ participantId: s.participant_id })),
+    alreadyPaidParticipantIds,
+  });
+  const preview = { count: completion.length, total: sumCompletionAmount(completion) };
+
+  return (
+    <div className="card">
+      <h2>Batch Kurasi</h2>
+      <p className="hint">
+        Tutup periode untuk mengunci pendaftar yang completed jadi payout (keputusan #13) — sekali
+        ditutup, hasilnya tidak berubah lagi meski bukti baru masuk.
+      </p>
+      {canCurate && <CreateBatchForm dealId={deal.id} />}
+
+      {batches.length === 0 ? (
+        <p className="hint">Belum ada batch kurasi.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Batch</th>
+              <th>Periode</th>
+              <th>Status</th>
+              <th>Hasil</th>
+              {canCurate && <th>Aksi</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {batches.map((b) => (
+              <tr key={b.id}>
+                <td>{b.code ?? "—"}</td>
+                <td>
+                  {tanggal(b.period_start)} – {tanggal(b.period_end)}
+                </td>
+                <td>
+                  <span className={`badge ${BATCH_STATUS_CLASS[b.status] ?? "gray"}`}>{b.status}</span>
+                </td>
+                <td>
+                  {b.status === "closed"
+                    ? `${b.total_completed ?? 0} kreator · ${rupiah(b.total_amount)}`
+                    : "—"}
+                </td>
+                {canCurate && (
+                  <td>{b.status === "draft" && <CloseBatchButton batch={b} dealId={deal.id} preview={preview} />}</td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function PayoutsSection({
+  payouts,
+  creatorById,
+}: {
+  payouts: CampaignPayoutRow[];
+  creatorById: Record<string, { name: string; username: string | null; code: string | null }>;
+}) {
+  if (payouts.length === 0) return null;
+  return (
+    <div className="card">
+      <h2>Payout ({payouts.length})</h2>
+      <p className="hint">Transfer &amp; pembatalan dikelola tim Finance di /finance.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Kode</th>
+            <th>Kreator</th>
+            <th className="right">Nominal</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {payouts.map((p) => (
+            <tr key={p.id}>
+              <td>{p.code ?? "—"}</td>
+              <td>{creatorById[p.mcn_creator_id]?.name ?? "—"}</td>
+              <td className="right">{rupiah(p.amount)}</td>
+              <td>
+                <span className={`badge ${PAYOUT_STATUS_CLASS[p.status] ?? "gray"}`}>{p.status}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function CampaignDetail({
   deal,
   budgetLog,
@@ -511,6 +714,8 @@ export function CampaignDetail({
   participants,
   videoSubmissions,
   liveSubmissions,
+  curationBatches,
+  payouts,
   creatorById,
   nameById,
   me,
@@ -523,6 +728,8 @@ export function CampaignDetail({
   participants: ParticipantRow[];
   videoSubmissions: VideoSubmissionRow[];
   liveSubmissions: LiveSubmissionRow[];
+  curationBatches: CurationBatchRow[];
+  payouts: CampaignPayoutRow[];
   creatorById: Record<string, { name: string; username: string | null; code: string | null }>;
   nameById: Record<string, string>;
   me: { rank: string | null; is_od: boolean; is_director: boolean } | null;
@@ -619,6 +826,18 @@ export function CampaignDetail({
         liveSubmissions={liveSubmissions}
         creatorById={creatorById}
       />
+
+      <BatchesSection
+        deal={deal}
+        batches={curationBatches}
+        participants={participants}
+        videoSubmissions={videoSubmissions}
+        liveSubmissions={liveSubmissions}
+        payouts={payouts}
+        canCurate={canCurate}
+      />
+
+      <PayoutsSection payouts={payouts} creatorById={creatorById} />
 
       <AdsSpendSection deal={deal} adsSpend={adsSpend} canAdd={canManageBudgetStage} />
 
