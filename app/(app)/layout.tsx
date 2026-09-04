@@ -41,6 +41,7 @@ export default async function AppLayout({
   const seeCM = mgmt || div === "CreatorManagement";
   const seeBD = mgmt || div === "BizDev";
   const seeAcq = mgmt || div === "Acquisition";
+  const seeCampaign = mgmt || ["CampaignSpecialist", "BizDev", "Account"].includes(div);
   const seeProj =
     mgmt || isLead || ["CreatorManagement", "BizDev", "Acquisition"].includes(div);
 
@@ -139,6 +140,9 @@ export default async function AppLayout({
         {seeBD && <Link href="/bizdev/poi">POI Accommodation &amp; TTD</Link>}
         {seeBD && <Link href="/bizdev/poi-dining">POI Dining</Link>}
         {me?.is_director && <Link href="/bizdev/settings">Setting Bizdev &amp; Admin Ops</Link>}
+
+        {seeCampaign && sectionHeading("Campaign MEA GO")}
+        {seeCampaign && <Link href="/meago/campaigns">Campaign MEA GO</Link>}
 
         {seeAcq && sectionHeading("Akuisisi Kreator")}
         {seeAcq && <Link href="/acquisition">Akuisisi Kreator</Link>}

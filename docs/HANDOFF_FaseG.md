@@ -1,8 +1,98 @@
 # HANDOFF — Fase G: Campaign Kreator MEA GO
 
-Status per 2026-09-02. Dokumen ini cukup untuk melanjutkan tanpa membaca ulang chat lama.
-PR #24 sudah **merged** ke `main`; migrasi `0320`/`0339`/`0340` sudah **applied ke staging
-dan production**.
+## STATUS UPDATE 2026-09-04 (sore) — tabrakan nomor migrasi dengan PR #27, sudah direkonsiliasi
+
+Branch ini di-merge dengan `main` (yang sudah memuat PR #26 dan **PR #27**, "Nominal
+suggestion, director-only deal edit/delete, POI notes+SLA settings, Excel export, CRM
+table, deal filters"). PR #27 memakai nomor file `0341`-`0343` untuk migrasi yang **sama
+sekali berbeda** dari punya Fase G (nama file beda jadi tidak bentrok di git, cuma
+membingungkan dibaca manusia — lihat header `0348` untuk daftar lengkap kedua sisi).
+
+**Dampak nyata yang ditemukan:** kedua sisi sama-sama `drop policy + create policy` dengan
+nama **sama** (`brand_deals_update`) pada tabel yang sama. Karena diterapkan ke production
+di waktu berbeda (Fase G lebih dulu, PR #27 menyusul beberapa jam kemudian), production
+sempat berakhir di kebijakan **director-only murni** dari PR #27 — BizDev/CampaignSpecialist/
+Account tidak bisa lagi mengubah budget/stage campaign mereka sendiri lewat
+`/meago/campaigns/[id]`, meskipun Fase G "terlihat" sudah di-deploy. Sebaliknya, reset dari
+nol (`pg_test_reset.sh`, file diproses alfabetis) berakhir di urutan **terbalik** dan
+menghasilkan state yang **berbeda dari production** — kelas bug: dua penulis migrasi
+paralel berbagi skema penomoran tanpa koordinasi, dan reset-dari-nol tidak menjamin urutan
+yang sama dengan urutan apply sungguhan.
+
+**Perbaikan:** `0348_reconcile_brand_deals_update_rls.sql` — kebijakan final eksplisit,
+tidak bergantung urutan file mana pun. Keputusan (dikonfirmasi user): **gabungkan kedua
+niat**, bukan pilih salah satu — Merchant Deals biasa (`campaign_enabled=false`) tetap
+director-only sesuai PR #27; baris campaign (`campaign_enabled=true`) kembali terbuka untuk
+BizDev/CampaignSpecialist (semua) dan Account (miliknya sendiri), persis cakupan
+`0342_go_campaigns_foundation.sql`. DELETE `brand_deals` sengaja tidak disentuh (tetap
+director-only murni — Fase G tidak butuh pengecualian di situ). **Sudah diverifikasi via
+query `pg_policies` langsung di production: qual cocok dengan yang dimaksud.** Diterapkan
+ke staging DAN production.
+
+**Pelajaran untuk migrasi berikutnya:** kalau ada kemungkinan sesi/PR paralel menyentuh
+tabel yang sama, jangan asumsikan nomor file berikutnya "aman" hanya karena nama filenya
+beda — cek `git log`/PR terbuka lain untuk migrasi yang menimpa nama policy/trigger yang
+sama sebelum push, terutama untuk `brand_deals` (tabel paling ramai penulisnya di repo ini).
+
+### ⚠ Temuan terpisah, BELUM diperbaiki — staging kehilangan tabel POI
+Saat mencoba apply `0342_poi_notes.sql` (punya PR #27) ke **staging**, gagal:
+`ERROR: 42P01: relation "poi_sop_progress" does not exist`. Staging punya *riwayat migrasi*
+yang mencatat `poi_sop_tracking`/`poi_dining_sop_tracking` sebagai sudah diterapkan, tapi
+tabel `poi_sop_progress`, `poi_sop_steps`, `poi_dining_cycles`, `poi_dining_steps` benar-benar
+tidak ada di staging (dicek langsung via `information_schema.tables`). Ini **drift lama,
+tidak terkait Fase G maupun PR #27** — kemungkinan migrasi pernah gagal sebagian atau tabel
+sempat di-drop manual di staging. **Belum diperbaiki di sesi ini** — `0342_poi_notes.sql`
+dan `0343_poi_sla_settings.sql` (PR #27) **TIDAK diterapkan ke staging** (prasyaratnya tidak
+ada di sana), tapi **sudah diterapkan ke production** (bagian dari `main` sebelum sesi ini,
+tabelnya ada & terisi di production — dikonfirmasi via `list_tables`). Staging jadi tidak
+representatif untuk fitur POI SOP/SLA settings sampai drift ini diinvestigasi dan diperbaiki
+terpisah — jangan andalkan staging untuk uji fitur itu sebelum ada migrasi perbaikan.
+
+---
+
+## STATUS UPDATE 2026-09-04 (siang) — G.1 sampai G.5 SELESAI, roadmap §6 di bawah ini rampung
+
+Seluruh roadmap §6 (G.1→G.5) sudah dibangun, diuji, dan **di-apply ke staging + production**
+di branch `claude/baca-handoff-task-n7zv4p`.
+Migrasi `0341`-`0347` (Fase G). Migrasi `0348` (rekonsiliasi RLS, lihat status update di atas).
+`bash scripts/pg_test_reset.sh` → 69 migrasi lolos dari nol (setelah merge `main`/PR #27).
+
+| Fase | Migrasi | Isi |
+|---|---|---|
+| G.1 | 0341, 0342 | Enum `CampaignSpecialist`; kolom campaign di `brand_deals` (funding, budget, target, segmentasi); `campaign_budget_log`; `campaign_ads_spend`; budget guard trigger |
+| G.2 | 0343 | `campaign_participants` (`CPT-`); `creator_meets_campaign_eligibility()`; gerbang pendaftaran+kurasi; `v_portal_campaigns` |
+| G.3 | 0344 | `campaign_video_submissions`/`campaign_live_submissions`; 3 kolom rekening `mcn_creators`; bucket `campaign-proofs`; gerbang deadline+dedup post_id |
+| G.4 | 0345 | `campaign_curation_batches` (`CUR-`); `campaign_payouts` (`CPY-`); RPC `close_curation_batch()` idempoten; `lib/campaign-completion.ts` + `scripts/test_campaign_completion.mjs` (unit test wajib, 15 assertion) |
+| G.5 | 0346 | `tiktok_post_index` GLOBAL; RPC `validate_campaign_posts()`; view `v_campaign_result` |
+| cleanup | 0347 | Drop `campaign_requests` + card "Routing Campaign" lama (sesuai §6 G.2: "setelah rilis, hapus") |
+
+UI: `/meago/campaigns` (+ `[id]` — budget, stage, pendaftar, bukti, batch kurasi, hasil
+validasi, ingest), `/kreator/campaign` (daftar/batalkan/submit bukti), `/kreator/profil`
+(rekening), kartu "Antrian Payout Campaign MEA GO" baru di `/finance`.
+
+**Belum pernah dipakai dengan data nyata** — belum ada campaign sungguhan dibuat di
+production (fitur baru live, 0 baris di semua tabel baru). Sebelum dianggap "selesai teruji"
+di dunia nyata, jalankan minimal satu campaign end-to-end (buat → aktifkan → kreator daftar →
+approve → submit bukti → ingest export TikTok asli → validasi → tutup batch → payout) dan
+verifikasi angkanya masuk akal.
+
+Keputusan desain yang **tidak eksplisit di roadmap/interview asli**, diputuskan sendiri saat
+implementasi (didokumentasikan di komentar migrasi terkait, dicatat ringkas di sini supaya
+mudah ditinjau ulang bila keliru):
+- **Kuota menggerbang APPROVAL, bukan pendaftaran** (0343) — pendaftar boleh lebih banyak dari
+  kuota, kurasi yang menyeleksi. Alternatif: kuota menutup pendaftaran begitu penuh.
+- **"Completed" untuk payout** (0345) = approved + minimal 1 bukti valid sesuai track (video:
+  non-duplikat; live: minimal 1 entri apa pun, tanpa syarat durasi/waktu minimum).
+- **Rekening kreator BOLEH diubah kapan saja** oleh kreator sendiri (0344) — bukan dikunci
+  setelah payout pertama. Kalau ternyata perlu dikunci, tambahkan guard terpisah, jangan
+  asumsikan sudah ada.
+- **`eligible_roster_status`** dipetakan dari `mcn_creators.live_roster` (boolean) ke token
+  `'active'`/`'inactive'` — satu-satunya kolom eligibility yang sumbernya bukan text/text[].
+- **`campaign_mode`** nilai `'collaboration_package'`/`'others'` dipilih mengikuti field
+  `Task type` di parser TikTok (`lib/mcn/content-analysis.ts`), bukan istilah lain.
+
+Status per 2026-09-02 di bawah ini (isi asli sebelum status update) dipertahankan sebagai
+riwayat masalah yang mendasari desain — masih relevan untuk konteks, jangan dihapus.
 
 ---
 

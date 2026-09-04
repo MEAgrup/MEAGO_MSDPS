@@ -7,6 +7,7 @@ import {
   setPayoutStatus,
   type ActionResult,
 } from "@/lib/actions/finance";
+import { setCampaignPayoutStatus, type ActionResult as CampaignPayoutActionResult } from "@/lib/actions/campaign-payouts";
 
 export function VerifyForm({
   transactionId,
@@ -76,6 +77,63 @@ export function PayoutTransferForm({ payoutId }: { payoutId: string }) {
 export function PayoutCancelForm({ payoutId }: { payoutId: string }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(
     setPayoutStatus,
+    null
+  );
+  return (
+    <form action={action} className="inline-form">
+      <input type="hidden" name="id" value={payoutId} />
+      <input type="hidden" name="to_status" value="[Dibatalkan]" />
+      <input
+        name="cancellation_reason"
+        placeholder="Alasan pembatalan (wajib)"
+        required
+        style={{ width: 180 }}
+      />
+      <button className="sm dangerbtn" disabled={pending}>
+        {pending ? "…" : "Batalkan"}
+      </button>
+      {state && (
+        <span className={state.ok ? "badge green" : "badge red"} title={state.message}>
+          {state.ok ? "ok" : state.message}
+        </span>
+      )}
+    </form>
+  );
+}
+
+// Disbursement payout campaign MEA GO (Fase G.4) — cermin PayoutTransferForm/
+// PayoutCancelForm di atas, tapi memanggil setCampaignPayoutStatus (tabel
+// campaign_payouts, TERPISAH dari creator_payouts M5/M9).
+export function CampaignPayoutTransferForm({ payoutId }: { payoutId: string }) {
+  const [state, action, pending] = useActionState<CampaignPayoutActionResult | null, FormData>(
+    setCampaignPayoutStatus,
+    null
+  );
+  return (
+    <form action={action} className="inline-form">
+      <input type="hidden" name="id" value={payoutId} />
+      <input type="hidden" name="to_status" value="[Ditransfer]" />
+      <input
+        name="transfer_proof"
+        placeholder="No./link bukti transfer (wajib)"
+        required
+        style={{ width: 200 }}
+      />
+      <button className="sm" disabled={pending}>
+        {pending ? "…" : "Tandai Ditransfer"}
+      </button>
+      {state && (
+        <span className={state.ok ? "badge green" : "badge red"} title={state.message}>
+          {state.ok ? "ok" : state.message}
+        </span>
+      )}
+    </form>
+  );
+}
+
+export function CampaignPayoutCancelForm({ payoutId }: { payoutId: string }) {
+  const [state, action, pending] = useActionState<CampaignPayoutActionResult | null, FormData>(
+    setCampaignPayoutStatus,
     null
   );
   return (

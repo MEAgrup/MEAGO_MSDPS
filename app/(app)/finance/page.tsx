@@ -1,7 +1,14 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
-import { VerifyForm, FlagButton, PayoutTransferForm, PayoutCancelForm } from "./forms";
+import {
+  VerifyForm,
+  FlagButton,
+  PayoutTransferForm,
+  PayoutCancelForm,
+  CampaignPayoutTransferForm,
+  CampaignPayoutCancelForm,
+} from "./forms";
 
 type Trx = {
   id: string;
@@ -22,6 +29,18 @@ type Payout = {
   code: string | null;
   payout_type: string;
   creator_id: string | null;
+  amount: number;
+  status: string;
+  requested_at: string;
+  transfer_proof: string | null;
+  cancellation_reason: string | null;
+};
+
+type CampaignPayout = {
+  id: string;
+  code: string | null;
+  mcn_creator_id: string;
+  deal_id: string;
   amount: number;
   status: string;
   requested_at: string;
@@ -52,7 +71,7 @@ export default async function FinancePage() {
 
   const supabase = await getCachedClient();
 
-  const [{ data: trxs }, { data: payouts }] = await Promise.all([
+  const [{ data: trxs }, { data: payouts }, { data: campaignPayouts }] = await Promise.all([
     supabase
       .from("transactions")
       .select(
@@ -66,23 +85,39 @@ export default async function FinancePage() {
         "id, code, payout_type, creator_id, amount, status, requested_at, transfer_proof, cancellation_reason"
       )
       .order("requested_at", { ascending: false }),
+    // Out-leg campaign MEA GO (Fase G.4) — tabel TERPISAH, tidak menyentuh creator_payouts.
+    supabase
+      .from("campaign_payouts")
+      .select("id, code, mcn_creator_id, deal_id, amount, status, requested_at, transfer_proof, cancellation_reason")
+      .order("requested_at", { ascending: false }),
   ]);
 
   const list = (trxs as Trx[] | null) ?? [];
   const merchantIds = [...new Set(list.map((t) => t.merchant_id))];
   const pList = (payouts as Payout[] | null) ?? [];
   const creatorIds = [...new Set(pList.map((p) => p.creator_id).filter(Boolean))] as string[];
+  const cpList = (campaignPayouts as CampaignPayout[] | null) ?? [];
+  const mcnCreatorIds = [...new Set(cpList.map((p) => p.mcn_creator_id))];
+  const campaignDealIds = [...new Set(cpList.map((p) => p.deal_id))];
 
-  const [{ data: merchants }, { data: creators }] = await Promise.all([
+  const [{ data: merchants }, { data: creators }, { data: mcnCreators }, { data: campaignDeals }] = await Promise.all([
     merchantIds.length
       ? supabase.from("merchants").select("id, code, nama_toko").in("id", merchantIds)
       : Promise.resolve({ data: [] as { id: string; code: string | null; nama_toko: string }[] }),
     creatorIds.length
       ? supabase.from("creators").select("id, code, name_handle").in("id", creatorIds)
       : Promise.resolve({ data: [] as { id: string; code: string | null; name_handle: string }[] }),
+    mcnCreatorIds.length
+      ? supabase.from("mcn_creators").select("id, code, name").in("id", mcnCreatorIds)
+      : Promise.resolve({ data: [] as { id: string; code: string | null; name: string }[] }),
+    campaignDealIds.length
+      ? supabase.from("brand_deals").select("id, code, brand_name").in("id", campaignDealIds)
+      : Promise.resolve({ data: [] as { id: string; code: string | null; brand_name: string }[] }),
   ]);
   const mMap = new Map((merchants ?? []).map((m) => [m.id, m]));
   const cMap = new Map((creators ?? []).map((c) => [c.id, c]));
+  const mcnMap = new Map((mcnCreators ?? []).map((c) => [c.id, c]));
+  const dealMap = new Map((campaignDeals ?? []).map((d) => [d.id, d]));
   const pyoQueue = pList.filter((p) => p.status === "[Menunggu Disbursement]");
 
   const queue = list.filter((t) => t.status !== "[Lunas]");
@@ -242,6 +277,71 @@ export default async function FinancePage() {
               <tr>
                 <td colSpan={canVerify ? 7 : 6} className="muted">
                   Belum ada payout kreator.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card">
+        <h2>Antrian Payout Campaign MEA GO ({cpList.filter((p) => p.status === "[Menunggu Disbursement]").length})</h2>
+        <p className="section-sub">
+          Out-leg Fase G.4: payout dibuat otomatis saat batch kurasi campaign ditutup (tabel BARU
+          campaign_payouts — creator_payouts M5/M9 tidak disentuh). Transfer manual, sama seperti
+          payout KOL.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>CPY</th>
+              <th>Campaign</th>
+              <th>Kreator</th>
+              <th className="right">Nominal</th>
+              <th>Diminta</th>
+              <th>Status</th>
+              {canVerify && <th>Aksi</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {cpList.map((p) => {
+              const c = mcnMap.get(p.mcn_creator_id);
+              const d = dealMap.get(p.deal_id);
+              return (
+                <tr key={p.id}>
+                  <td className="mono">{p.code ?? "—"}</td>
+                  <td>
+                    <span className="mono">{d?.code ?? ""}</span> {d?.brand_name ?? "—"}
+                  </td>
+                  <td>
+                    <span className="mono">{c?.code ?? ""}</span> {c?.name ?? "—"}
+                  </td>
+                  <td className="right">{rupiah(p.amount)}</td>
+                  <td>{tanggal(p.requested_at)}</td>
+                  <td>
+                    <span className={`badge ${PYO_CLASS[p.status] ?? "gray"}`}>{p.status}</span>
+                    {p.transfer_proof && <div className="muted">bukti: {p.transfer_proof}</div>}
+                    {p.cancellation_reason && (
+                      <div className="muted">alasan: {p.cancellation_reason}</div>
+                    )}
+                  </td>
+                  {canVerify && (
+                    <td>
+                      {p.status === "[Menunggu Disbursement]" && (
+                        <div className="inline-actions">
+                          <CampaignPayoutTransferForm payoutId={p.id} />
+                          {canCancelPayout && <CampaignPayoutCancelForm payoutId={p.id} />}
+                        </div>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+            {cpList.length === 0 && (
+              <tr>
+                <td colSpan={canVerify ? 7 : 6} className="muted">
+                  Belum ada payout campaign.
                 </td>
               </tr>
             )}
