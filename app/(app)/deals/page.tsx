@@ -28,7 +28,9 @@ export default async function DealsPage() {
   if (!canView) redirect("/dashboard");
 
   const canRegister = mgmt || div === "BizDev" || div === "CreatorManagement";
-  const canImport = mgmt || div === "BizDev";
+  // Edit & Hapus transaksi deal dibatasi ke role "leader dan atasnya" — untuk
+  // saat ini dipakai is_director() saja (lihat migrasi 0341/lib/actions/deals.ts).
+  const canEditDelete = !!me?.is_director;
 
   const supabase = await getCachedClient();
 
@@ -115,7 +117,6 @@ export default async function DealsPage() {
           dealingLeads={dealingLeads}
           bdOptions={bdOptions}
           benefitOptions={benefitOptions}
-          canImport={canImport}
         />
       )}
 
@@ -125,7 +126,7 @@ export default async function DealsPage() {
         bdOptions={bdOptions}
         bdNameById={bdNameById}
         benefitOptions={benefitOptions}
-        canManage={canRegister}
+        canEditDelete={canEditDelete}
       />
     </>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { LeadPicker, type PoolLead } from "../leads/pool";
 import type { BdOption } from "../leads/intake-fields";
 import { BRAND_CATEGORIES, normalizePhone62, type BrandCategory } from "@/lib/leads/intake";
@@ -53,6 +53,18 @@ export function DealIntakeFields({
   const benefitDatalistId = `${idPrefix}-benefit-options`;
   const picDatalistId = `${idPrefix}-pic-options`;
   const waDatalistId = `${idPrefix}-wa-options`;
+  const nominalDatalistId = `${idPrefix}-nominal-options`;
+
+  // Suggestion nominal deals dari data leads (nominal_bayar yang sudah dicatat
+  // BD saat status Dealing/Renewal) — dipakai sebagai datalist & auto-isi saat
+  // memilih POI/Merchant, supaya BD tidak input ulang angka yang sama.
+  const nominalOptions = useMemo(
+    () =>
+      Array.from(new Set(dealingLeads.map((l) => l.nominal_bayar).filter((n): n is number => !!n && n > 0))).sort(
+        (a, b) => b - a
+      ),
+    [dealingLeads]
+  );
 
   function onSelectLead(id: string) {
     setLeadId(id);
@@ -62,6 +74,7 @@ export function DealIntakeFields({
     if (lead.brand_category) setKategori(lead.brand_category as BrandCategory);
     if (lead.pic_name_position) setPicName(lead.pic_name_position);
     if (lead.pic_phone) setWaNumber(lead.pic_phone);
+    if (lead.nominal_bayar) setNominal(String(lead.nominal_bayar));
   }
 
   function onBentukChange(v: BentukKerjasama | "") {
@@ -211,12 +224,21 @@ export function DealIntakeFields({
         type="number"
         min="0"
         step="1"
+        list={nominalDatalistId}
         value={nominal}
         onChange={(e) => setNominal(e.target.value)}
         readOnly={bentuk === "Free/Barter"}
         required
       />
+      <datalist id={nominalDatalistId}>
+        {nominalOptions.map((n) => (
+          <option key={n} value={n} />
+        ))}
+      </datalist>
       {bentuk === "Free/Barter" && <p className="hint">Otomatis 0 untuk Free/Barter.</p>}
+      {bentuk !== "Free/Barter" && nominalOptions.length > 0 && (
+        <p className="hint">Saran nominal dari data Leads &amp; Prospek sebelumnya — pilih dari daftar atau ketik manual.</p>
+      )}
 
       <label>Benefit Diberikan *</label>
       <input name="benefit" list={benefitDatalistId} defaultValue={defaults?.benefit ?? ""} required />

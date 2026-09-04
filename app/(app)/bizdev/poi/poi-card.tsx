@@ -18,6 +18,7 @@ import {
   sopProgressStatus,
   stepCompletedAt,
   computePoiSla,
+  isNearCompletion,
   type PoiTabCategory,
   type PoiSopStepDef,
 } from "@/lib/mcn/poi-sop";
@@ -38,6 +39,7 @@ export type PoiTransaction = {
   total_gmv: number | null;
   report_link: string | null;
   report_status: string | null;
+  notes: string | null;
   steps: { step_no: number; completed_at: string | null }[];
 };
 
@@ -127,6 +129,7 @@ export function PoiCard({
     now,
   });
   const showReportWarning = !allDone && !!currentStep && currentStep.step >= reportWarningStep;
+  const suggestNotes = isNearCompletion(allDone ? stepDefs.length : currentStep?.step ?? null, stepDefs.length) && !tx.notes;
 
   // Seluruh step dicentang tapi hasilnya tidak pernah diisi. Tanpa penanda ini,
   // transaksi seperti itu tampak "beres" padahal deliverable vs realisasi tidak bisa
@@ -269,6 +272,19 @@ export function PoiCard({
 
                 <label>Link Report Monthly</label>
                 <input type="url" name="report_link" placeholder="https://…" defaultValue={tx.report_link ?? ""} />
+
+                <label>Notes</label>
+                <textarea
+                  name="notes"
+                  rows={3}
+                  defaultValue={tx.notes ?? ""}
+                  placeholder={suggestNotes ? "Disarankan isi catatan penutup sebelum SOP selesai…" : undefined}
+                />
+                {suggestNotes && (
+                  <p className="hint">
+                    Disarankan isi Notes — SOP tersisa {stepDefs.length - (allDone ? stepDefs.length : currentStep!.step) + 1} step lagi sebelum selesai.
+                  </p>
+                )}
 
                 {showReportWarning && (
                   <p className="warn-box">

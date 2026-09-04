@@ -22,6 +22,7 @@ import {
 import { IntakeFormFields, type BdOption, type BusinessTypeOptions } from "./intake-fields";
 import { ClaimButton } from "./forms";
 import { RegisterDealModal } from "../deals/forms";
+import { exportRowsToExcel } from "@/lib/xlsx-export";
 
 export type PoolLead = {
   id: string;
@@ -715,7 +716,36 @@ export function PoolLeadSection({
       <div className="card">
         <div className="table-toolbar">
           <h2>Pool Lead ({sorted.length})</h2>
-          {canManage && <UpdateStatusButton leads={leads} benefitOptions={benefitOptions} />}
+          <div className="actions-row">
+            <button
+              type="button"
+              className="sm ghost2"
+              disabled={sorted.length === 0}
+              onClick={() =>
+                exportRowsToExcel(
+                  "leads-prospek",
+                  "Leads",
+                  sorted.map((l) => ({
+                    Kode: l.code ?? "",
+                    "Brand / Merchant / POI": l.brand_name ?? l.lead_name,
+                    BD: (l.bd_employee_id && bdNameById[l.bd_employee_id]) ?? "",
+                    "Jenis Usaha": l.business_type ?? "",
+                    "Kategori Brand": l.brand_category ?? "",
+                    Wilayah: l.wilayah ?? "",
+                    Source: l.source ?? "",
+                    "PIC & Kontak": `${l.pic_name_position ?? ""} ${l.pic_phone ?? l.phone_normalized ?? ""}`.trim(),
+                    Status: l.crm_status,
+                    Benefit: l.benefit_dealing ?? "",
+                    Nominal: l.nominal_bayar,
+                    "Tanggal Dibuat": l.created_at?.slice(0, 10) ?? "",
+                  }))
+                )
+              }
+            >
+              Export Excel
+            </button>
+            {canManage && <UpdateStatusButton leads={leads} benefitOptions={benefitOptions} />}
+          </div>
         </div>
 
       <div className="filters-row">

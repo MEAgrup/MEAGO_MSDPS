@@ -8,6 +8,7 @@ import type { BdOption } from "../leads/intake-fields";
 import type { PoolLead } from "../leads/pool";
 import type { BrandCategory } from "@/lib/leads/intake";
 import type { BentukKerjasama } from "@/lib/deals/intake";
+import { exportRowsToExcel } from "@/lib/xlsx-export";
 
 export type Deal = {
   id: string;
@@ -231,16 +232,19 @@ export function DealsTable({
   bdOptions,
   bdNameById,
   benefitOptions,
-  canManage,
+  canEditDelete,
 }: {
   deals: Deal[];
   dealingLeads: PoolLead[];
   bdOptions: BdOption[];
   bdNameById: Record<string, string>;
   benefitOptions: string[];
-  canManage: boolean;
+  canEditDelete: boolean;
 }) {
   const [query, setQuery] = useState("");
+  const [bdFilter, setBdFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("visit");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(1);
@@ -249,13 +253,18 @@ export function DealsTable({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return deals;
     return deals.filter((d) => {
-      const bd = (d.bd_id && bdNameById[d.bd_id]) ?? "";
-      const hay = `${d.brand_name} ${d.code ?? ""} ${d.unique_id ?? ""} ${bd} ${d.benefit ?? ""}`.toLowerCase();
-      return hay.includes(q);
+      if (bdFilter && d.bd_id !== bdFilter) return false;
+      if (dateFrom && (!d.visit_start_date || d.visit_start_date < dateFrom)) return false;
+      if (dateTo && (!d.visit_start_date || d.visit_start_date > dateTo)) return false;
+      if (q) {
+        const bd = (d.bd_id && bdNameById[d.bd_id]) ?? "";
+        const hay = `${d.brand_name} ${d.code ?? ""} ${d.unique_id ?? ""} ${bd} ${d.benefit ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
     });
-  }, [deals, query, bdNameById]);
+  }, [deals, query, bdFilter, dateFrom, dateTo, bdNameById]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -317,11 +326,33 @@ export function DealsTable({
     });
   }
 
-  const colCount = 9 + (canManage ? 2 : 0);
+  const colCount = 9 + (canEditDelete ? 2 : 0);
+
+  function exportExcel() {
+    const rows = sorted.map((d) => ({
+      "ID Merchant": d.code ?? "",
+      "Unique ID": d.unique_id ?? "",
+      "POI / Merchant": d.brand_name,
+      BD: (d.bd_id && bdNameById[d.bd_id]) ?? "",
+      Kategori: d.kategori_poi ?? "",
+      "Bentuk Kerjasama": d.bentuk_kerjasama ?? "",
+      Nominal: d.nominal_harga,
+      Benefit: d.benefit ?? "",
+      "Visit Mulai": d.visit_start_date ?? "",
+      "Visit Berakhir": d.visit_end_date ?? "",
+      Status: isIncomplete(d) ? "Belum Lengkap" : "Lengkap",
+    }));
+    exportRowsToExcel("merchant-deals", "Deals", rows);
+  }
 
   return (
     <div className="card">
-      <h2>Daftar Deal ({sorted.length})</h2>
+      <div className="table-toolbar">
+        <h2>Daftar Deal ({sorted.length})</h2>
+        <button type="button" className="sm ghost2" onClick={exportExcel} disabled={sorted.length === 0}>
+          Export Excel
+        </button>
+      </div>
       <div className="filters-row">
         <div>
           <label>Cari POI, ID Merchant, BD, atau Benefit</label>
@@ -334,9 +365,48 @@ export function DealsTable({
             placeholder="search..."
           />
         </div>
+        <div>
+          <label>Nama BD</label>
+          <select
+            value={bdFilter}
+            onChange={(e) => {
+              setBdFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">— semua —</option>
+            {bdOptions.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.full_name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>Visit Dari Tanggal</label>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+        <div>
+          <label>Visit Sampai Tanggal</label>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => {
+              setDateTo(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
       </div>
 
-      {canManage && selected.size > 0 && (
+      {canEditDelete && selected.size > 0 && (
         <div style={{ marginBottom: 12 }}>
           <BulkDeleteBar ids={[...selected]} />
         </div>
@@ -346,7 +416,7 @@ export function DealsTable({
         <table>
           <thead>
             <tr>
-              {canManage && (
+              {canEditDelete && (
                 <th>
                   <input type="checkbox" checked={allPageSelected} onChange={toggleAllOnPage} />
                 </th>
@@ -360,13 +430,13 @@ export function DealsTable({
               <SortHeader label="Nominal / Benefit" sortKey="nominal" active={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Visit" sortKey="visit" active={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Status" sortKey="status" active={sortKey} dir={sortDir} onSort={onSort} />
-              {canManage && <th className="right">Aksi</th>}
+              {canEditDelete && <th className="right">Aksi</th>}
             </tr>
           </thead>
           <tbody>
             {paginated.map((d) => (
               <tr key={d.id}>
-                {canManage && (
+                {canEditDelete && (
                   <td>
                     <input
                       type="checkbox"
@@ -407,7 +477,7 @@ export function DealsTable({
                     <span className="badge green">Lengkap</span>
                   )}
                 </td>
-                {canManage && (
+                {canEditDelete && (
                   <td className="right">
                     <div className="actions-row" style={{ justifyContent: "flex-end" }}>
                       <EditDealModal

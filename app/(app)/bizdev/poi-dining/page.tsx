@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { OPS_NAMES } from "@/lib/deals/intake";
+import {
+  POI_DINING_FREEBARTER_STEPS,
+  POI_DINING_BERBAYAR_STEPS,
+  applySlaOverrides,
+  type PoiSlaOverrideRow,
+} from "@/lib/mcn/poi-sop";
 import { type PoiTransaction } from "../poi/poi-card";
 import { type DiningBerbayarCycle } from "./dining-berbayar-card";
 import { DiningList, type DiningCard } from "./dining-list";
@@ -25,6 +31,7 @@ type ProgressRow = {
   total_gmv: number | null;
   report_link: string | null;
   report_status: string | null;
+  notes: string | null;
 };
 
 type StepRow = { progress_id: string; step_no: number; completed_at: string | null };
@@ -40,6 +47,7 @@ type CycleRow = {
   total_gmv: number | null;
   report_link: string | null;
   report_status: string | null;
+  notes: string | null;
 };
 
 type DiningStepDbRow = { cycle_id: string; step_no: number; completed_at: string | null; skipped_at: string | null };
@@ -55,7 +63,7 @@ export default async function PoiDiningPage() {
 
   const supabase = await getCachedClient();
 
-  const [{ data: dealsRaw }, { data: emps }] = await Promise.all([
+  const [{ data: dealsRaw }, { data: emps }, { data: fbSlaRaw }, { data: bbSlaRaw }] = await Promise.all([
     supabase
       .from("brand_deals")
       .select(
@@ -64,7 +72,11 @@ export default async function PoiDiningPage() {
       .eq("kategori_poi", "Dining")
       .order("visit_start_date", { ascending: false }),
     supabase.from("employees").select("id, full_name"),
+    supabase.from("poi_sla_settings").select("step_no, sla_days, sla_label").eq("flow", "poi_dining_freebarter"),
+    supabase.from("poi_sla_settings").select("step_no, sla_days, sla_label").eq("flow", "poi_dining_berbayar"),
   ]);
+  const freebarterStepDefs = applySlaOverrides(POI_DINING_FREEBARTER_STEPS, (fbSlaRaw as PoiSlaOverrideRow[] | null) ?? []);
+  const berbayarStepDefs = applySlaOverrides(POI_DINING_BERBAYAR_STEPS, (bbSlaRaw as PoiSlaOverrideRow[] | null) ?? []);
 
   const deals = (dealsRaw as DealRow[] | null) ?? [];
   const bdNameById = new Map(((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name]));
@@ -78,7 +90,7 @@ export default async function PoiDiningPage() {
     fbDealIds.length > 0
       ? supabase
           .from("poi_sop_progress")
-          .select("id, deal_id, ops_datetime, actual_vt, total_gmv, report_link, report_status")
+          .select("id, deal_id, ops_datetime, actual_vt, total_gmv, report_link, report_status, notes")
           .in("deal_id", fbDealIds)
       : Promise.resolve({ data: [] as ProgressRow[] }),
   ]);
@@ -116,6 +128,7 @@ export default async function PoiDiningPage() {
         total_gmv: progress.total_gmv,
         report_link: progress.report_link,
         report_status: progress.report_status,
+        notes: progress.notes,
         steps: (stepsByProgress.get(progress.id) ?? []).sort((a, b) => a.step_no - b.step_no),
       };
     })
@@ -127,7 +140,7 @@ export default async function PoiDiningPage() {
     bbDealIds.length > 0
       ? await supabase
           .from("poi_dining_cycles")
-          .select("id, deal_id, cycle_no, period_start, period_end, ops_datetime, actual_vt, total_gmv, report_link, report_status")
+          .select("id, deal_id, cycle_no, period_start, period_end, ops_datetime, actual_vt, total_gmv, report_link, report_status, notes")
           .in("deal_id", bbDealIds)
           .order("cycle_no", { ascending: true })
       : { data: [] as CycleRow[] };
@@ -171,6 +184,7 @@ export default async function PoiDiningPage() {
         total_gmv: c.total_gmv,
         report_link: c.report_link,
         report_status: c.report_status,
+        notes: c.notes,
         steps: steps.sort((a, b) => a.step_no - b.step_no),
       };
     })
@@ -198,7 +212,13 @@ export default async function PoiDiningPage() {
           <p className="muted">Belum ada transaksi POI Dining.</p>
         </div>
       ) : (
-        <DiningList cards={cards} opsNames={OPS_NAMES} canApproveSkip={canApproveSkip} />
+        <DiningList
+          cards={cards}
+          opsNames={OPS_NAMES}
+          canApproveSkip={canApproveSkip}
+          freebarterStepDefs={freebarterStepDefs}
+          berbayarStepDefs={berbayarStepDefs}
+        />
       )}
     </>
   );

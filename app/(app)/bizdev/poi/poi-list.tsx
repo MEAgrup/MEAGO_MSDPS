@@ -5,11 +5,13 @@ import { PoiCard, type PoiTransaction } from "./poi-card";
 import {
   POI_TAB_CATEGORIES,
   POI_CATEGORY_LABELS,
+  POI_SOP_STEPS,
   effectiveOpsDatetime,
   sopProgressStatus,
   jakartaYMD,
   shiftYMD,
   type PoiTabCategory,
+  type PoiSopStepDef,
 } from "@/lib/mcn/poi-sop";
 
 const PAGE_SIZE = 9;
@@ -26,7 +28,15 @@ const SCHEDULE_FILTERS: { key: ScheduleFilter; label: string }[] = [
 // PoiList — search wildcard (POI/ID/PIC/BD), filter kategori & Nama Ops,
 // filter jadwal via klik (Semua/Besok Visit/Besok Ops/Belum Selesai), dan
 // paginasi 9 card/halaman utk tab POI Accommodation & TTD.
-export function PoiList({ transactions, opsNames }: { transactions: PoiTransaction[]; opsNames: readonly string[] }) {
+export function PoiList({
+  transactions,
+  opsNames,
+  stepDefs = POI_SOP_STEPS,
+}: {
+  transactions: PoiTransaction[];
+  opsNames: readonly string[];
+  stepDefs?: PoiSopStepDef[];
+}) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<PoiTabCategory | "all">("all");
   const [opsFilter, setOpsFilter] = useState<string>("all");
@@ -123,7 +133,7 @@ export function PoiList({ transactions, opsNames }: { transactions: PoiTransacti
       ) : (
         <div className="poi-grid">
           {paginated.map((t) => (
-            <PoiCard key={t.deal_id} tx={t} opsNames={opsNames} />
+            <PoiCard key={t.deal_id} tx={t} opsNames={opsNames} stepDefs={stepDefs} />
           ))}
         </div>
       )}
