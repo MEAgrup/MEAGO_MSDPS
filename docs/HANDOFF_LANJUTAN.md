@@ -115,14 +115,21 @@ Konsekuensinya, dan ini bukan bug melainkan data yang memang belum ada:
    dan roster ini tidak membawa email sama sekali. Ini **blocker sesungguhnya untuk
    item 2**, bukan jumlah kreatornya.
 
-**Tanyakan ke user, jangan putuskan sendiri:**
-- Hapus `MCR-0032` + `MCR-0033` dari production? (menghapus baris produksi, perlu
-  konfirmasi eksplisit; keduanya belum pernah dipakai transaksi apa pun)
-- Dari mana email kreator untuk akun portal — ada sumbernya, atau portal dibuka
-  bertahap untuk sebagian kreator saja?
-- `niche`/`city`/`creator_level`/`jenis_creator` diisi dari export TikTok
-  "Creator Analysis" (ingest sudah bisa mengisinya), atau campaign pertama sengaja
-  dijalankan tanpa filter?
+**Keputusan user 2026-09-04 — sudah diambil, jangan tanyakan ulang:**
+
+| Pertanyaan | Keputusan |
+|---|---|
+| `MCR-0032` + `MCR-0033` dihapus? | **Tidak — biarkan.** Tidak mengganggu selama campaign tidak memfilter. Konsekuensinya kedua baris ikut terhitung di statistik `/meago/creators` dan tampil di daftar. Kalau suatu saat mau dibersihkan, lewat file migrasi, bukan `execute_sql` langsung. |
+| Sumber email akun portal | **Belum ada — portal dibuka bertahap.** Email dikumpulkan manual per kreator, akunnya dibuat satu per satu lewat UI `/meago/creators`. Tidak ada impor massal. |
+| Kolom segmentasi kosong | **Campaign pertama dijalankan tanpa filter** — seluruh kolom `eligible_*` dibiarkan NULL. Pengisian `niche`/`city`/`level`/`jenis_creator` diurus belakangan. |
+
+**Akibat keputusan "buka bertahap" — sudah dikerjakan.** Card "Akun Portal Kreator" di
+`/meago/creators` dulu merender `creators.map` tanpa batas. Dengan 34 kreator itu wajar;
+dengan 2.250 kreator itu berarti **2.250 form email+password dalam satu halaman**, jadi
+jalur "buat akun satu per satu lewat UI" praktis mustahil. Card itu sekarang punya kotak
+pencarian (`?akun=`, filter server-side atas nama/username/kode, batas 50 hasil), dan
+kreator yang sudah punya akun selalu tampil. Lookup email service-role juga tidak lagi
+menyapu seluruh roster. Perubahannya di `app/(app)/meago/creators/page.tsx`.
 
 **Cara memeriksa ulang kapan saja** — tanpa menarik nama kreator ke chat:
 ```bash
