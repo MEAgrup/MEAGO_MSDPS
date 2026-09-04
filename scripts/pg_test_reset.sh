@@ -62,8 +62,18 @@ create or replace function auth.role() returns text language sql stable as $$
   select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'authenticated') $$;
 grant usage on schema auth to public;
 create schema if not exists cron;
-create or replace function cron.schedule(text, text, text) returns bigint language sql as $$ select 1::bigint $$;
-create or replace function cron.unschedule(text) returns boolean language sql as $$ select true $$;
+-- cron.job dicatat sungguhan (bukan stub yang membuang argumennya) supaya sidik
+-- jari scripts/schema_fingerprint.sql bisa membandingkan jadwal job antara hasil
+-- reset dan live — job yang hilang di satu sisi jadi kelihatan.
+create table if not exists cron.job (
+  jobid bigserial primary key, schedule text, command text, jobname text unique);
+create or replace function cron.schedule(p_name text, p_schedule text, p_command text)
+returns bigint language sql as $$
+  insert into cron.job (jobname, schedule, command) values (p_name, p_schedule, p_command)
+  on conflict (jobname) do update set schedule = excluded.schedule, command = excluded.command
+  returning jobid $$;
+create or replace function cron.unschedule(p_name text) returns boolean language sql as $$
+  delete from cron.job where jobname = p_name returning true $$;
 create schema if not exists storage;
 create table if not exists storage.buckets (
   id text primary key, name text, public boolean default false,
@@ -71,6 +81,14 @@ create table if not exists storage.buckets (
 create table if not exists storage.objects (
   id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id),
   name text, owner uuid, created_at timestamptz default now(), metadata jsonb);
+-- Riwayat migrasi: diisi loop di bawah dengan nama file yang berhasil diterapkan,
+-- meniru supabase_migrations.schema_migrations di Supabase. Dipakai
+-- scripts/schema_fingerprint.sql untuk menjawab "migrasi mana yang belum masuk
+-- ke environment X" — pertanyaan yang tidak terjawab sebelum ada ini, dan yang
+-- membuat staging kehilangan 12 migrasi tanpa terdeteksi.
+create schema if not exists supabase_migrations;
+create table if not exists supabase_migrations.schema_migrations (
+  version text primary key, name text);
 SQL
 
 psql -h /tmp -p "$PGPORT" -U postgres -q -c "drop database if exists $DB;" -c "create database $DB;" >/dev/null
@@ -85,6 +103,10 @@ for f in "$ROOT"/supabase/migrations/*.sql; do
     echo "$out" | grep -E "ERROR|FATAL" | head -5
     exit 1
   fi
+  base=$(basename "$f" .sql)
+  psql -h /tmp -p "$PGPORT" -U postgres -d "$DB" -q -c \
+    "insert into supabase_migrations.schema_migrations (version, name)
+     values ('$base', '$base') on conflict (version) do nothing;" >/dev/null
   n=$((n + 1))
 done
 echo "✅ $n migrasi lolos dari nol (database $DB, port $PGPORT)"
