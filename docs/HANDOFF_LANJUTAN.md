@@ -12,6 +12,7 @@ ringkasan riwayat — riwayat lengkapnya ada di dokumen yang dirujuk di bawah.
 | `docs/HANDOFF_FaseG.md` | Fase G (Campaign Kreator MEA GO) — 18 keputusan TERKUNCI di §5, jebakan wajib di §7, dan bagian **SISA PEKERJAAN** |
 | `docs/SCHEMA_DRIFT.md` | Aturan migrasi, cara membandingkan dua database, seluruh drift yang diketahui |
 | `docs/GLOSARIUM.md` | "Merchant" berarti dua hal berlawanan; 3 ejaan Accommodation; 3 arti "campaign" |
+| `docs/RUNBOOK_CAMPAIGN_PERTAMA.md` | Prosedur menjalankan campaign Fase G pertama (item 2) |
 | `docs/BUILD_PLAN.md` | Tracker progres modul |
 
 Jangan re-litigasi keputusan di `HANDOFF_FaseG.md` §5 — semuanya hasil interview 4 ronde
@@ -147,6 +148,10 @@ tidak menimpa apa pun), tapi setiap kali jalan ia tetap membakar nomor `id_seque
 untuk baris yang di-skip.
 
 ### 2. 🔒 Jalankan satu campaign end-to-end dengan data nyata
+> **Prosedur langkah demi langkahnya ada di `docs/RUNBOOK_CAMPAIGN_PERTAMA.md`** —
+> sudah disesuaikan dengan tiga keputusan user di item 1 (portal bertahap, campaign
+> tanpa filter). Bagian di bawah ini konteksnya saja.
+
 Buat campaign → aktifkan → kreator daftar lewat portal → approve/kurasi → kreator submit
 bukti → ingest export TikTok asli → `validate_campaign_posts()` → tutup batch kurasi →
 payout muncul di `/finance`. Lalu **verifikasi angkanya masuk akal**, bukan cuma "tidak
