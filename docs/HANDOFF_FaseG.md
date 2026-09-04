@@ -1,8 +1,47 @@
 # HANDOFF — Fase G: Campaign Kreator MEA GO
 
-Status per 2026-09-02. Dokumen ini cukup untuk melanjutkan tanpa membaca ulang chat lama.
-PR #24 sudah **merged** ke `main`; migrasi `0320`/`0339`/`0340` sudah **applied ke staging
-dan production**.
+## STATUS UPDATE 2026-09-04 — G.1 sampai G.5 SELESAI, roadmap §6 di bawah ini rampung
+
+Seluruh roadmap §6 (G.1→G.5) sudah dibangun, diuji, dan **di-apply ke staging + production**
+di branch `claude/baca-handoff-task-n7zv4p` (belum di-PR-kan ke `main` — belum diminta).
+Migrasi `0341`-`0347`. `bash scripts/pg_test_reset.sh` → 65 migrasi lolos dari nol.
+
+| Fase | Migrasi | Isi |
+|---|---|---|
+| G.1 | 0341, 0342 | Enum `CampaignSpecialist`; kolom campaign di `brand_deals` (funding, budget, target, segmentasi); `campaign_budget_log`; `campaign_ads_spend`; budget guard trigger |
+| G.2 | 0343 | `campaign_participants` (`CPT-`); `creator_meets_campaign_eligibility()`; gerbang pendaftaran+kurasi; `v_portal_campaigns` |
+| G.3 | 0344 | `campaign_video_submissions`/`campaign_live_submissions`; 3 kolom rekening `mcn_creators`; bucket `campaign-proofs`; gerbang deadline+dedup post_id |
+| G.4 | 0345 | `campaign_curation_batches` (`CUR-`); `campaign_payouts` (`CPY-`); RPC `close_curation_batch()` idempoten; `lib/campaign-completion.ts` + `scripts/test_campaign_completion.mjs` (unit test wajib, 15 assertion) |
+| G.5 | 0346 | `tiktok_post_index` GLOBAL; RPC `validate_campaign_posts()`; view `v_campaign_result` |
+| cleanup | 0347 | Drop `campaign_requests` + card "Routing Campaign" lama (sesuai §6 G.2: "setelah rilis, hapus") |
+
+UI: `/meago/campaigns` (+ `[id]` — budget, stage, pendaftar, bukti, batch kurasi, hasil
+validasi, ingest), `/kreator/campaign` (daftar/batalkan/submit bukti), `/kreator/profil`
+(rekening), kartu "Antrian Payout Campaign MEA GO" baru di `/finance`.
+
+**Belum pernah dipakai dengan data nyata** — belum ada campaign sungguhan dibuat di
+production (fitur baru live, 0 baris di semua tabel baru). Sebelum dianggap "selesai teruji"
+di dunia nyata, jalankan minimal satu campaign end-to-end (buat → aktifkan → kreator daftar →
+approve → submit bukti → ingest export TikTok asli → validasi → tutup batch → payout) dan
+verifikasi angkanya masuk akal.
+
+Keputusan desain yang **tidak eksplisit di roadmap/interview asli**, diputuskan sendiri saat
+implementasi (didokumentasikan di komentar migrasi terkait, dicatat ringkas di sini supaya
+mudah ditinjau ulang bila keliru):
+- **Kuota menggerbang APPROVAL, bukan pendaftaran** (0343) — pendaftar boleh lebih banyak dari
+  kuota, kurasi yang menyeleksi. Alternatif: kuota menutup pendaftaran begitu penuh.
+- **"Completed" untuk payout** (0345) = approved + minimal 1 bukti valid sesuai track (video:
+  non-duplikat; live: minimal 1 entri apa pun, tanpa syarat durasi/waktu minimum).
+- **Rekening kreator BOLEH diubah kapan saja** oleh kreator sendiri (0344) — bukan dikunci
+  setelah payout pertama. Kalau ternyata perlu dikunci, tambahkan guard terpisah, jangan
+  asumsikan sudah ada.
+- **`eligible_roster_status`** dipetakan dari `mcn_creators.live_roster` (boolean) ke token
+  `'active'`/`'inactive'` — satu-satunya kolom eligibility yang sumbernya bukan text/text[].
+- **`campaign_mode`** nilai `'collaboration_package'`/`'others'` dipilih mengikuti field
+  `Task type` di parser TikTok (`lib/mcn/content-analysis.ts`), bukan istilah lain.
+
+Status per 2026-09-02 di bawah ini (isi asli sebelum status update) dipertahankan sebagai
+riwayat masalah yang mendasari desain — masih relevan untuk konteks, jangan dihapus.
 
 ---
 
