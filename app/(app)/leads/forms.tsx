@@ -3,11 +3,9 @@
 import { useActionState, useEffect, useState } from "react";
 import {
   createLead,
-  importLeadsCsv,
   claimLead,
   type ActionResult,
 } from "@/lib/actions/leads";
-import { BRAND_CATEGORIES } from "@/lib/leads/intake";
 import { IntakeFormFields, type BdOption, type BusinessTypeOptions } from "./intake-fields";
 
 export type { BdOption };
@@ -67,34 +65,6 @@ export function NewLeadModal({
         </div>
       )}
     </>
-  );
-}
-
-export function ImportCsvForm() {
-  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
-    importLeadsCsv,
-    null
-  );
-  return (
-    <form action={action}>
-      <Msg state={state} />
-      <label>Data CSV — satu lead per baris: nama bd, brand, kategori, wilayah (provinsi)</label>
-      <textarea
-        name="csv"
-        rows={6}
-        placeholder={
-          "Budi Santoso, Toko Sepatu Jaya, Dining, Jawa Barat\nSiti Aminah, Warung Bu Sri, TTD, Bali"
-        }
-        required
-      />
-      <p className="hint">
-        Kategori: {BRAND_CATEGORIES.join(", ")}. Nama BD harus sama persis dengan nama karyawan
-        BizDev terdaftar; wilayah harus nama provinsi lengkap.
-      </p>
-      <button type="submit" disabled={pending}>
-        {pending ? "Mengimpor…" : "Impor Massal"}
-      </button>
-    </form>
   );
 }
 

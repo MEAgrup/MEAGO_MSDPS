@@ -30,11 +30,6 @@ function canManageDeals(me: Me | null): boolean {
   return !!me && (me.is_od || me.is_director || me.division === "BizDev" || me.division === "CreatorManagement");
 }
 
-// canImportDeals: "Import Master Deal" dibatasi ke mgmt/BizDev saja.
-function canImportDeals(me: Me | null): boolean {
-  return !!me && (me.is_od || me.is_director || me.division === "BizDev");
-}
-
 type SupabaseClientLike = Awaited<ReturnType<typeof createClient>>;
 
 type DealFields = {
@@ -232,127 +227,6 @@ export async function updateDealTransaction(
   revalidatePath("/deals");
   revalidatePath("/leads");
   return { ok: true, message: "Transaksi deal diperbarui." };
-}
-
-// ---- Import Master Deal -----------------------------------------------------
-// Format tetap: Unique_ID, Bentuk_Kerjasama, Nominal, Benefit_Diberikan,
-// Visit_Mulai, Visit_Berakhir, Jumlah_Kreator, Jumlah_Konten, Link_Brief.
-// Baris yang masuk sengaja TANPA POI/BD/OPS/kategori/PIC/WhatsApp — brand_name
-// diisi sementara dengan Unique_ID, kategori_poi dibiarkan kosong (jadi
-// penanda "belum lengkap" di tabel Daftar Deal) sampai dilengkapi manual lewat
-// "Lengkapi Data".
-function splitCsvLine(line: string): string[] {
-  return line.split(/[\t;,]/).map((s) => s.trim());
-}
-
-// "YYYY-MM-DD" atau "YYYY-MM-DD HH:MM" (pemisah spasi atau T) — format ketat
-// sesuai catatan format di form Import Master Deal, bukan parser fleksibel.
-function parseDealDateTimeCell(raw: string): { date: string; time: string } | null {
-  const m = raw.trim().match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?$/);
-  if (!m) return null;
-  return { date: m[1], time: m[2] ?? "00:00" };
-}
-
-function normalizeBentukKerjasamaCell(raw: string): "Berbayar" | "Free/Barter" | null {
-  const v = raw.trim().toLowerCase();
-  if (v === "berbayar") return "Berbayar";
-  if (v === "free" || v === "barter" || v === "free/barter") return "Free/Barter";
-  return null;
-}
-
-export async function importMasterDeal(
-  _prev: ActionResult | null,
-  formData: FormData
-): Promise<ActionResult> {
-  const { supabase, user, me } = await ctx();
-  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
-  if (!canImportDeals(me)) return { ok: false, message: "Tidak berwenang mengimpor master deal." };
-
-  const raw = String(formData.get("csv") || "").trim();
-  if (!raw) return { ok: false, message: "Isi data CSV." };
-
-  const lines = raw
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  let dataLines = lines;
-  if (lines.length > 0 && /unique_id/i.test(lines[0])) {
-    dataLines = lines.slice(1);
-  }
-
-  let inserted = 0;
-  const skipped: { row: number; reason: string }[] = [];
-
-  for (let i = 0; i < dataLines.length; i++) {
-    const rowNum = i + 1;
-    const cells = splitCsvLine(dataLines[i]);
-    const [
-      unique_id_raw,
-      bentukRaw,
-      nominalRaw,
-      benefitRaw,
-      visitMulaiRaw,
-      visitBerakhirRaw,
-      kreatorRaw,
-      kontenRaw,
-      briefRaw,
-    ] = cells;
-
-    const unique_id = (unique_id_raw ?? "").trim();
-    if (!unique_id) {
-      skipped.push({ row: rowNum, reason: "Unique_ID kosong" });
-      continue;
-    }
-    const bentuk_kerjasama = normalizeBentukKerjasamaCell(bentukRaw ?? "");
-    if (!bentuk_kerjasama) {
-      skipped.push({ row: rowNum, reason: `Bentuk_Kerjasama tidak dikenal: "${bentukRaw ?? ""}"` });
-      continue;
-    }
-
-    const nominal_harga = bentuk_kerjasama === "Free/Barter" ? 0 : parseRupiah(nominalRaw) ?? 0;
-    const benefit = (benefitRaw ?? "").trim() || null;
-    const visitMulai = parseDealDateTimeCell(visitMulaiRaw ?? "");
-    const visitBerakhir = parseDealDateTimeCell(visitBerakhirRaw ?? "");
-    const kreator_needed = parseIntTolerant(kreatorRaw ?? "");
-    const konten_needed = parseIntTolerant(kontenRaw ?? "");
-    const brief_link = (briefRaw ?? "").trim() || null;
-
-    const { error } = await supabase.from("brand_deals").insert({
-      brand_name: unique_id,
-      unique_id,
-      sourced_by_role: "bd",
-      bentuk_kerjasama,
-      nominal_harga,
-      benefit,
-      visit_start_date: visitMulai?.date ?? null,
-      visit_start_time: visitMulai?.time ?? null,
-      visit_end_date: visitBerakhir?.date ?? null,
-      visit_end_time: visitBerakhir?.time ?? null,
-      kreator_needed,
-      konten_needed,
-      brief_link,
-    });
-    if (error) {
-      if (error.code === "23505") skipped.push({ row: rowNum, reason: `Unique_ID duplikat (${unique_id})` });
-      else skipped.push({ row: rowNum, reason: error.message });
-      continue;
-    }
-    inserted++;
-  }
-
-  revalidatePath("/deals");
-  const preview = skipped
-    .slice(0, 10)
-    .map((s) => `baris ${s.row}: ${s.reason}`)
-    .join("; ");
-  const more = skipped.length > 10 ? ` (+${skipped.length - 10} lagi)` : "";
-  return {
-    ok: inserted > 0,
-    message: `Import selesai: ${inserted} baris masuk (tandai "Lengkapi Data"), ${skipped.length} dilewati${
-      skipped.length ? ` — ${preview}${more}` : ""
-    }.`,
-  };
 }
 
 // deleteDealTransaction — hapus satu transaksi deal

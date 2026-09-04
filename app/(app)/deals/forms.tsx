@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { registerDealTransaction, importMasterDeal, type ActionResult } from "@/lib/actions/deals";
+import { registerDealTransaction, type ActionResult } from "@/lib/actions/deals";
 import { DealIntakeFields } from "./intake-fields";
 import type { BdOption } from "../leads/intake-fields";
 import type { PoolLead } from "../leads/pool";
@@ -96,48 +96,16 @@ export function RegisterDealModal({
   );
 }
 
-export function ImportMasterDealForm() {
-  const [state, action, pending] = useActionState<ActionResult | null, FormData>(importMasterDeal, null);
-  return (
-    <form action={action}>
-      <Msg state={state} />
-      <label>
-        Data CSV — satu transaksi per baris: Unique_ID, Bentuk_Kerjasama, Nominal, Benefit_Diberikan,
-        Visit_Mulai, Visit_Berakhir, Jumlah_Kreator, Jumlah_Konten, Link_Brief
-      </label>
-      <textarea
-        name="csv"
-        rows={8}
-        placeholder={
-          "DEAL-EXT-0001, Berbayar, 1500000, Dining - Free Meals, 2026-07-01 10:00, 2026-07-01 14:00, 3, 5, https://…"
-        }
-        required
-      />
-      <p className="hint">
-        • Bentuk Kerjasama: Berbayar atau Free
-        <br />
-        • Format Tanggal: YYYY-MM-DD (opsional jam, misal: 2026-07-01 10:00)
-      </p>
-      <button type="submit" disabled={pending}>
-        {pending ? "Mengimpor…" : "Impor Master Deal"}
-      </button>
-    </form>
-  );
-}
-
 // DealsToolbar — pengganti DealsTabs: "Daftarkan Transaksi" kini popup
-// (RegisterDealModal), "Import Master Deal" tetap ada sebagai disclosure
-// terpisah (hanya untuk yang canImport) — bukan lagi tab yang saling tukar.
+// (RegisterDealModal), bukan lagi tab yang saling tukar.
 export function DealsToolbar({
   dealingLeads,
   bdOptions,
   benefitOptions,
-  canImport,
 }: {
   dealingLeads: PoolLead[];
   bdOptions: BdOption[];
   benefitOptions: string[];
-  canImport: boolean;
 }) {
   return (
     <div className="card">
@@ -145,12 +113,6 @@ export function DealsToolbar({
         <h2>Catat Transaksi Baru</h2>
         <RegisterDealModal dealingLeads={dealingLeads} bdOptions={bdOptions} benefitOptions={benefitOptions} />
       </div>
-      {canImport && (
-        <details className="disclose" style={{ marginTop: 12 }}>
-          <summary>Impor Massal (Master Deal CSV)</summary>
-          <ImportMasterDealForm />
-        </details>
-      )}
     </div>
   );
 }
