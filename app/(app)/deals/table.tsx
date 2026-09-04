@@ -1,9 +1,10 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useState } from "react";
-import { rupiah, tanggal } from "@/lib/format";
+import { num, rupiah, tanggal } from "@/lib/format";
 import { updateDealTransaction, deleteDealTransaction, deleteDealTransactionsBulk, type ActionResult } from "@/lib/actions/deals";
 import { DealIntakeFields } from "./intake-fields";
+import { DealsToolbar } from "./forms";
 import type { BdOption } from "../leads/intake-fields";
 import type { PoolLead } from "../leads/pool";
 import type { BrandCategory } from "@/lib/leads/intake";
@@ -223,15 +224,19 @@ function SortHeader({
   );
 }
 
-// DealsTable — "Daftar Deal": search wildcard (POI/ID merchant/BD/Benefit),
+// DealsBoard — scorecard + toolbar "Daftarkan Transaksi" + "Daftar Deal":
+// search wildcard (POI/ID merchant/BD/Benefit), filter BD & tanggal visit,
 // sort per kolom, paginasi 10/20/50, penanda "Lengkapi Data" untuk baris
-// Import Master Deal yang belum dilengkapi.
-export function DealsTable({
+// Import Master Deal yang belum dilengkapi. Scorecard dihitung dari hasil
+// filter yang sama dengan tabel, supaya angkanya ikut berubah saat filter
+// dipakai (bukan cuma baris tabelnya).
+export function DealsBoard({
   deals,
   dealingLeads,
   bdOptions,
   bdNameById,
   benefitOptions,
+  canRegister,
   canEditDelete,
 }: {
   deals: Deal[];
@@ -239,6 +244,7 @@ export function DealsTable({
   bdOptions: BdOption[];
   bdNameById: Record<string, string>;
   benefitOptions: string[];
+  canRegister: boolean;
   canEditDelete: boolean;
 }) {
   const [query, setQuery] = useState("");
@@ -265,6 +271,20 @@ export function DealsTable({
       return true;
     });
   }, [deals, query, bdFilter, dateFrom, dateTo, bdNameById]);
+
+  const filterActive = !!(query.trim() || bdFilter || dateFrom || dateTo);
+
+  const stats = useMemo(() => {
+    const totalTransaksi = filtered.length;
+    const belumLengkap = filtered.filter(isIncomplete).length;
+    const totalNominalDeals = filtered.reduce((sum, d) => sum + (d.nominal_harga ?? 0), 0);
+    const berbayarCount = filtered.filter((d) => d.bentuk_kerjasama === "Berbayar").length;
+    const freeBarterCount = filtered.filter((d) => d.bentuk_kerjasama === "Free/Barter").length;
+    const skemaTotal = berbayarCount + freeBarterCount;
+    const berbayarPct = skemaTotal > 0 ? Math.round((berbayarCount / skemaTotal) * 100) : 0;
+    const freeBarterPct = skemaTotal > 0 ? 100 - berbayarPct : 0;
+    return { totalTransaksi, belumLengkap, totalNominalDeals, berbayarCount, freeBarterCount, berbayarPct, freeBarterPct };
+  }, [filtered]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -346,7 +366,52 @@ export function DealsTable({
   }
 
   return (
-    <div className="card">
+    <>
+      <div className="stats">
+        <div className="stat">
+          <div className="k">Total Transaksi{filterActive ? " (terfilter)" : ""}</div>
+          <div className="v">{num(stats.totalTransaksi)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Total Nominal Deals{filterActive ? " (terfilter)" : ""}</div>
+          <div className="v small">{rupiah(stats.totalNominalDeals)}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Belum Lengkap</div>
+          <div className="v" style={stats.belumLengkap > 0 ? { color: "#dc2626" } : undefined}>
+            {num(stats.belumLengkap)}
+          </div>
+          {stats.belumLengkap > 0 && (
+            <div className="muted" style={{ fontSize: 11, fontWeight: 500 }}>
+              belum masuk tracker operasional
+            </div>
+          )}
+        </div>
+        <div className="stat">
+          <div className="k">Skema Berbayar</div>
+          <div className="v">
+            {num(stats.berbayarCount)}{" "}
+            <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>
+              ({stats.berbayarPct}%)
+            </span>
+          </div>
+        </div>
+        <div className="stat">
+          <div className="k">Skema Free/Barter</div>
+          <div className="v">
+            {num(stats.freeBarterCount)}{" "}
+            <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>
+              ({stats.freeBarterPct}%)
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {canRegister && (
+        <DealsToolbar dealingLeads={dealingLeads} bdOptions={bdOptions} benefitOptions={benefitOptions} />
+      )}
+
+      <div className="card">
       <div className="table-toolbar">
         <h2>Daftar Deal ({sorted.length})</h2>
         <button type="button" className="sm ghost2" onClick={exportExcel} disabled={sorted.length === 0}>
@@ -544,6 +609,7 @@ export function DealsTable({
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

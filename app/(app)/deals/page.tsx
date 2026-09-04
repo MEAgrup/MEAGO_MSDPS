@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { num, rupiah } from "@/lib/format";
-import { DealsToolbar } from "./forms";
-import { DealsTable, type Deal } from "./table";
+import { DealsBoard, type Deal } from "./table";
 import type { PoolLead } from "../leads/pool";
 
 const DEAL_COLUMNS =
@@ -57,19 +55,6 @@ export default async function DealsPage() {
     .map((e) => ({ id: e.id, full_name: e.full_name }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
-  const totalTransaksi = deals.length;
-  // Baris hasil Import Master Deal berhenti tanpa kategori_poi. Setiap tracker hilir
-  // memfilter kolom itu (bizdev/poi, bizdev/poi-dining), jadi baris seperti ini TIDAK
-  // pernah masuk alur operasional sampai dilengkapi. Per-baris sudah ditandai di tabel;
-  // angka agregat di sini supaya tidak perlu menelusuri seluruh daftar untuk sadar.
-  const belumLengkap = deals.filter((d) => !d.kategori_poi).length;
-  const totalNominalDeals = deals.reduce((sum, d) => sum + (d.nominal_harga ?? 0), 0);
-  const berbayarCount = deals.filter((d) => d.bentuk_kerjasama === "Berbayar").length;
-  const freeBarterCount = deals.filter((d) => d.bentuk_kerjasama === "Free/Barter").length;
-  const skemaTotal = berbayarCount + freeBarterCount;
-  const berbayarPct = skemaTotal > 0 ? Math.round((berbayarCount / skemaTotal) * 100) : 0;
-  const freeBarterPct = skemaTotal > 0 ? 100 - berbayarPct : 0;
-
   return (
     <>
       <h1>Merchant Deals</h1>
@@ -78,54 +63,13 @@ export default async function DealsPage() {
         Renewal).
       </p>
 
-      <div className="stats">
-        <div className="stat">
-          <div className="k">Total Transaksi</div>
-          <div className="v">{num(totalTransaksi)}</div>
-        </div>
-        <div className="stat">
-          <div className="k">Total Nominal Deals</div>
-          <div className="v small">{rupiah(totalNominalDeals)}</div>
-        </div>
-        <div className="stat">
-          <div className="k">Belum Lengkap</div>
-          <div className="v" style={belumLengkap > 0 ? { color: "#dc2626" } : undefined}>
-            {num(belumLengkap)}
-          </div>
-          {belumLengkap > 0 && (
-            <div className="muted" style={{ fontSize: 11, fontWeight: 500 }}>
-              belum masuk tracker operasional
-            </div>
-          )}
-        </div>
-        <div className="stat">
-          <div className="k">Skema Berbayar</div>
-          <div className="v">
-            {num(berbayarCount)} <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>({berbayarPct}%)</span>
-          </div>
-        </div>
-        <div className="stat">
-          <div className="k">Skema Free/Barter</div>
-          <div className="v">
-            {num(freeBarterCount)} <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>({freeBarterPct}%)</span>
-          </div>
-        </div>
-      </div>
-
-      {canRegister && (
-        <DealsToolbar
-          dealingLeads={dealingLeads}
-          bdOptions={bdOptions}
-          benefitOptions={benefitOptions}
-        />
-      )}
-
-      <DealsTable
+      <DealsBoard
         deals={deals}
         dealingLeads={dealingLeads}
         bdOptions={bdOptions}
         bdNameById={bdNameById}
         benefitOptions={benefitOptions}
+        canRegister={canRegister}
         canEditDelete={canEditDelete}
       />
     </>
