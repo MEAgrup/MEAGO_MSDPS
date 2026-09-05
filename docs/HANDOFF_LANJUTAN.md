@@ -22,17 +22,21 @@ dan sudah dikunci.
 
 ## 1. Keadaan sekarang (fakta terverifikasi, bukan asumsi)
 
-**Kode:** `main` = `984b814`. Migrasi terakhir `0350`. `bash scripts/pg_test_reset.sh`
-→ **71 migrasi lolos dari nol**. `npx tsc --noEmit` bersih. `npm run build` bersih.
+**Kode:** `main` = `984b814` (+ branch `claude/roaster-creator-production-7nr0r7`).
+Migrasi terakhir `0352`. `bash scripts/pg_test_reset.sh` → **73 migrasi lolos dari nol**. `npx tsc --noEmit` bersih. `npm run build` bersih.
 `node scripts/test_campaign_completion.mjs` → **15/15**.
 
 **Environment Supabase:**
 - production `mvcckptntrvzujqaoxxh` — sistem yang hidup, seluruh data operasional
-- staging `vgjzvdpxrdoefoncuazw` — setara production pada **kolom, constraint, RLS
-  policy, trigger (147), view (21), enum, bucket Storage (3), job pg_cron (4)** —
-  ini diverifikasi lewat HASH, bukan jumlah. **TIDAK setara** pada definisi fungsi
-  (26 dari 106 berbeda) dan satu index. Lihat item 3b. Klaim "setara ... fungsi (106
-  signature)" di handoff sebelumnya membandingkan jumlah, bukan isi.
+- staging `vgjzvdpxrdoefoncuazw` — **setara penuh production**, diverifikasi lewat
+  HASH per objek (bukan jumlah), sesudah migrasi `0351` + `0352`: **11 dari 11
+  kategori identik** — kolom (93), constraint (72), index (72), RLS policy (70),
+  RLS aktif (72), fungsi (106), trigger (147), view (21), enum (34), bucket
+  Storage (3), job pg_cron (4).
+  Definisi fungsi dibandingkan **sesudah dinormalisasi** (komentar `--` dan spasi
+  dibuang). Ini penting: hash mentah melaporkan 26 fungsi "berbeda" padahal 24 di
+  antaranya hanya beda komentar — alarm palsu yang sempat masuk handoff ini.
+  Satu-satunya yang tidak dibandingkan adalah daftar riwayat migrasi (item 7).
 
 **Roster kreator:** ada di production — `mcn_creators` **2.250** baris, mencakup seluruh
 2.248 roster bersih staging (terverifikasi lewat sidik jari, lihat item 1). Tapi kolom
@@ -211,46 +215,54 @@ trigger — identik dengan database bersih. Production sesudah apply: **tidak be
 
 ---
 
-### 3b. 🔒 Drift definisi fungsi & index yang BARU KETAHUAN (2026-09-04)
-Ditemukan saat memverifikasi paritas item 3 dengan `scripts/schema_fingerprint.sql`.
-Dinomori `3b` karena ini temuan turunan item 3, bukan pekerjaan yang direncanakan.
-**Handoff lama menyatakan staging "kini setara production ... fungsi (106 signature)" —
-itu membandingkan JUMLAH, bukan definisi.** Jumlahnya memang sama; isinya tidak.
+### 3b. ✅ Drift definisi fungsi & index — **SELESAI** (migrasi `0352`)
+Temuan turunan item 3, diselidiki dan dituntaskan 2026-09-04.
 
-Hasil sidik jari staging ↔ production sesudah `0351`: **9 dari 11 kategori hash-nya
-identik** (kolom, constraint, policy, RLS, trigger, view, enum, bucket, cron job).
-Dua yang tidak:
+**KOREKSI PENTING.** Laporan pertama item ini menyebut "26 dari 106 fungsi berbeda",
+termasuk validator uang `leads_validate`, `payouts_validate`, `transactions_validate`,
+dan menyimpulkan "production menjalankan logika yang tidak bisa direproduksi
+`db reset`". **Itu salah.** Hash mentah `pg_get_functiondef` ikut menghitung komentar
+`--` dan spasi. Sesudah definisinya dinormalisasi (komentar + whitespace dibuang,
+`→` vs `->` disamakan), staging dan production hanya berbeda pada **DUA** fungsi.
+Tidak ada logika uang yang menyimpang.
 
-**a. Index — 1 selisih.** Production punya `mcn_creators_status_kontrak_idx`, staging
-tidak, dan **repo tidak membuatnya sama sekali**. Asalnya commit `e9d2817` yang membuat
-index itu di `0316`; file `0316` kemudian ditulis ulang dan index-nya hilang dari repo.
-Production menjalankan versi lama. Index ini praktis mati — `status_kontrak` cuma punya
-**1 nilai berbeda** di 2.250 baris.
+Contoh alarm palsunya — seluruh selisih `leads_validate` hanyalah ini:
+```diff
+--- repo + staging                                          +++ production
+-  -- Intake BD: hanya Nama BD + Brand yang wajib.
+   if new.bd_employee_id is null then
+-  -- Baris baru selalu mulai di status 'Leads', apa pun yang dikirim client.
+   if tg_op = 'INSERT' then
+```
 
-**b. Fungsi — 26 dari 106 berbeda definisinya.** Dibandingkan ke database bersih dari
-repo:
+**Yang benar-benar berbeda, dan apa yang dilakukan:**
 
-| Kelompok | Jumlah | Contoh |
-|---|---|---|
-| staging menyimpang, **production cocok repo** | ~19 | `acquisitions_validate`, `close_deal`, `briefs_validate`, `mcn_purge_expired_weekly_data` |
-| **production menyimpang dari repo** | 4 | `leads_validate`, `payouts_validate`, `transactions_validate`, `generate_health_monthly` |
-| **staging & production dua-duanya beda dari repo** | 2 | `brand_deals_validate`, `enforce_status_transition` |
-| ada di kedua environment, **tak ada di repo**, tak dipakai kode | 1 | `create_poi_finance(uuid, payment_intent)` |
+| Objek | Temuan | Keputusan user | Dampak |
+|---|---|---|---|
+| `mcn_purge_expired_weekly_data` | staging kehilangan baris `delete from creator_video_gmv` (sisa `0317` varian staging yang dibuang `0351`) — retensi mingguan tidak pernah membersihkan tabel itu di staging | samakan ke repo | **satu-satunya beda perilaku nyata** |
+| `generate_health_monthly` | repo & staging punya `count(*) filter (where true) as n_weeks`, production tidak. `n_weeks` **tidak pernah dibaca** di badan fungsi — kode mati sejak `0208` | buang dari repo | nol |
+| `create_poi_finance(uuid, payment_intent)` | ada di staging **dan** production, isi identik, tapi tak pernah punya file migrasi; tidak dipanggil fungsi lain, trigger, `app/`, maupun `lib/` | resmikan ke repo apa adanya | nol; menutup lubang `db reset` |
+| `mcn_creators_status_kontrak_idx` | hanya di production. Asalnya commit `e9d2817` yang membuatnya di `0316`; file `0316` lalu ditulis ulang dan index-nya hilang dari repo | resmikan ke repo | nol; production tidak disentuh |
 
-Yang paling serius kelompok kedua dan ketiga: `leads_validate`, `payouts_validate`,
-`transactions_validate` adalah validator uang/bisnis. **Production menjalankan logika
-yang tidak bisa direproduksi `db reset`.** Dan `brand_deals_validate` berbeda di
-ketiga tempat — cocok dengan peringatan jebakan §3 poin 1 bahwa `brand_deals` adalah
-tabel dengan penulis paling ramai.
+Migrasi `0352_reconcile_function_drift.sql` mengerjakan keempatnya, semuanya
+idempoten dan no-op di environment yang sudah benar. Catatan jujur soal index:
+ia nyaris tidak berguna sekarang — `status_kontrak` hanya punya **satu** nilai
+berbeda di 2.250 baris (hasil backfill `0339`), jadi planner tidak akan memakainya
+sampai kolomnya benar-benar bervariasi.
 
-**Belum diperbaiki — sengaja.** Menyamakan fungsi berarti mengubah perilaku live, dan
-untuk 6 fungsi itu belum jelas versi mana yang benar secara bisnis. **Tanyakan ke user
-per fungsi**, jangan pilih sendiri. Untuk ~19 fungsi kelompok pertama, arahnya jelas
-(staging disamakan ke repo) dan risikonya rendah karena staging bukan sistem hidup.
+Perangkap yang dihindari saat menulis `0352`: signature `generate_health_monthly`
+**wajib** `char(6)` persis seperti `0208` — kalau tipenya beda sedikit saja,
+`create or replace` tidak mengganti fungsinya melainkan membuat fungsi kembar.
+Dan `create_poi_finance` diberi `revoke ... from public, anon` supaya `db reset`
+tidak menghasilkan fungsi `security definer` yang **lebih longgar** daripada
+production (PUBLIC dapat EXECUTE secara default).
 
-**Cara mengulang pemeriksaannya:** jalankan `scripts/schema_fingerprint.sql` di kedua
-sisi lalu diff (§4). Untuk melokalisasi tanpa menarik semua definisi, kelompokkan per
-`substr(md5(name),1,1)` dulu, baru turun ke bucket yang berbeda.
+**Terverifikasi:** `pg_test_reset.sh` → **73 migrasi lolos dari nol**. Di DB bersih:
+purge memuat `creator_video_gmv`, `generate_health_monthly` tanpa `n_weeks` dan
+**tidak kembar** (1 fungsi), `create_poi_finance` ada dengan ACL sama seperti fungsi
+lain, index terbentuk. Sesudah apply ke kedua environment, sidik jari penuh
+staging ↔ production: **11 dari 11 kategori hash identik** — kolom, constraint,
+index, policy, RLS, fungsi (106), trigger (147), view (21), enum, bucket, cron job.
 
 ### 4. 🔒 Drop `crm_leads` + `crm_transaksi` dari production
 0 baris di production, tidak dirujuk satu kali pun di `app/` maupun `lib/` (modul Leads
@@ -300,10 +312,14 @@ Daftar penuh di `docs/HANDOFF_FaseG.md` §7 (10 poin). Yang paling sering menggi
    bernama `brand_deals_update`, production sempat berakhir di kebijakan yang salah.
 2. **`pg_test_reset.sh` lolos ≠ environment setara.** Untuk paritas, jalankan
    `scripts/schema_fingerprint.sql` di kedua sisi lalu diff (cara pakai di `SCHEMA_DRIFT.md`).
-   **Dan bandingkan HASH, jangan JUMLAH.** Handoff 2026-09-04 menyatakan staging setara
-   production karena kedua sisi punya "106 signature" fungsi — jumlahnya memang sama,
-   tapi **26 di antaranya berbeda isi** dan baru ketahuan sehari kemudian (item 3b).
-   Jumlah objek yang sama adalah bukti yang sangat lemah.
+   **Bandingkan HASH, jangan JUMLAH** — handoff 2026-09-04 menyatakan staging setara
+   production karena kedua sisi punya "106 signature" fungsi; jumlah objek yang sama
+   adalah bukti yang sangat lemah.
+   **Tapi NORMALISASI dulu definisinya** (buang komentar `--` dan spasi) sebelum
+   di-hash. Tanpa itu arahnya salah ke sisi lain: hash mentah `pg_get_functiondef`
+   melaporkan **26 fungsi "berbeda"** padahal **24 di antaranya hanya beda komentar**,
+   dan sempat memicu kesimpulan keliru bahwa validator uang di production menyimpang
+   (item 3b). Beda komentar bukan drift.
    Bandingkan juga ke **database bersih dari repo**, bukan hanya dua environment satu
    sama lain: kalau keduanya sama-sama menyimpang dari repo, diff antar-environment
    akan terlihat bersih dan menipu.
