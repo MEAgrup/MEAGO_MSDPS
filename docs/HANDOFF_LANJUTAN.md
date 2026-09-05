@@ -5,6 +5,14 @@ ringkasan riwayat — riwayat lengkapnya ada di dokumen yang dirujuk di bawah.
 
 ---
 
+> ⚠ **Diperbarui 2026-09-05 — baca `docs/STATUS_2026-09-05.md` DULU.**
+> Paritas production ↔ staging diverifikasi ulang: **11 dari 11 kategori identik**, hanya
+> daftar riwayat migrasi yang berbeda. **Tapi ada temuan baru:** repo TIDAK setara dengan
+> keduanya — ada 6 objek yang hidup di prod & staging tapi tidak bisa dihasilkan
+> `db reset`, dua di antaranya (`auth_users_token_defaults` + trigger `auth.users`, dan
+> `update_poi_realisasi`) belum pernah terdokumentasi. Task list terbaru (T1–T9) ada di
+> §6 dokumen itu, menggantikan urutan di §2 dokumen ini.
+
 ## 0. Baca ini dulu (urut)
 
 | Dokumen | Isinya |
@@ -14,6 +22,7 @@ ringkasan riwayat — riwayat lengkapnya ada di dokumen yang dirujuk di bawah.
 | `docs/GLOSARIUM.md` | "Merchant" berarti dua hal berlawanan; 3 ejaan Accommodation; 3 arti "campaign" |
 | `docs/RUNBOOK_CAMPAIGN_PERTAMA.md` | Prosedur menjalankan campaign Fase G pertama (item 2) |
 | `docs/BUILD_PLAN.md` | Tracker progres modul |
+| `docs/STATUS_2026-09-05.md` | **Terbaru.** Paritas prod/staging/repo terverifikasi + task list T1–T9 |
 
 Jangan re-litigasi keputusan di `HANDOFF_FaseG.md` §5 — semuanya hasil interview 4 ronde
 dan sudah dikunci.

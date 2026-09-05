@@ -175,7 +175,12 @@ dikonfirmasi ulang lewat `pg_policies` setelah selesai. `0332` memuat
 | Bucket Storage | 3 di kedua sisi (`campaign-proofs`, `creator-reports`, `weekly-archives`) |
 | Job pg_cron | 4 di kedua sisi |
 
-### Drift yang MASIH terbuka (bukan bagian dari perbaikan ini)
+### Drift yang MASIH terbuka (bukan bagian dari perbaikan ini) — ✅ SUDAH DITUTUP 2026-09-04 oleh `0351`
+
+> Bagian ini dipertahankan sebagai catatan sejarah. Ketiga baris di bawah **sudah
+> tidak berlaku**: `0351_drop_staging_only_drift.sql` membuang seluruhnya dan
+> paritas staging ↔ production diverifikasi ulang 2026-09-05 (lihat
+> `docs/STATUS_2026-09-05.md`).
 
 Keduanya **staging-lebih-maju**, berasal dari migrasi yang hanya pernah ada di staging
 dan tidak punya file di repo — jadi `db reset` maupun production tidak memilikinya.
@@ -188,8 +193,15 @@ Butuh keputusan (dipakai atau dibuang), bukan sekadar apply:
 | `creator_video_gmv` (23 kolom vs 16 di prod) | staging-lebih-maju | `0317_gmv_video_weekly_tracking_fix`, `0318_gmv_video_per_creator_week`, `0320_gmv_video_weekly` |
 
 Perhatikan nomornya bertabrakan dengan `0317_gmv_video_weekly_tracking` /
-`0318_auth_users_token_null_guard` / `0320_brand_deals_poi_reconcile` yang ada di repo —
-kelas masalah yang sama dengan tabrakan `0341`-`0343` pada Fase G.
+`0320_brand_deals_poi_reconcile` yang ada di repo — kelas masalah yang sama dengan
+tabrakan `0341`-`0343` pada Fase G.
+
+**Koreksi 2026-09-05.** Kalimat ini sebelumnya ikut menyebut
+`0318_auth_users_token_null_guard` sebagai migrasi "yang ada di repo". **Itu salah** —
+nama itu tercatat di riwayat staging **dan** production, tetapi filenya tidak pernah
+ada di repo (`git log --all -- 'supabase/migrations/0318*'` kosong). Objek yang
+dibuatnya nyata dan hidup di kedua environment; rinciannya di
+`docs/STATUS_2026-09-05.md` §3.
 
 ### Drift repo ↔ production yang ikut ketemu — SUDAH DIPERBAIKI (`0350`)
 
