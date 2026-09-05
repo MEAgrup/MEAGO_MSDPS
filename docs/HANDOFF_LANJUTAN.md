@@ -271,16 +271,60 @@ yang dipakai adalah `leads` M1). Perintahnya sudah siap di bagian bawah
 tidak bisa dibatalkan. Kalau disetujui, buat file migrasi untuk drop-nya (jangan `execute_sql`
 langsung), lalu hapus juga blok "sengaja tidak direkonsiliasi" di `0339`.
 
-### 5. Dua model realisasi bertabrakan (B2/B4) — tidak butuh izin untuk *menyelidiki*
-`brand_deals.poin` dihitung trigger `brand_deals_validate()` dari `visit_checked` +
-`kreator_realized`, tapi **tidak ada satu baris kode pun** di `app/` atau `lib/` yang
-menulis kolom-kolom itu. Yang benar-benar diisi tim adalah `poi_sop_progress.actual_vt`
-(form di `app/(app)/bizdev/poi/poi-card.tsx`). Akibatnya skor BD selalu 0 dan
-`v_poi_deal_summary` selalu 0.
+### 5. 🔒 Dua model realisasi bertabrakan (B2/B4) — **SUDAH DISELIDIKI**, tinggal keputusan
+Penyelidikan selesai 2026-09-04. Handoff lama benar; sekarang ada angkanya.
 
-Fase G.4 menutup masalah ini untuk jalur campaign (realisasi jadi turunan bukti
-per-kreator), tapi **jalur POI non-campaign belum**. Menyatukannya = perubahan perilaku →
-sajikan opsinya + rekomendasi ke user, jangan pilih sumber kebenaran sendiri.
+**Fakta terverifikasi di production:**
+
+| Ukuran | Nilai |
+|---|---|
+| `brand_deals` total | 81 (11 di antaranya deal POI) |
+| `visit_checked = true` | **0** |
+| `kreator_realized` terisi | **0** |
+| `video_realized` terisi | **0** |
+| `poin > 0` | **0** |
+| `v_poi_deal_summary` | 5 baris BD, `realisasi_visit` **0**, `poin_sum` **0** |
+| `poi_sop_progress.actual_vt` terisi | 2 dari 10 |
+| `poi_sop_progress.total_gmv` terisi | 3 dari 10 |
+| `poi_sop_steps` | 150 baris langkah SOP ditracking |
+
+**Kenapa nol.** `brand_deals_validate()` (migrasi `0333`) menghitung `poin` sebagai
+turunan: aturan dari `app_config.poi.poin_rule` — `visit_checked` false → `poin = 0`;
+kalau true, rasio `kreator_realized / kreator_needed` menentukan 2 / 1 / 0.5 poin.
+Masalahnya **tidak ada satu baris kode pun** yang menulis `visit_checked`,
+`kreator_realized`, `video_realized`, `listing_date`, maupun `visit_realized_date` —
+diverifikasi 0 rujukan di `app/` dan `lib/`. Fungsi `update_poi_realisasi()` yang
+memang dirancang menulis kelimanya **tidak pernah dipanggil** dari kode.
+
+Yang benar-benar diisi tim adalah form di `app/(app)/bizdev/poi/poi-card.tsx` →
+`poi_sop_progress.actual_vt` + `total_gmv` + langkah SOP. Field **"Actual VT"** itu
+maknanya hitungan realisasi — **padanan langsung `kreator_realized`**. Jadi ada dua
+kolom untuk hal yang sama, dan formula skor membaca kolom yang salah.
+
+Akibatnya papan skor BD menampilkan 0 untuk semua orang padahal pekerjaannya nyata.
+Ini juga menjelaskan penanda `hasilKosong` di `poi-card.tsx:141` — SOP 15/15 selesai
+tapi hasilnya NULL, kondisi yang ditemukan di semua transaksi live saat audit
+2026-09-02.
+
+**Fase G.4 sudah menyelesaikan ini untuk jalur campaign** (realisasi jadi turunan
+bukti per-kreator). Jalur POI non-campaign belum.
+
+**Opsi — pilih satu, JANGAN diputuskan sendiri (perubahan perilaku):**
+
+| | Opsi | Konsekuensi |
+|---|---|---|
+| **A** | Sambungkan form POI ke kolom `brand_deals` — panggil `update_poi_realisasi()` dari server action yang sudah ada | Paling sedikit kode, formula skor `0333` tetap apa adanya. **Tapi** `actual_vt` dan `kreator_realized` jadi dua kolom menyimpan hal sama; suatu saat pasti berbeda dan tak ada yang tahu mana yang benar. |
+| **B** | Jadikan `poin` turunan dari `poi_sop_progress` — ubah `brand_deals_validate()` + `v_poi_deal_summary` supaya membaca `actual_vt` / kelengkapan langkah visit | Sumber kebenaran pindah ke tempat tim benar-benar mengisi; double-entry hilang. Sejalan dengan pola Fase G.4 (realisasi = turunan bukti). Perubahan perilaku paling besar, dan `visit_checked` perlu padanan (mis. langkah visit di `poi_sop_steps` selesai). |
+| **C** | Sembunyikan papan skornya | Kalau skor BD POI memang belum dipakai untuk keputusan apa pun, menampilkan 0 lebih menyesatkan daripada tidak menampilkan sama sekali. Menunda masalahnya, tidak menyelesaikan. |
+
+**Rekomendasi: B.** Meminta tim mengisi angka yang sama dua kali (opsi A) adalah cara
+paling pasti untuk melahirkan drift data berikutnya — dan repo ini sudah punya cukup
+banyak. B menaruh sumber kebenaran di satu tempat, yaitu tempat pekerjaannya benar-benar
+dicatat. Sebelum mengerjakan B, **konfirmasi dulu ke user** bahwa "Actual VT" memang
+setara `kreator_realized`, dan tentukan apa padanan `visit_checked`.
+
+Kolom realisasi lama di `brand_deals` sebaiknya **tidak langsung di-drop** — tandai
+deprecated dulu supaya kalau ada laporan lama yang membacanya, ketahuan.
 
 ### 6. 🔒 70 deal "belum lengkap"
 Hasil Import Master Deal tanpa `kategori_poi`/brief/PIC/jadwal visit. Nama brand-nya nyata
