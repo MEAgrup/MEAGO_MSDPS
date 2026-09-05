@@ -28,9 +28,11 @@ dan sudah dikunci.
 
 **Environment Supabase:**
 - production `mvcckptntrvzujqaoxxh` — sistem yang hidup, seluruh data operasional
-- staging `vgjzvdpxrdoefoncuazw` — **kini setara production** pada kolom, constraint, RLS
-  policy, fungsi (106 signature), trigger (147), view (21), enum (158 label), bucket
-  Storage (3), job pg_cron (4). Kecuali tiga objek di item 3 daftar kerja bawah.
+- staging `vgjzvdpxrdoefoncuazw` — setara production pada **kolom, constraint, RLS
+  policy, trigger (147), view (21), enum, bucket Storage (3), job pg_cron (4)** —
+  ini diverifikasi lewat HASH, bukan jumlah. **TIDAK setara** pada definisi fungsi
+  (26 dari 106 berbeda) dan satu index. Lihat item 3b. Klaim "setara ... fungsi (106
+  signature)" di handoff sebelumnya membandingkan jumlah, bukan isi.
 
 **Roster kreator:** ada di production — `mcn_creators` **2.250** baris, mencakup seluruh
 2.248 roster bersih staging (terverifikasi lewat sidik jari, lihat item 1). Tapi kolom
@@ -172,24 +174,83 @@ seluruh kolom segmentasi (`niche`, `city`, `creator_level`, `jenis_creator`) kos
 campaign uji pertama **harus** membiarkan kolom `eligible_*` NULL. Rinciannya di item 1. Parser bukti sudah siap & teruji (75 QC assertion ke 2 file export nyata):
 `node scripts/qc_content_analysis.mjs <file1.xlsx> <file2.xlsx>`.
 
-### 3. 🔒 Putuskan dua kelompok drift staging-lebih-maju
-Objek yang ada di staging, **tidak** ada di production, dan **tidak punya file di repo** —
-jadi `db reset` juga tidak memilikinya. Butuh keputusan, bukan sekadar apply:
+### 3. ✅ Dua kelompok drift staging-lebih-maju — **SELESAI** (migrasi `0351`)
+Diselidiki, diputuskan user, dan diterapkan 2026-09-04. Framing handoff lama keliru
+untuk salah satunya.
 
-| Objek | Staging | Production |
+**Kelompok A — `creator_video_gmv`: bukan "staging lebih maju", tapi beda grain.**
+Handoff lama menulis "staging 23 kolom vs production 16", seolah superset. Nyatanya:
+
+| | Bentuk | Kunci |
 |---|---|---|
-| `acquisitions` | 18 kolom + policy `acquisitions_delete` | 14 kolom |
-| `acquisition_followups` | ada (tabel + 2 policy) | tidak ada |
-| `creator_video_gmv` | 23 kolom | 16 kolom |
+| repo `0317` + production | **per-video** | `video_id not null`, unique `(creator_id, video_id, period_start)` |
+| staging | **per-kreator-per-minggu** | **tidak punya `video_id` sama sekali** |
 
-Asalnya migrasi staging-only `0317_acquisition_extra_fields`,
-`0318_acquisition_delete_policy`, `0319_acquisition_followups`,
-`0317_gmv_video_weekly_tracking_fix`, `0318_gmv_video_per_creator_week`,
-`0320_gmv_video_weekly` — nomornya **bertabrakan** dengan file repo yang isinya berbeda.
+Kode wajib bentuk per-video (`lib/actions/video-ingest.ts` menulis
+`video_id/likes/comments/shares/conversion_rate`; `app/(app)/meago/gmv-video/page.tsx`
+men-`select` `video_id, views, likes`). Jadi **aplikasi error bila dijalankan terhadap
+staging** — yang menyimpang staging, bukan production. Kedua sisi 0 baris.
 
-**Tanyakan:** fitur Acquisition follow-up & GMV video per-creator-week ini dipakai atau
-eksperimen yang ditinggalkan? Kalau dipakai → tulis file migrasi baru di repo (nomor baru,
-jangan pakai nomor lama) lalu apply ke production. Kalau tidak → drop dari staging.
+**Kelompok B — `acquisitions` + `acquisition_followups`: eksperimen SQL Editor.**
+`git log -S` membuktikan `binding_end_date`, `kreator_kontrak`, dan
+`acquisition_followups` **tidak pernah ada di repo** (jebakan §3 poin 3).
+`lib/actions/acquisition.ts` hanya menulis 7 kolom dan tak pernah menyentuh keempatnya.
+
+**Keputusan user:** keduanya **dibuang**, staging dikembalikan setara repo.
+
+**Yang dikerjakan:** `0351_drop_staging_only_drift.sql` — drop 4 kolom + policy
+`acquisitions_delete` + tabel `acquisition_followups`, dan bangun ulang
+`creator_video_gmv` **hanya bila bentuknya salah** (dijaga: gagal keras kalau tabelnya
+ternyata berisi data). Di production & `db reset` seluruhnya no-op.
+
+**Terverifikasi:** `pg_test_reset.sh` → **72 migrasi lolos dari nol**; di database bersih
+`0351` tidak mengubah apa pun. Staging sesudah apply: `acquisitions` 14 kolom (4 baris
+utuh), `acquisition_followups` hilang, `creator_video_gmv` 16 kolom/3 policy/5 index/1
+trigger — identik dengan database bersih. Production sesudah apply: **tidak berubah**
+(14 kolom, 1 baris, `creator_video_gmv` tetap per-video, 2.250 kreator aman).
+
+---
+
+### 3b. 🔒 Drift definisi fungsi & index yang BARU KETAHUAN (2026-09-04)
+Ditemukan saat memverifikasi paritas item 3 dengan `scripts/schema_fingerprint.sql`.
+Dinomori `3b` karena ini temuan turunan item 3, bukan pekerjaan yang direncanakan.
+**Handoff lama menyatakan staging "kini setara production ... fungsi (106 signature)" —
+itu membandingkan JUMLAH, bukan definisi.** Jumlahnya memang sama; isinya tidak.
+
+Hasil sidik jari staging ↔ production sesudah `0351`: **9 dari 11 kategori hash-nya
+identik** (kolom, constraint, policy, RLS, trigger, view, enum, bucket, cron job).
+Dua yang tidak:
+
+**a. Index — 1 selisih.** Production punya `mcn_creators_status_kontrak_idx`, staging
+tidak, dan **repo tidak membuatnya sama sekali**. Asalnya commit `e9d2817` yang membuat
+index itu di `0316`; file `0316` kemudian ditulis ulang dan index-nya hilang dari repo.
+Production menjalankan versi lama. Index ini praktis mati — `status_kontrak` cuma punya
+**1 nilai berbeda** di 2.250 baris.
+
+**b. Fungsi — 26 dari 106 berbeda definisinya.** Dibandingkan ke database bersih dari
+repo:
+
+| Kelompok | Jumlah | Contoh |
+|---|---|---|
+| staging menyimpang, **production cocok repo** | ~19 | `acquisitions_validate`, `close_deal`, `briefs_validate`, `mcn_purge_expired_weekly_data` |
+| **production menyimpang dari repo** | 4 | `leads_validate`, `payouts_validate`, `transactions_validate`, `generate_health_monthly` |
+| **staging & production dua-duanya beda dari repo** | 2 | `brand_deals_validate`, `enforce_status_transition` |
+| ada di kedua environment, **tak ada di repo**, tak dipakai kode | 1 | `create_poi_finance(uuid, payment_intent)` |
+
+Yang paling serius kelompok kedua dan ketiga: `leads_validate`, `payouts_validate`,
+`transactions_validate` adalah validator uang/bisnis. **Production menjalankan logika
+yang tidak bisa direproduksi `db reset`.** Dan `brand_deals_validate` berbeda di
+ketiga tempat — cocok dengan peringatan jebakan §3 poin 1 bahwa `brand_deals` adalah
+tabel dengan penulis paling ramai.
+
+**Belum diperbaiki — sengaja.** Menyamakan fungsi berarti mengubah perilaku live, dan
+untuk 6 fungsi itu belum jelas versi mana yang benar secara bisnis. **Tanyakan ke user
+per fungsi**, jangan pilih sendiri. Untuk ~19 fungsi kelompok pertama, arahnya jelas
+(staging disamakan ke repo) dan risikonya rendah karena staging bukan sistem hidup.
+
+**Cara mengulang pemeriksaannya:** jalankan `scripts/schema_fingerprint.sql` di kedua
+sisi lalu diff (§4). Untuk melokalisasi tanpa menarik semua definisi, kelompokkan per
+`substr(md5(name),1,1)` dulu, baru turun ke bucket yang berbeda.
 
 ### 4. 🔒 Drop `crm_leads` + `crm_transaksi` dari production
 0 baris di production, tidak dirujuk satu kali pun di `app/` maupun `lib/` (modul Leads
@@ -239,6 +300,13 @@ Daftar penuh di `docs/HANDOFF_FaseG.md` §7 (10 poin). Yang paling sering menggi
    bernama `brand_deals_update`, production sempat berakhir di kebijakan yang salah.
 2. **`pg_test_reset.sh` lolos ≠ environment setara.** Untuk paritas, jalankan
    `scripts/schema_fingerprint.sql` di kedua sisi lalu diff (cara pakai di `SCHEMA_DRIFT.md`).
+   **Dan bandingkan HASH, jangan JUMLAH.** Handoff 2026-09-04 menyatakan staging setara
+   production karena kedua sisi punya "106 signature" fungsi — jumlahnya memang sama,
+   tapi **26 di antaranya berbeda isi** dan baru ketahuan sehari kemudian (item 3b).
+   Jumlah objek yang sama adalah bukti yang sangat lemah.
+   Bandingkan juga ke **database bersih dari repo**, bukan hanya dua environment satu
+   sama lain: kalau keduanya sama-sama menyimpang dari repo, diff antar-environment
+   akan terlihat bersih dan menipu.
 3. **Setiap perubahan skema live WAJIB punya file migrasi** — termasuk perbaikan cepat lewat
    SQL Editor. Tanpa ini, `db reset` & provisioning environment baru mati.
 4. **`ALTER TYPE … ADD VALUE` harus migrasi terpisah** (aturan rumah `0300:5-8`).
