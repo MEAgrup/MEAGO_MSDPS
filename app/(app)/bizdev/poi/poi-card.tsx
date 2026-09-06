@@ -34,6 +34,7 @@ export type PoiTransaction = {
   visit_start_time: string | null;
   progress_id: string;
   ops_datetime: string | null;
+  actual_kreator: number | null;
   actual_vt: number | null;
   total_gmv: number | null;
   report_link: string | null;
@@ -138,7 +139,13 @@ export function PoiCard({
   // transaksi seperti itu tampak "beres" padahal deliverable vs realisasi tidak bisa
   // dibandingkan sama sekali — kondisi yang ditemukan di semua transaksi live saat
   // audit 2026-09-02 (SOP 15/15 selesai, actual_vt & total_gmv masih NULL).
-  const hasilKosong = allDone && tx.actual_vt === null && tx.total_gmv === null;
+  //
+  // Sejak migrasi 0355 (opsi B) `actual_kreator` ikut dihitung, dan justru kolom
+  // ITULAH dasar skor BD — SOP selesai tanpa jumlah kreator berarti deal-nya
+  // berpoin 0 meski VT dan GMV terisi. Karena itu kekosongannya diperlakukan
+  // sebagai "hasil kosong" walaupun kolom lain sudah ada isinya.
+  const hasilKosong =
+    allDone && (tx.actual_kreator === null || (tx.actual_vt === null && tx.total_gmv === null));
 
   const sopLabel = allDone
     ? `Selesai (${tx.steps.length}/${tx.steps.length} step)`
@@ -249,17 +256,34 @@ export function PoiCard({
                     {!tx.ops_datetime && <p className="hint">Saran H-10 dari Tanggal Visit — ganti bila perlu.</p>}
                   </div>
                   <div>
-                    <label>Actual VT</label>
-                    <input type="number" name="actual_vt" min="0" step="1" defaultValue={tx.actual_vt ?? ""} />
+                    <label>Kreator Tercapai</label>
+                    <input
+                      type="number"
+                      name="actual_kreator"
+                      min="0"
+                      step="1"
+                      defaultValue={tx.actual_kreator ?? ""}
+                    />
+                    <p className="hint">
+                      Jumlah kreator, bukan jumlah video. Dasar skor BD (maks 100% dari kebutuhan).
+                    </p>
                   </div>
                 </div>
 
                 <div className="row">
                   <div>
+                    <label>Actual VT</label>
+                    <input type="number" name="actual_vt" min="0" step="1" defaultValue={tx.actual_vt ?? ""} />
+                    <p className="hint">Total video. Boleh melebihi jumlah kreator (1 kreator bisa &gt;1 video).</p>
+                  </div>
+                  <div>
                     <label>Total GMV</label>
                     <input type="number" name="total_gmv" min="0" step="1" defaultValue={tx.total_gmv ?? ""} />
                     {tx.total_gmv != null && <p className="hint">{rupiah(tx.total_gmv)}</p>}
                   </div>
+                </div>
+
+                <div className="row">
                   <div>
                     <label>Status Report</label>
                     <select name="report_status" defaultValue={tx.report_status ?? ""}>
