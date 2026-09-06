@@ -5,6 +5,11 @@ ringkasan riwayat — riwayat lengkapnya ada di dokumen yang dirujuk di bawah.
 
 ---
 
+> 🛑 **DOKUMEN INI USANG per 2026-09-06.** Titik mulai terbaru:
+> **`docs/HANDOFF_2026-09-06.md`**, dengan laporan lengkapnya di
+> `docs/STATUS_2026-09-05.md`. Task list di §2 dokumen ini sudah tidak berlaku —
+> item 1, 3, 3b, 5, dan 7 semuanya SELESAI. Dipertahankan sebagai catatan sejarah.
+
 > ⚠ **Diperbarui 2026-09-05 — baca `docs/STATUS_2026-09-05.md` DULU.**
 > Paritas production ↔ staging diverifikasi ulang: **11 dari 11 kategori identik**, hanya
 > daftar riwayat migrasi yang berbeda. **Tapi ada temuan baru:** repo TIDAK setara dengan
