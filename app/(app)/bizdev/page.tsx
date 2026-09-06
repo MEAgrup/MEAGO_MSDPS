@@ -2,15 +2,9 @@ import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah } from "@/lib/format";
 import { projectBadge, todayJakartaYMD } from "@/lib/mcn/project-status";
-import { campaignRoutingNext, type CampaignRoutingState } from "@/lib/mcn/routing";
 import { requestTypeLabel } from "@/lib/mcn/request-types";
 import {
   ShopLeadForm,
-  CampaignRequestForm,
-  CmConfirmButtons,
-  BrandAccButtons,
-  FinalizeButtons,
-  HandoverButton,
   PipelineStageSelect,
   PIPELINE_STAGES,
   RequestProgressControls,
@@ -38,19 +32,6 @@ type Deal = {
   shop_id: string | null;
   pipeline_stage: string;
   status: string;
-};
-
-type CampaignRequest = {
-  id: string;
-  code: string | null;
-  deal_id: string | null;
-  mcn_creator_id: string | null;
-  owner_cpm_id: string | null;
-  cm_confirm_status: "menunggu" | "mau" | "tidak";
-  needs_brand_acc: boolean;
-  brand_acc_status: "n_a" | "menunggu" | "approved" | "ditolak";
-  final_status: "proses" | "fix" | "batal";
-  handover_done: boolean;
 };
 
 type ProjectSummary = {
@@ -83,9 +64,7 @@ export default async function BizDevPage() {
   const [
     { data: reqRaw },
     { data: dealsRaw },
-    { data: crRaw },
     { data: creatorsRaw },
-    { data: emps },
     { data: shopsRaw },
     { data: projRaw },
   ] = await Promise.all([
@@ -99,14 +78,7 @@ export default async function BizDevPage() {
       .from("brand_deals")
       .select("id, code, brand_name, shop_id, pipeline_stage, status")
       .order("created_at", { ascending: false }),
-    supabase
-      .from("campaign_requests")
-      .select(
-        "id, code, deal_id, mcn_creator_id, owner_cpm_id, cm_confirm_status, needs_brand_acc, brand_acc_status, final_status, handover_done"
-      )
-      .order("created_at", { ascending: false }),
     supabase.from("mcn_creators").select("id, name, code").order("name", { ascending: true }),
-    supabase.from("employees").select("id, full_name"),
     supabase.from("cooperating_shops").select("shop_id, shop_name"),
     // (f) Special Project (read-only): semua kecuali cancelled — yang belum mulai
     // tampil [Persiapan] (QA 2026-07-17).
@@ -122,16 +94,9 @@ export default async function BizDevPage() {
   const requests = (reqRaw as CreatorRequest[] | null) ?? [];
 
   const deals = (dealsRaw as Deal[] | null) ?? [];
-  const runningDeals = deals.filter((d) => d.status === "running");
-
-  const campaignRequests = (crRaw as CampaignRequest[] | null) ?? [];
 
   const creators = (creatorsRaw as { id: string; name: string; code: string | null }[] | null) ?? [];
   const creatorName = new Map(creators.map((c) => [c.id, `${c.code ?? "—"} · ${c.name}`]));
-
-  const empName = new Map(((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name]));
-
-  const dealBrand = new Map(deals.map((d) => [d.id, `${d.code ?? "—"} · ${d.brand_name}`]));
 
   const shops = (shopsRaw as { shop_id: string; shop_name: string | null }[] | null) ?? [];
   const shopIds = shops.map((s) => s.shop_id);
@@ -282,73 +247,15 @@ export default async function BizDevPage() {
       </div>
 
       <div className="card">
-        <h2>Routing Campaign</h2>
-        <CampaignRequestForm
-          deals={runningDeals.map((d) => ({ id: d.id, code: d.code, brand_name: d.brand_name }))}
-          creators={creators}
-        />
-        <table style={{ marginTop: 16 }}>
-          <thead>
-            <tr>
-              <th>Kode</th>
-              <th>Deal</th>
-              <th>Kreator</th>
-              <th>Owner CM</th>
-              <th>Status</th>
-              <th>Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            {campaignRequests.map((cr) => {
-              const state: CampaignRoutingState = {
-                cm_confirm_status: cr.cm_confirm_status,
-                needs_brand_acc: cr.needs_brand_acc,
-                brand_acc_status: cr.brand_acc_status,
-                final_status: cr.final_status,
-                handover_done: cr.handover_done,
-              };
-              const canCmConfirm = campaignRoutingNext(state, "cm_mau").ok;
-              const canBrandAcc = campaignRoutingNext(state, "brand_approve").ok;
-              const canFinalize =
-                campaignRoutingNext(state, "finalize_fix").ok || campaignRoutingNext(state, "finalize_batal").ok;
-              const canHandover = campaignRoutingNext(state, "handover").ok;
-              return (
-                <tr key={cr.id}>
-                  <td className="mono">{cr.code ?? "—"}</td>
-                  <td className="muted">{cr.deal_id ? dealBrand.get(cr.deal_id) ?? "—" : "—"}</td>
-                  <td>{cr.mcn_creator_id ? creatorName.get(cr.mcn_creator_id) ?? "—" : "—"}</td>
-                  <td className="muted">{cr.owner_cpm_id ? empName.get(cr.owner_cpm_id) ?? "—" : "—"}</td>
-                  <td>
-                    <span className="badge slate">CM: {cr.cm_confirm_status}</span>{" "}
-                    {cr.needs_brand_acc && <span className="badge slate">Brand: {cr.brand_acc_status}</span>}{" "}
-                    <span className="badge slate">Final: {cr.final_status}</span>{" "}
-                    {cr.handover_done && <span className="badge green">handover done</span>}
-                  </td>
-                  <td>
-                    <CmConfirmButtons id={cr.id} can={canCmConfirm} />
-                    <BrandAccButtons id={cr.id} can={canBrandAcc} />
-                    <FinalizeButtons id={cr.id} can={canFinalize} />
-                    <HandoverButton id={cr.id} can={canHandover} />
-                  </td>
-                </tr>
-              );
-            })}
-            {campaignRequests.length === 0 && (
-              <tr>
-                <td colSpan={6} className="muted">
-                  Belum ada campaign request.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="card">
         <h2>Lead Shop → Pool Leads</h2>
         <ShopLeadForm />
       </div>
 
+      {/* Brand Report — bersumber dari `cooperating_shops`, yang diisi trigger
+          brand_deals_sync_shop() hanya bila `shop_id` terisi. Form deal saat ini tidak
+          pernah mengisi shop_id (0 dari 77 baris live), jadi tabel ini selalu kosong.
+          Disembunyikan saat kosong; akan hidup sendiri begitu ada deal ber-shop_id. */}
+      {brandReport.length > 0 && (
       <div className="card">
         <h2>Brand Report Ringkas (GMV per shop ber-deal)</h2>
         <table>
@@ -367,16 +274,10 @@ export default async function BizDevPage() {
                 <td className="right">{rupiah(r.gmv)}</td>
               </tr>
             ))}
-            {brandReport.length === 0 && (
-              <tr>
-                <td colSpan={3} className="muted">
-                  Belum ada shop ber-deal.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
+      )}
 
       <div className="card">
         <h2>Special Project</h2>

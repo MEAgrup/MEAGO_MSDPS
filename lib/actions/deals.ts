@@ -2,361 +2,563 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { parseCommission, parseFlexibleDate, parseRupiah } from "@/lib/mcn/parsers";
+import { isBrandCategory, isDealStatus, normalizePhone62 } from "@/lib/leads/intake";
+import { isBentukKerjasama, isOpsName } from "@/lib/deals/intake";
+import { parseIntTolerant, parseRupiah } from "@/lib/mcn/parsers";
 
 export type ActionResult = { ok: boolean; message: string };
+
+type Me = { id: string; division: string; rank: string | null; is_od: boolean; is_director: boolean };
 
 async function ctx() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { supabase, user: null, me: null };
+  if (!user) return { supabase, user: null, me: null as Me | null };
   const { data: me } = await supabase
     .from("employees")
     .select("id, division, rank, is_od, is_director")
     .eq("id", user.id)
     .maybeSingle();
-  return { supabase, user, me };
+  return { supabase, user, me: me as Me | null };
 }
 
-// registerDeal: form registrasi deal tervalidasi. fieldErrors dikumpulkan lalu digabung
-// jadi satu pesan terstruktur. shop_id (bila diisi) numeric-only + cek duplikat dulu.
-// Produk dinamis dibaca dari entries product_name_0.., mewarisi niche/exp/komisi deal.
-export async function registerDeal(
-  _prev: ActionResult | null,
-  formData: FormData
-): Promise<ActionResult> {
-  const { supabase, user } = await ctx();
-  if (!user) return { ok: false, message: "Tidak terautentikasi." };
-
-  const brand_name = String(formData.get("brand_name") || "").trim();
-  const shop_id = String(formData.get("shop_id") || "").trim() || null;
-  const merchant_id = String(formData.get("merchant_id") || "").trim() || null;
-  const niche = String(formData.get("niche") || "").trim() || null;
-  const brand_link = String(formData.get("brand_link") || "").trim() || null;
-  const campaign_name = String(formData.get("campaign_name") || "").trim() || null;
-  const campaign_id = String(formData.get("campaign_id") || "").trim() || null;
-  const pic_tap = String(formData.get("pic_tap") || "").trim() || null;
-  const expRaw = String(formData.get("exp_date") || "").trim();
-  const komisiKreatorRaw = String(formData.get("komisi_kreator") || "").trim();
-  const komisiMeaRaw = String(formData.get("komisi_mea") || "").trim();
-  const sourced_by_role = String(formData.get("sourced_by_role") || "").trim() || "bd";
-  const kreatorsNeededRaw = String(formData.get("kreators_needed") || "").trim();
-  const videosNeededRaw = String(formData.get("videos_needed") || "").trim();
-  const poi_location = String(formData.get("poi_location") || "").trim() || null;
-
-  const fieldErrors: Record<string, string> = {};
-
-  if (!brand_name) fieldErrors.brand_name = "brand wajib diisi (persis nama tampilan platform)";
-
-  // kreators_needed / videos_needed (opsional, info-only 0312): angka bulat bila diisi.
-  let kreators_needed: number | null = null;
-  if (kreatorsNeededRaw) {
-    if (!/^[0-9]+$/.test(kreatorsNeededRaw)) fieldErrors.kreators_needed = "harus angka bulat";
-    else kreators_needed = parseInt(kreatorsNeededRaw, 10);
-  }
-  let videos_needed: number | null = null;
-  if (videosNeededRaw) {
-    if (!/^[0-9]+$/.test(videosNeededRaw)) fieldErrors.videos_needed = "harus angka bulat";
-    else videos_needed = parseInt(videosNeededRaw, 10);
-  }
-
-  // shop_id: numeric-only bila diisi + cek duplikat sebelum insert.
-  if (shop_id !== null && !/^[0-9]+$/.test(shop_id)) {
-    fieldErrors.shop_id = "shop ID harus angka saja";
-  } else if (shop_id !== null) {
-    const { data: dup } = await supabase
-      .from("brand_deals")
-      .select("code, brand_name")
-      .eq("shop_id", shop_id)
-      .maybeSingle();
-    if (dup) fieldErrors.shop_id = `shop ID sudah dipakai deal ${dup.code} — ${dup.brand_name}`;
-  }
-
-  // exp_date wajib valid.
-  let exp_date: string | null = null;
-  if (!expRaw) {
-    fieldErrors.exp_date = "tanggal exp wajib diisi";
-  } else {
-    exp_date = parseFlexibleDate(expRaw);
-    if (!exp_date) fieldErrors.exp_date = "tanggal exp tidak valid";
-  }
-
-  // Komisi kreator (opsional; bila diisi wajib parse & 0-100, max>=min).
-  let komisi_kreator_raw: string | null = null;
-  let komisi_kreator_pct: number | null = null;
-  if (komisiKreatorRaw) {
-    const c = parseCommission(komisiKreatorRaw);
-    if (!c) fieldErrors.komisi_kreator = "komisi kreator tidak valid (0-100, max>=min)";
-    else {
-      komisi_kreator_raw = c.raw;
-      komisi_kreator_pct = c.pct;
-    }
-  }
-  let komisi_mea_raw: string | null = null;
-  let komisi_mea_pct: number | null = null;
-  if (komisiMeaRaw) {
-    const c = parseCommission(komisiMeaRaw);
-    if (!c) fieldErrors.komisi_mea = "komisi MEA tidak valid (0-100, max>=min)";
-    else {
-      komisi_mea_raw = c.raw;
-      komisi_mea_pct = c.pct;
-    }
-  }
-
-  if (Object.keys(fieldErrors).length > 0) {
-    const detail = Object.entries(fieldErrors)
-      .map(([f, msg]) => `• ${f}: ${msg}`)
-      .join("\n");
-    return { ok: false, message: `Registrasi deal gagal — perbaiki:\n${detail}` };
-  }
-
-  const { data: deal, error } = await supabase
-    .from("brand_deals")
-    .insert({
-      brand_name,
-      shop_id,
-      merchant_id,
-      niche,
-      brand_link,
-      campaign_name,
-      campaign_id,
-      exp_date,
-      komisi_kreator_raw,
-      komisi_kreator_pct,
-      komisi_mea_raw,
-      komisi_mea_pct,
-      pic_tap,
-      sourced_by_role,
-      kreators_needed,
-      videos_needed,
-      poi_location,
-    })
-    .select("id, code")
-    .single();
-  if (error) {
-    if (error.code === "23505") return { ok: false, message: "shop ID sudah terdaftar di deal lain." };
-    return { ok: false, message: `Gagal menyimpan deal: ${error.message}` };
-  }
-
-  // Produk dinamis: product_name_0, product_id_0, product_link_0, product_niche_0, ...
-  const products: Record<string, unknown>[] = [];
-  for (let i = 0; formData.has(`product_name_${i}`); i++) {
-    const pname = String(formData.get(`product_name_${i}`) || "").trim();
-    if (!pname) continue;
-    const pNicheRaw = String(formData.get(`product_niche_${i}`) || "").trim();
-    const pExpRaw = String(formData.get(`product_exp_${i}`) || "").trim();
-    const pKomisiRaw = String(formData.get(`product_komisi_${i}`) || "").trim();
-    const pExp = pExpRaw ? parseFlexibleDate(pExpRaw) : null;
-    const pKomisi = pKomisiRaw ? parseCommission(pKomisiRaw) : null;
-    products.push({
-      deal_id: deal.id,
-      product_name: pname,
-      product_id: String(formData.get(`product_id_${i}`) || "").trim() || null,
-      product_link: String(formData.get(`product_link_${i}`) || "").trim() || null,
-      // Produk mewarisi niche/exp/komisi deal bila kosong.
-      niche: pNicheRaw || niche,
-      exp_date: pExp ?? exp_date,
-      komisi_kreator_pct: pKomisi ? pKomisi.pct : komisi_kreator_pct,
-    });
-  }
-  let productMsg = "";
-  if (products.length > 0) {
-    const { error: pErr } = await supabase.from("deal_products").insert(products);
-    productMsg = pErr
-      ? ` (deal tersimpan, namun ${products.length} produk gagal: ${pErr.message})`
-      : ` + ${products.length} produk`;
-  }
-
-  revalidatePath("/deals");
-  return { ok: true, message: `Deal ${deal.code} — ${brand_name} terdaftar${productMsg}.` };
+// canManageDeals: siapa boleh "Daftarkan Transaksi" (insert) — sama seperti
+// canRegister di page.tsx (mgmt/BizDev/CreatorManagement).
+function canManageDeals(me: Me | null): boolean {
+  return !!me && (me.is_od || me.is_director || me.division === "BizDev" || me.division === "CreatorManagement");
 }
 
-// Alias header legacy → field kanonik (termasuk typo nyata `nama_campiagn`, `nama_bd`, `ads`).
-const LEGACY_HEADER_ALIASES: Record<string, string> = {
-  brand: "brand_name",
-  "nama brand": "brand_name",
-  nama_brand: "brand_name",
-  brand_name: "brand_name",
-  merchant: "brand_name",
-  "shop id": "shop_id",
-  shop_id: "shop_id",
-  shopid: "shop_id",
-  "id toko": "shop_id",
-  "nama campiagn": "campaign_name",
-  nama_campiagn: "campaign_name",
-  "nama campaign": "campaign_name",
-  nama_campaign: "campaign_name",
-  campaign: "campaign_name",
-  campaign_name: "campaign_name",
-  "nama_bd": "pic_name",
-  "nama bd": "pic_name",
-  bd: "pic_name",
-  pic: "pic_name",
-  exp: "exp_date",
-  "exp date": "exp_date",
-  exp_date: "exp_date",
-  expired: "exp_date",
-  "tanggal exp": "exp_date",
-  komisi: "komisi_kreator",
-  "komisi kreator": "komisi_kreator",
-  komisi_kreator: "komisi_kreator",
-  commission: "komisi_kreator",
-  "komisi mea": "komisi_mea",
-  komisi_mea: "komisi_mea",
-  niche: "niche",
-  kategori: "niche",
-  ads: "ads_budget",
-  "ads budget": "ads_budget",
-  ads_budget: "ads_budget",
-  budget: "ads_budget",
+// canEditDeleteDeals: siapa boleh MENERAPKAN Edit & Hapus transaksi deal
+// langsung — dibatasi ke role "leader dan atasnya"; konsep leader lintas
+// divisi belum ada di skema, jadi untuk saat ini dipakai is_director() saja
+// (sesuai instruksi eksplisit). RLS brand_deals (migrasi 0341/0348) sudah
+// menegakkan ini juga di level DB; ini hanya utk pesan error yang ramah.
+function canEditDeleteDeals(me: Me | null): boolean {
+  return !!me && me.is_director;
+}
+
+// canRequestDealChange: BD/CM boleh MENGAJUKAN edit/hapus (tombol "Edit",
+// "Lengkapi Data", "Hapus" muncul lagi untuk mereka), tapi hasilnya menunggu
+// approval Director — lihat migrasi 0349 (deal_change_requests).
+function canRequestDealChange(me: Me | null): boolean {
+  return canManageDeals(me) && !canEditDeleteDeals(me);
+}
+
+// Field form "Daftarkan Transaksi" apa adanya (belum dinormalisasi) — dipakai
+// sebagai payload permintaan approval, supaya saat Director menyetujui,
+// validasinya diulang lewat readDealFields() yang sama persis, bukan percaya
+// nilai yang sudah tersimpan di DB.
+const DEAL_FORM_KEYS = [
+  "lead_id",
+  "bd_id",
+  "ops_name",
+  "kategori_poi",
+  "pic_name",
+  "pic_whatsapp",
+  "bentuk_kerjasama",
+  "nominal_harga",
+  "benefit",
+  "visit_mulai",
+  "visit_berakhir",
+  "kreator_needed",
+  "konten_needed",
+  "total_jam_live",
+  "brief_link",
+  "tanggal_mulai_kontrak",
+  "tanggal_akhir_kontrak",
+] as const;
+
+export type DealFormSnapshot = Partial<Record<(typeof DEAL_FORM_KEYS)[number], string>>;
+
+function dealFormSnapshot(formData: FormData): DealFormSnapshot {
+  const snapshot: DealFormSnapshot = {};
+  for (const key of DEAL_FORM_KEYS) snapshot[key] = String(formData.get(key) ?? "").trim();
+  return snapshot;
+}
+
+function formDataFromSnapshot(payload: unknown): FormData {
+  const formData = new FormData();
+  const obj = (payload ?? {}) as Record<string, unknown>;
+  for (const key of DEAL_FORM_KEYS) formData.set(key, String(obj[key] ?? ""));
+  return formData;
+}
+
+type SupabaseClientLike = Awaited<ReturnType<typeof createClient>>;
+
+type DealFields = {
+  lead_id: string;
+  bd_id: string;
+  ops_name: string;
+  kategori_poi: string;
+  pic_name: string;
+  pic_whatsapp: string;
+  tanggal_mulai_kontrak: string | null;
+  tanggal_akhir_kontrak: string | null;
+  bentuk_kerjasama: string;
+  nominal_harga: number;
+  benefit: string;
+  visit_start_date: string;
+  visit_start_time: string;
+  visit_end_date: string;
+  visit_end_time: string;
+  kreator_needed: number;
+  konten_needed: number | null;
+  total_jam_live: number | null;
+  brief_link: string | null;
 };
 
-function resolveLegacyHeader(raw: string): string | null {
-  const key = raw.toLowerCase().trim().replace(/\s+/g, " ");
-  return LEGACY_HEADER_ALIASES[key] ?? null;
-}
-
-function splitLegacy(line: string): string[] {
-  return line.split(/[\t;,]/).map((s) => s.trim());
-}
-
-// importLegacyDeals: paste textarea → split manual. JANGAN PERNAH crash/tolak baris.
-// Probe baris header (skip judul non-header); field kotor → null + review_flags jsonb;
-// expired tetap insert (active_flag false via trigger); duplikat shop_id → skip.
-export async function importLegacyDeals(
-  _prev: ActionResult | null,
+// readDealFields — validasi field form "Daftarkan Transaksi" / edit ("Lengkapi
+// Data"), dipakai bersama registerDealTransaction + updateDealTransaction.
+// DB (trigger brand_deals_validate, migrasi 0332/0333) tetap otoritas final —
+// pengecekan di sini hanya supaya pesan errornya ramah & spesifik per-field.
+async function readDealFields(
+  supabase: SupabaseClientLike,
   formData: FormData
-): Promise<ActionResult> {
-  const { supabase, user } = await ctx();
-  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+): Promise<{ fields: DealFields; brand_name: string } | { error: string }> {
+  const lead_id = String(formData.get("lead_id") || "").trim();
+  const bd_id = String(formData.get("bd_id") || "").trim();
+  const ops_name = String(formData.get("ops_name") || "").trim();
+  const kategori_poi = String(formData.get("kategori_poi") || "").trim();
+  const pic_name = String(formData.get("pic_name") || "").trim();
+  const pic_whatsapp_raw = String(formData.get("pic_whatsapp") || "").trim();
+  const bentuk_kerjasama = String(formData.get("bentuk_kerjasama") || "").trim();
+  const nominalRaw = String(formData.get("nominal_harga") || "").trim();
+  const benefit = String(formData.get("benefit") || "").trim();
+  const visit_mulai = String(formData.get("visit_mulai") || "").trim();
+  const visit_berakhir = String(formData.get("visit_berakhir") || "").trim();
+  const kreatorRaw = String(formData.get("kreator_needed") || "").trim();
+  const kontenRaw = String(formData.get("konten_needed") || "").trim();
+  const jamLiveRaw = String(formData.get("total_jam_live") || "").trim();
+  const brief_link = String(formData.get("brief_link") || "").trim();
+  const tglMulaiRaw = String(formData.get("tanggal_mulai_kontrak") || "").trim();
+  const tglAkhirRaw = String(formData.get("tanggal_akhir_kontrak") || "").trim();
 
-  const raw = String(formData.get("data") || "").trim();
-  if (!raw) return { ok: false, message: "Tempel data legacy dulu." };
+  if (
+    !lead_id ||
+    !bd_id ||
+    !ops_name ||
+    !kategori_poi ||
+    !pic_name ||
+    !pic_whatsapp_raw ||
+    !bentuk_kerjasama ||
+    !benefit ||
+    !visit_mulai ||
+    !visit_berakhir ||
+    !kreatorRaw
+  ) {
+    return { error: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
+  }
+  if (!isBrandCategory(kategori_poi)) return { error: "[kategori POI tidak dikenal]" };
+  if (!isOpsName(ops_name)) return { error: "[nama OPS tidak dikenal]" };
+  if (!isBentukKerjasama(bentuk_kerjasama)) return { error: "[bentuk kerja sama tidak dikenal]" };
 
-  const lines = raw.split(/\r?\n/).map((l) => l.trimEnd());
-  const skipped: { row: number; reason: string }[] = [];
-
-  // Cari baris header: baris pertama dgn >=2 sel yang cocok alias header.
-  let headerFields: (string | null)[] | null = null;
-  let dataStart = 0;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === "") continue;
-    const cells = splitLegacy(lines[i]);
-    const mapped = cells.map(resolveLegacyHeader);
-    const matched = mapped.filter((m) => m !== null).length;
-    if (matched >= 2) {
-      headerFields = mapped;
-      dataStart = i + 1;
-      break;
-    }
-    skipped.push({ row: i + 1, reason: "baris judul/non-header dilewati" });
+  if (kategori_poi === "Dining" && (!tglMulaiRaw || !tglAkhirRaw)) {
+    return { error: "[tanggal awal & akhir kerjasama wajib diisi untuk kategori Dining]" };
   }
 
-  if (!headerFields) {
-    return { ok: false, message: "Header tidak dikenali — tidak ada baris yang bisa diimpor." };
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("id, brand_name, lead_name, crm_status")
+    .eq("id", lead_id)
+    .maybeSingle();
+  if (!lead) return { error: "[POI/Merchant tidak ditemukan]" };
+  if (!isDealStatus(lead.crm_status)) {
+    return { error: "[POI/Merchant harus berstatus Dealing atau Renewal]" };
   }
 
-  let inserted = 0;
-  for (let i = dataStart; i < lines.length; i++) {
-    if (lines[i].trim() === "") continue;
-    const rowNum = i + 1;
-    const cells = splitLegacy(lines[i]);
-
-    const values: Record<string, string> = {};
-    for (let c = 0; c < headerFields.length; c++) {
-      const field = headerFields[c];
-      if (!field) continue;
-      const v = (cells[c] ?? "").trim();
-      if (v !== "" && !(field in values)) values[field] = v; // kolom pertama menang
-    }
-
-    const brand_name = values["brand_name"] ?? "";
-    if (!brand_name) {
-      skipped.push({ row: rowNum, reason: "brand_name kosong" });
-      continue;
-    }
-
-    const review_flags: Record<string, unknown> = {};
-
-    // shop_id: numeric-only; kotor → null + flag.
-    let shop_id: string | null = null;
-    if (values["shop_id"]) {
-      if (/^[0-9]+$/.test(values["shop_id"])) shop_id = values["shop_id"];
-      else review_flags.shop_id = `nilai kotor diabaikan: "${values["shop_id"]}"`;
-    }
-
-    // exp_date: invalid → null + flag (expired tetap insert via trigger active_flag).
-    let exp_date: string | null = null;
-    if (values["exp_date"]) {
-      exp_date = parseFlexibleDate(values["exp_date"]);
-      if (!exp_date) review_flags.exp_date = `tanggal tak terparse: "${values["exp_date"]}"`;
-    }
-
-    let komisi_kreator_raw: string | null = null;
-    let komisi_kreator_pct: number | null = null;
-    if (values["komisi_kreator"]) {
-      const c = parseCommission(values["komisi_kreator"]);
-      if (c) {
-        komisi_kreator_raw = c.raw;
-        komisi_kreator_pct = c.pct;
-      } else review_flags.komisi_kreator = `komisi tak terparse: "${values["komisi_kreator"]}"`;
-    }
-    let komisi_mea_raw: string | null = null;
-    let komisi_mea_pct: number | null = null;
-    if (values["komisi_mea"]) {
-      const c = parseCommission(values["komisi_mea"]);
-      if (c) {
-        komisi_mea_raw = c.raw;
-        komisi_mea_pct = c.pct;
-      } else review_flags.komisi_mea = `komisi tak terparse: "${values["komisi_mea"]}"`;
-    }
-
-    let ads_budget: number | null = null;
-    if (values["ads_budget"]) {
-      ads_budget = parseRupiah(values["ads_budget"]);
-      if (ads_budget === null) review_flags.ads_budget = `nominal tak terparse: "${values["ads_budget"]}"`;
-    }
-    if (values["pic_name"]) review_flags.pic_name = values["pic_name"]; // nama BD tak bisa dipetakan ke uuid
-
-    const { error } = await supabase.from("brand_deals").insert({
-      brand_name,
-      shop_id,
-      niche: values["niche"] ?? null,
-      campaign_name: values["campaign_name"] ?? null,
-      exp_date,
-      komisi_kreator_raw,
-      komisi_kreator_pct,
-      komisi_mea_raw,
-      komisi_mea_pct,
-      ads_budget,
-      sourced_by_role: "bd",
-      review_flags: Object.keys(review_flags).length > 0 ? review_flags : null,
-    });
-    if (error) {
-      if (error.code === "23505") skipped.push({ row: rowNum, reason: `shop_id duplikat (${shop_id})` });
-      else skipped.push({ row: rowNum, reason: error.message });
-      continue;
-    }
-    inserted++;
+  const nominal_harga = bentuk_kerjasama === "Free/Barter" ? 0 : parseRupiah(nominalRaw) ?? NaN;
+  if (!Number.isFinite(nominal_harga) || nominal_harga < 0) {
+    return { error: "[nominal deals tidak valid]" };
+  }
+  if (bentuk_kerjasama === "Berbayar" && nominal_harga <= 0) {
+    return { error: "[nominal deals wajib diisi untuk Berbayar]" };
   }
 
-  revalidatePath("/deals");
-  const preview = skipped
-    .slice(0, 10)
-    .map((s) => `baris ${s.row}: ${s.reason}`)
-    .join("; ");
-  const more = skipped.length > 10 ? ` (+${skipped.length - 10} lagi)` : "";
+  const kreator_needed = parseIntTolerant(kreatorRaw) ?? NaN;
+  if (!Number.isFinite(kreator_needed) || kreator_needed <= 0) {
+    return { error: "[jumlah kreator tidak valid]" };
+  }
+  let konten_needed: number | null = null;
+  if (kontenRaw) {
+    konten_needed = parseIntTolerant(kontenRaw);
+    if (konten_needed === null || konten_needed < 0) return { error: "[jumlah konten tidak valid]" };
+  }
+  let total_jam_live: number | null = null;
+  if (jamLiveRaw) {
+    total_jam_live = Number(jamLiveRaw);
+    if (!Number.isFinite(total_jam_live) || total_jam_live < 0) {
+      return { error: "[total jam live tidak valid]" };
+    }
+  }
+
+  const [visitMulaiDate, visitMulaiTime] = visit_mulai.split("T");
+  const [visitBerakhirDate, visitBerakhirTime] = visit_berakhir.split("T");
+  if (!visitMulaiDate || !visitMulaiTime || !visitBerakhirDate || !visitBerakhirTime) {
+    return { error: "[visit dimulai/berakhir tidak valid]" };
+  }
+  if (visitBerakhirDate < visitMulaiDate) {
+    return { error: "[tanggal selesai visit tidak boleh sebelum tanggal mulai]" };
+  }
+
+  const pic_whatsapp = normalizePhone62(pic_whatsapp_raw);
+  if (!pic_whatsapp) return { error: "[nomor WhatsApp tidak valid]" };
+
   return {
-    ok: inserted > 0,
-    message: `Import legacy: ${inserted} deal masuk, ${skipped.length} dilewati${
-      skipped.length ? ` — ${preview}${more}` : ""
-    }.`,
+    brand_name: lead.brand_name ?? lead.lead_name,
+    fields: {
+      lead_id,
+      bd_id,
+      ops_name,
+      kategori_poi,
+      pic_name,
+      pic_whatsapp,
+      tanggal_mulai_kontrak: kategori_poi === "Dining" ? tglMulaiRaw : null,
+      tanggal_akhir_kontrak: kategori_poi === "Dining" ? tglAkhirRaw : null,
+      bentuk_kerjasama,
+      nominal_harga,
+      benefit,
+      visit_start_date: visitMulaiDate,
+      visit_start_time: visitMulaiTime,
+      visit_end_date: visitBerakhirDate,
+      visit_end_time: visitBerakhirTime,
+      kreator_needed,
+      konten_needed,
+      total_jam_live,
+      brief_link: brief_link || null,
+    },
   };
 }
 
-// setPipelineStage: ubah pipeline_stage (ter-audit otomatis via trigger).
+// registerDealTransaction — form "Daftarkan Transaksi" (tab Merchant Deals).
+export async function registerDealTransaction(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang mendaftarkan transaksi deal." };
+
+  const parsed = await readDealFields(supabase, formData);
+  if ("error" in parsed) return { ok: false, message: parsed.error };
+
+  const sourced_by_role = me.division === "CreatorManagement" && !(me.is_od || me.is_director) ? "cm" : "bd";
+
+  const { data: deal, error } = await supabase
+    .from("brand_deals")
+    .insert({ brand_name: parsed.brand_name, sourced_by_role, ...parsed.fields })
+    .select("id, code")
+    .single();
+  if (error) return { ok: false, message: `Gagal menyimpan transaksi: ${error.message}` };
+
+  revalidatePath("/deals");
+  revalidatePath("/leads");
+  return { ok: true, message: `Transaksi deal ${deal.code} — ${parsed.brand_name} tersimpan.` };
+}
+
+// dealLabels — snapshot kode & nama POI utk baris deal_change_requests, supaya
+// permintaan "Hapus" yang sudah disetujui tetap terbaca setelah deal-nya hilang.
+async function dealLabels(
+  supabase: SupabaseClientLike,
+  dealIds: string[]
+): Promise<Map<string, { code: string | null; brand_name: string }>> {
+  const { data } = await supabase.from("brand_deals").select("id, code, brand_name").in("id", dealIds);
+  return new Map(
+    ((data as { id: string; code: string | null; brand_name: string }[] | null) ?? []).map((d) => [
+      d.id,
+      { code: d.code, brand_name: d.brand_name },
+    ])
+  );
+}
+
+// Pesan error insert antrian approval yang ramah — pelanggaran yang paling
+// mungkin terjadi adalah unique index deal_change_requests_one_pending.
+function requestInsertError(message: string): string {
+  if (message.includes("deal_change_requests_one_pending")) {
+    return "Sudah ada permintaan perubahan yang menunggu approval Director untuk deal ini.";
+  }
+  return `Gagal mengirim permintaan: ${message}`;
+}
+
+// updateDealTransaction — edit transaksi, termasuk jalur "Lengkapi Data" untuk
+// baris hasil Import Master Deal (kategori_poi dkk masih kosong).
+// Director menerapkan langsung; BD/CM masuk antrian approval (migrasi 0349).
+export async function updateDealTransaction(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canEditDeleteDeals(me) && !canRequestDealChange(me)) {
+    return { ok: false, message: "Tidak berwenang mengubah transaksi deal." };
+  }
+
+  const deal_id = String(formData.get("deal_id") || "").trim();
+  if (!deal_id) return { ok: false, message: "Deal tidak valid." };
+
+  const parsed = await readDealFields(supabase, formData);
+  if ("error" in parsed) return { ok: false, message: parsed.error };
+
+  if (!canEditDeleteDeals(me)) {
+    const label = (await dealLabels(supabase, [deal_id])).get(deal_id);
+    if (!label) return { ok: false, message: "Deal tidak ditemukan." };
+    const { error } = await supabase.from("deal_change_requests").insert({
+      deal_id,
+      deal_code: label.code,
+      deal_brand_name: label.brand_name,
+      action: "update",
+      payload: dealFormSnapshot(formData),
+      requested_by: me.id,
+    });
+    if (error) return { ok: false, message: requestInsertError(error.message) };
+
+    revalidatePath("/deals");
+    return {
+      ok: true,
+      message: "Perubahan dikirim ke Director untuk disetujui — data belum berubah sampai di-accept.",
+    };
+  }
+
+  const { error } = await supabase
+    .from("brand_deals")
+    .update({ brand_name: parsed.brand_name, ...parsed.fields })
+    .eq("id", deal_id);
+  if (error) return { ok: false, message: `Gagal menyimpan perubahan: ${error.message}` };
+
+  revalidatePath("/deals");
+  revalidatePath("/leads");
+  return { ok: true, message: "Transaksi deal diperbarui." };
+}
+
+// deleteDealTransaction — hapus satu transaksi deal (Director), atau ajukan
+// penghapusan untuk disetujui Director (BD/CM).
+export async function deleteDealTransaction(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canEditDeleteDeals(me) && !canRequestDealChange(me)) {
+    return { ok: false, message: "Tidak berwenang menghapus transaksi deal." };
+  }
+
+  const deal_id = String(formData.get("deal_id") || "").trim();
+  if (!deal_id) return { ok: false, message: "Deal tidak valid." };
+
+  if (!canEditDeleteDeals(me)) {
+    const label = (await dealLabels(supabase, [deal_id])).get(deal_id);
+    if (!label) return { ok: false, message: "Deal tidak ditemukan." };
+    const { error } = await supabase.from("deal_change_requests").insert({
+      deal_id,
+      deal_code: label.code,
+      deal_brand_name: label.brand_name,
+      action: "delete",
+      requested_by: me.id,
+    });
+    if (error) return { ok: false, message: requestInsertError(error.message) };
+
+    revalidatePath("/deals");
+    return {
+      ok: true,
+      message: "Permintaan hapus dikirim ke Director — deal belum dihapus sampai di-accept.",
+    };
+  }
+
+  const { error } = await supabase.from("brand_deals").delete().eq("id", deal_id);
+  if (error) return { ok: false, message: `Gagal menghapus transaksi: ${error.message}` };
+
+  revalidatePath("/deals");
+  revalidatePath("/leads");
+  return { ok: true, message: "Transaksi deal dihapus." };
+}
+
+// deleteDealTransactionsBulk — hapus multiple transaksi deals (Director), atau
+// ajukan penghapusannya sekaligus untuk disetujui Director (BD/CM).
+export async function deleteDealTransactionsBulk(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canEditDeleteDeals(me) && !canRequestDealChange(me)) {
+    return { ok: false, message: "Tidak berwenang menghapus transaksi deal." };
+  }
+
+  const deal_ids = formData.getAll("deal_ids") as string[];
+  if (deal_ids.length === 0) return { ok: false, message: "Pilih deal yang akan dihapus." };
+
+  if (!canEditDeleteDeals(me)) {
+    const labels = await dealLabels(supabase, deal_ids);
+    const rows = deal_ids
+      .filter((id) => labels.has(id))
+      .map((id) => ({
+        deal_id: id,
+        deal_code: labels.get(id)!.code,
+        deal_brand_name: labels.get(id)!.brand_name,
+        action: "delete" as const,
+        requested_by: me.id,
+      }));
+    if (rows.length === 0) return { ok: false, message: "Deal tidak ditemukan." };
+    const { error } = await supabase.from("deal_change_requests").insert(rows);
+    if (error) return { ok: false, message: requestInsertError(error.message) };
+
+    revalidatePath("/deals");
+    return {
+      ok: true,
+      message: `${rows.length} permintaan hapus dikirim ke Director — deal belum dihapus sampai di-accept.`,
+    };
+  }
+
+  const { error } = await supabase.from("brand_deals").delete().in("id", deal_ids);
+  if (error) return { ok: false, message: `Gagal menghapus transaksi: ${error.message}` };
+
+  revalidatePath("/deals");
+  revalidatePath("/leads");
+  return { ok: true, message: `${deal_ids.length} transaksi deal dihapus.` };
+}
+
+// ---------------------------------------------------------------------------
+// Antrian approval Director (deal_change_requests, migrasi 0349)
+// ---------------------------------------------------------------------------
+
+type ChangeRequestRow = {
+  id: string;
+  deal_id: string | null;
+  deal_brand_name: string;
+  action: "update" | "delete";
+  payload: unknown;
+  status: string;
+};
+
+// approveDealChangeRequest — Director meng-accept permintaan BD/CM. Perubahan
+// diterapkan LEWAT SESI DIRECTOR INI, jadi RLS brand_deals (director-only)
+// tetap jadi penjaga terakhir; payload divalidasi ulang dari nol dengan
+// readDealFields() yang sama seperti saat form disubmit.
+export async function approveDealChangeRequest(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canEditDeleteDeals(me)) {
+    return { ok: false, message: "Hanya Director yang dapat menyetujui perubahan transaksi deal." };
+  }
+
+  const request_id = String(formData.get("request_id") || "").trim();
+  if (!request_id) return { ok: false, message: "Permintaan tidak valid." };
+
+  const { data: reqRaw } = await supabase
+    .from("deal_change_requests")
+    .select("id, deal_id, deal_brand_name, action, payload, status")
+    .eq("id", request_id)
+    .maybeSingle();
+  const req = reqRaw as ChangeRequestRow | null;
+  if (!req) return { ok: false, message: "Permintaan tidak ditemukan." };
+  if (req.status !== "pending") return { ok: false, message: "Permintaan ini sudah ditinjau." };
+  if (!req.deal_id) return { ok: false, message: "Deal terkait sudah tidak ada." };
+
+  if (req.action === "update") {
+    const parsed = await readDealFields(supabase, formDataFromSnapshot(req.payload));
+    if ("error" in parsed) return { ok: false, message: `Permintaan tidak lagi valid: ${parsed.error}` };
+
+    const { error } = await supabase
+      .from("brand_deals")
+      .update({ brand_name: parsed.brand_name, ...parsed.fields })
+      .eq("id", req.deal_id);
+    if (error) return { ok: false, message: `Gagal menerapkan perubahan: ${error.message}` };
+  } else {
+    const { error } = await supabase.from("brand_deals").delete().eq("id", req.deal_id);
+    if (error) return { ok: false, message: `Gagal menghapus transaksi: ${error.message}` };
+  }
+
+  // Ditandai SETELAH perubahan diterapkan: kalau update/delete-nya gagal,
+  // permintaan tetap pending dan bisa dicoba lagi — bukan hilang diam-diam.
+  const { error: markErr } = await supabase
+    .from("deal_change_requests")
+    .update({
+      status: "approved",
+      reviewed_by: me.id,
+      reviewed_at: new Date().toISOString(),
+      review_note: String(formData.get("review_note") || "").trim() || null,
+    })
+    .eq("id", request_id);
+  if (markErr) {
+    return {
+      ok: false,
+      message: `Perubahan sudah diterapkan, tapi status permintaan gagal diperbarui: ${markErr.message}`,
+    };
+  }
+
+  revalidatePath("/deals");
+  revalidatePath("/leads");
+  revalidatePath("/bizdev/poi");
+  revalidatePath("/bizdev/poi-dining");
+  return {
+    ok: true,
+    message:
+      req.action === "update"
+        ? `Perubahan ${req.deal_brand_name} disetujui & diterapkan.`
+        : `Penghapusan ${req.deal_brand_name} disetujui & diterapkan.`,
+  };
+}
+
+// rejectDealChangeRequest — Director menolak; data deal tidak disentuh.
+export async function rejectDealChangeRequest(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canEditDeleteDeals(me)) {
+    return { ok: false, message: "Hanya Director yang dapat menolak perubahan transaksi deal." };
+  }
+
+  const request_id = String(formData.get("request_id") || "").trim();
+  if (!request_id) return { ok: false, message: "Permintaan tidak valid." };
+
+  const { error } = await supabase
+    .from("deal_change_requests")
+    .update({
+      status: "rejected",
+      reviewed_by: me.id,
+      reviewed_at: new Date().toISOString(),
+      review_note: String(formData.get("review_note") || "").trim() || null,
+    })
+    .eq("id", request_id)
+    .eq("status", "pending");
+  if (error) return { ok: false, message: `Gagal menolak permintaan: ${error.message}` };
+
+  revalidatePath("/deals");
+  return { ok: true, message: "Permintaan ditolak." };
+}
+
+// cancelDealChangeRequest — pemohon menarik kembali permintaannya sendiri
+// selama belum ditinjau (RLS deal_change_requests_delete).
+export async function cancelDealChangeRequest(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+
+  const request_id = String(formData.get("request_id") || "").trim();
+  if (!request_id) return { ok: false, message: "Permintaan tidak valid." };
+
+  const { error } = await supabase
+    .from("deal_change_requests")
+    .delete()
+    .eq("id", request_id)
+    .eq("status", "pending");
+  if (error) return { ok: false, message: `Gagal membatalkan permintaan: ${error.message}` };
+
+  revalidatePath("/deals");
+  return { ok: true, message: "Permintaan dibatalkan." };
+}
+
+// setPipelineStage — DIPAKAI BizDev Workspace (app/(app)/bizdev), bukan lagi
+// oleh tab Merchant Deals sendiri (pipeline_stage tidak lagi ditampilkan di
+// sana) — JANGAN dihapus.
 export async function setPipelineStage(
   _prev: ActionResult | null,
   formData: FormData
@@ -374,77 +576,4 @@ export async function setPipelineStage(
   revalidatePath("/deals");
   revalidatePath("/bizdev");
   return { ok: true, message: `Pipeline stage → ${pipeline_stage}.` };
-}
-
-// updateDealExtras: edit kebutuhan deal (kreator/video/POI, info-only 0312) untuk deal
-// yang sudah terdaftar — satu-satunya jalur "edit deal" untuk 3 kolom opsional ini
-// (field lain deal tidak diedit di sini). Kosong → null, angka wajib bulat bila diisi.
-export async function updateDealExtras(
-  _prev: ActionResult | null,
-  formData: FormData
-): Promise<ActionResult> {
-  const { supabase, user } = await ctx();
-  if (!user) return { ok: false, message: "Tidak terautentikasi." };
-
-  const id = String(formData.get("id") || "");
-  if (!id) return { ok: false, message: "Deal tidak valid." };
-
-  const kreatorsNeededRaw = String(formData.get("kreators_needed") || "").trim();
-  const videosNeededRaw = String(formData.get("videos_needed") || "").trim();
-  const poi_location = String(formData.get("poi_location") || "").trim() || null;
-
-  let kreators_needed: number | null = null;
-  if (kreatorsNeededRaw) {
-    if (!/^[0-9]+$/.test(kreatorsNeededRaw)) {
-      return { ok: false, message: "Kreator dibutuhkan harus angka bulat." };
-    }
-    kreators_needed = parseInt(kreatorsNeededRaw, 10);
-  }
-  let videos_needed: number | null = null;
-  if (videosNeededRaw) {
-    if (!/^[0-9]+$/.test(videosNeededRaw)) {
-      return { ok: false, message: "Jumlah video harus angka bulat." };
-    }
-    videos_needed = parseInt(videosNeededRaw, 10);
-  }
-
-  const { error } = await supabase
-    .from("brand_deals")
-    .update({ kreators_needed, videos_needed, poi_location })
-    .eq("id", id);
-  if (error) return { ok: false, message: `Gagal menyimpan kebutuhan deal: ${error.message}` };
-
-  revalidatePath("/deals");
-  return { ok: true, message: "Kebutuhan deal disimpan." };
-}
-
-// addDealProduct: tambah satu produk ke deal existing.
-export async function addDealProduct(
-  _prev: ActionResult | null,
-  formData: FormData
-): Promise<ActionResult> {
-  const { supabase, user } = await ctx();
-  if (!user) return { ok: false, message: "Tidak terautentikasi." };
-
-  const deal_id = String(formData.get("deal_id") || "");
-  const product_name = String(formData.get("product_name") || "").trim();
-  if (!deal_id || !product_name) return { ok: false, message: "Deal & nama produk wajib diisi." };
-
-  const expRaw = String(formData.get("exp_date") || "").trim();
-  const komisiRaw = String(formData.get("komisi_kreator") || "").trim();
-  const komisi = komisiRaw ? parseCommission(komisiRaw) : null;
-
-  const { error } = await supabase.from("deal_products").insert({
-    deal_id,
-    product_name,
-    product_id: String(formData.get("product_id") || "").trim() || null,
-    product_link: String(formData.get("product_link") || "").trim() || null,
-    niche: String(formData.get("niche") || "").trim() || null,
-    exp_date: expRaw ? parseFlexibleDate(expRaw) : null,
-    komisi_kreator_pct: komisi ? komisi.pct : null,
-  });
-  if (error) return { ok: false, message: `Gagal menambah produk: ${error.message}` };
-
-  revalidatePath("/deals");
-  return { ok: true, message: `Produk "${product_name}" ditambahkan.` };
 }

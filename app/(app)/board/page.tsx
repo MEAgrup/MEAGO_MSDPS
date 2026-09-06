@@ -115,7 +115,7 @@ export default async function BoardPage({
             )}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
+          <div className="kanban-grid">
             {KOLOM.map((k) => {
               const col = cards.filter((c) => c.kanban_column === k);
               return (

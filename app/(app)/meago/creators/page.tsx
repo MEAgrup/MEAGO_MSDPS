@@ -157,10 +157,16 @@ function num1(n: number | null): string {
 // creator_reports (portal F.2) — daftar report terbaru utk kartu "Report Kreator".
 type ReportRow = { id: string; mcn_creator_id: string; title: string; created_at: string };
 
-export default async function McnCreatorsPage() {
+export default async function McnCreatorsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ akun?: string }>;
+}) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
   const me = await getEmployee();
+
+  const sp = await searchParams;
 
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
@@ -223,6 +229,26 @@ export default async function McnCreatorsPage() {
   const creators = (creatorsRaw as Creator[] | null) ?? [];
   const creatorIds = creators.map((c) => c.id);
 
+  // Card "Akun Portal Kreator" TIDAK boleh merender seluruh roster. Sejak impor
+  // 2026-09-03 production punya 2.250 kreator, dan tiap baris tanpa akun merender
+  // satu <PortalAccountRow> — yaitu satu form email+password. Merender semuanya =
+  // 2.250 form dalam satu halaman, plus satu panggilan admin.getUserById per
+  // kreator yang sudah tertaut. Jadi: yang sudah punya akun selalu tampil
+  // (jumlahnya kecil dan memang perlu terlihat), sisanya hanya lewat pencarian.
+  const PORTAL_SEARCH_LIMIT = 50;
+  const akunQuery = (sp.akun ?? "").trim();
+  const akunNeedle = akunQuery.toLowerCase();
+  const portalLinked = creators.filter((c) => c.auth_user_id);
+  const portalMatches = akunNeedle
+    ? creators.filter(
+        (c) =>
+          !c.auth_user_id &&
+          [c.name, c.username, c.code].some((f) => (f ?? "").toLowerCase().includes(akunNeedle))
+      )
+    : [];
+  const portalTruncated = portalMatches.length > PORTAL_SEARCH_LIMIT;
+  const portalCreators = [...portalLinked, ...portalMatches.slice(0, PORTAL_SEARCH_LIMIT)];
+
   // Baris yang ditampilkan di card ops: lead CM/Acquisition/management lihat semua;
   // CM staff hanya lihat kreator miliknya sendiri (mencegah kegagalan RLS yang
   // membingungkan saat mereka mencoba mengubah kreator milik CM lain).
@@ -282,9 +308,8 @@ export default async function McnCreatorsPage() {
         // di environment) — kolom email cukup tampil "—".
         try {
           const admin = createAdminClient();
-          const linked = creators.filter((c) => c.auth_user_id);
           await Promise.all(
-            linked.map(async (c) => {
+            portalLinked.map(async (c) => {
               const { data } = await admin.auth.admin.getUserById(c.auth_user_id as string);
               if (data?.user?.email) accountEmail.set(c.id, data.user.email);
             })
@@ -480,21 +505,37 @@ export default async function McnCreatorsPage() {
           <p className="section-sub">
             Buat akun login portal /kreator untuk kreator (tidak ada pendaftaran mandiri).
             Hanya CM Lead / OD / Director. Kreator memakai email &amp; password ini untuk masuk.
+            Roster {creators.length.toLocaleString("id-ID")} kreator terlalu besar untuk
+            ditampilkan utuh — <strong>cari kreatornya dulu</strong>. Kreator yang sudah
+            punya akun selalu tampil di bawah.
           </p>
+          <form method="get" style={{ display: "flex", gap: 8, margin: "0 0 12px" }}>
+            <input
+              type="search"
+              name="akun"
+              defaultValue={akunQuery}
+              placeholder="Cari nama, username, atau kode kreator…"
+              aria-label="Cari kreator untuk dibuatkan akun portal"
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <button type="submit">Cari</button>
+          </form>
           <div style={{ overflowX: "auto" }}>
             <table>
               <thead>
                 <tr>
                   <th>Kode</th>
                   <th>Nama</th>
+                  <th>Username</th>
                   <th>Akun Portal</th>
                 </tr>
               </thead>
               <tbody>
-                {creators.map((c) => (
+                {portalCreators.map((c) => (
                   <tr key={c.id}>
                     <td className="mono">{c.code ?? "—"}</td>
                     <td>{c.name}</td>
+                    <td className="mono muted">{c.username ?? "—"}</td>
                     <td>
                       {c.auth_user_id ? (
                         <span>
@@ -507,16 +548,26 @@ export default async function McnCreatorsPage() {
                     </td>
                   </tr>
                 ))}
-                {creators.length === 0 && (
+                {portalCreators.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="muted">
-                      Belum ada kreator terdaftar.
+                    <td colSpan={4} className="muted">
+                      {creators.length === 0
+                        ? "Belum ada kreator terdaftar."
+                        : akunQuery
+                          ? `Tidak ada kreator cocok dengan "${akunQuery}".`
+                          : "Ketik nama, username, atau kode kreator di kotak pencarian di atas."}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          {portalTruncated && (
+            <p className="section-sub muted">
+              Menampilkan {PORTAL_SEARCH_LIMIT} dari {portalMatches.length.toLocaleString("id-ID")}{" "}
+              kreator yang cocok — persempit pencariannya.
+            </p>
+          )}
         </div>
       )}
 

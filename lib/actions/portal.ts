@@ -137,6 +137,54 @@ export async function createComplaint(
   };
 }
 
+// updateBankAccount — kreator mengisi/mengoreksi rekening pencairan payout
+// campaign MEA GO dari profil portal (keputusan #11). RLS tidak bisa
+// membatasi per kolom (jebakan #6) — mcn_creators HANYA punya policy select
+// creator-self, tidak ada policy update, jadi kolom ini WAJIB lewat
+// service-role, sama seperti auth_user_id di createCreatorAccount.
+export async function updateBankAccount(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+    const { data: creator } = await supabase
+      .from("mcn_creators")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    if (!creator) return { ok: false, message: "Akun ini bukan kreator portal." };
+
+    const bank_name = String(formData.get("bank_name") || "").trim();
+    const bank_account_number = String(formData.get("bank_account_number") || "").trim();
+    const bank_account_name = String(formData.get("bank_account_name") || "").trim();
+    if (!bank_name || !bank_account_number || !bank_account_name) {
+      return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
+    }
+
+    if (!hasAdminEnv()) {
+      console.error("[updateBankAccount] SUPABASE_SERVICE_ROLE_KEY / NEXT_PUBLIC_SUPABASE_URL tidak tersedia di runtime.");
+      return { ok: false, message: adminKeyWarning() ?? ADMIN_ENV_MESSAGE };
+    }
+
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from("mcn_creators")
+      .update({ bank_name, bank_account_number, bank_account_name })
+      .eq("id", creator.id);
+    if (error) return { ok: false, message: `Gagal menyimpan rekening: ${error.message}` };
+
+    revalidatePath("/kreator/profil");
+    return { ok: true, message: "Rekening tersimpan." };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("[updateBankAccount] exception:", e);
+    return { ok: false, message: `Gagal menyimpan rekening: ${detail}` };
+  }
+}
+
 // ---- Sisi admin: akun portal kreator ---------------------------------------
 
 async function adminCtx() {

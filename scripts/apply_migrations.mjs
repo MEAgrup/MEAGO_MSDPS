@@ -15,9 +15,23 @@ const PRODUCTION_PROJECT_REF = "mvcckptntrvzujqaoxxh";
 // STAGING ref (copy of production, for testing migrations before prod). Not used as a
 // default — always select it explicitly via SUPABASE_PROJECT_REF env or
 // `npm run db:migrate:staging`, so production stays the safe default.
-const STAGING_PROJECT_REF = "vgjzvdpxrdoefoncuazw"; // eslint-disable-line no-unused-vars
+const STAGING_PROJECT_REF = "vgjzvdpxrdoefoncuazw";
+
+// Guard: migrasi repo ini HANYA boleh masuk ke project MSDPS (prod/staging).
+// Project MCN MEA standalone (bqknstylbpwsnlgnzayw / fomlangoiiywhexwoqom) punya
+// schema sendiri dari repo lain — apply migrasi MSDPS ke sana akan mencampur schema
+// dua app. Ref lain ditolak kecuali sengaja di-bypass via ALLOW_ANY_REF=1.
+const ALLOWED_REFS = [PRODUCTION_PROJECT_REF, STAGING_PROJECT_REF];
 
 const ref = process.env.SUPABASE_PROJECT_REF || PRODUCTION_PROJECT_REF;
+if (!ALLOWED_REFS.includes(ref) && process.env.ALLOW_ANY_REF !== "1") {
+  console.error(
+    `Ref "${ref}" bukan project MSDPS (prod ${PRODUCTION_PROJECT_REF} / staging ${STAGING_PROJECT_REF}).\n` +
+      "Migrasi repo ini tidak boleh diterapkan ke project lain (mis. MCN MEA standalone). " +
+      "Set ALLOW_ANY_REF=1 hanya jika benar-benar yakin."
+  );
+  process.exit(1);
+}
 const tokenUrl = new URL("../.supabase-token", import.meta.url);
 
 let token;
