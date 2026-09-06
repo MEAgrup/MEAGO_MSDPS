@@ -1,48 +1,14 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { tanggal } from "@/lib/format";
-import { NewLeadForm, ImportCsvForm, ClaimButton, AttemptControls } from "./forms";
+import { NewLeadModal } from "./forms";
+import { PoolLeadSection, type PoolLead } from "./pool";
+import { BRAND_CATEGORIES, type BrandCategory } from "@/lib/leads/intake";
+import type { BusinessTypeOptions } from "./intake-fields";
 
-type Lead = {
-  id: string;
-  code: string | null;
-  lead_name: string;
-  phone_normalized: string;
-  source: string;
-  status: string;
-  stale: boolean;
-  created_at: string;
-};
-
-type Attempt = {
-  id: string;
-  code: string | null;
-  parent_lead_id: string;
-  owner_id: string;
-  status: string;
-  won: boolean;
-  not_qualified_reason: string | null;
-};
-
-const LEAD_STATUS_CLASS: Record<string, string> = {
-  "[Pool]": "slate",
-  "[Scouted - Aktif]": "blue",
-  "[Closed - Success]": "green",
-  "[Tidak Berkualitas]": "amber",
-  "[Ditolak]": "red",
-};
-
-const ATTEMPT_STATUS_CLASS: Record<string, string> = {
-  "[Pending Validation]": "slate",
-  "[New Lead]": "slate",
-  "[Contacted]": "blue",
-  "[Qualified]": "blue",
-  "[Negotiation]": "amber",
-  "[Closed - Success]": "green",
-  "[Closed - Lost]": "red",
-  "[Closed - Kalah Kompetisi]": "red",
-  "[Not Qualified]": "amber",
-};
+const POOL_LEAD_COLUMNS =
+  "id, code, lead_name, brand_name, bd_employee_id, brand_category, business_type, wilayah, " +
+  "source, pic_name_position, pic_phone, web_socmed_link, phone_normalized, status, stale, " +
+  "crm_status, benefit_dealing, nominal_bayar, tanggal_mulai_kontrak, tanggal_akhir_kontrak, created_at";
 
 export default async function LeadsPage() {
   const user = await getSessionUser();
@@ -50,54 +16,62 @@ export default async function LeadsPage() {
 
   const me = await getEmployee();
   const isBizDev = me?.division === "BizDev";
-  const canRegister = isBizDev || me?.division === "Marketing" || !!me?.is_director;
-  const canControl = (ownerId: string) =>
-    ownerId === me?.id || (isBizDev && me?.rank === "lead") || !!me?.is_director;
+  const canManage = isBizDev || me?.division === "Marketing" || !!me?.is_director;
 
   const supabase = await getCachedClient();
 
-  const [{ data: leads }, { data: attempts }, { data: emps }, { data: campaigns }] =
+  const [{ data: leads }, { data: emps }, { data: businessTypes }, { data: benefits }, { data: recordedDeals }] =
     await Promise.all([
-      supabase
-        .from("leads")
-        .select("id, code, lead_name, phone_normalized, source, status, stale, created_at")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("prospect_attempts")
-        .select("id, code, parent_lead_id, owner_id, status, won, not_qualified_reason")
-        .order("created_at", { ascending: false }),
-      supabase.from("employees").select("id, full_name"),
-      supabase
-        .from("campaigns")
-        .select("id, code, campaign_name")
-        .order("created_at", { ascending: false }),
+      supabase.from("leads").select(POOL_LEAD_COLUMNS).order("created_at", { ascending: false }),
+      supabase.from("employees").select("id, full_name, division, active"),
+      supabase.from("lead_business_types").select("brand_category, label").order("label"),
+      supabase.from("lead_benefit_options").select("label").order("label"),
+      supabase.from("brand_deals").select("lead_id, nominal_harga").not("lead_id", "is", null),
     ]);
 
-  const empName = new Map<string, string>((emps ?? []).map((e) => [e.id, e.full_name]));
+  const bdNameById: Record<string, string> = Object.fromEntries(
+    (emps ?? []).map((e) => [e.id, e.full_name])
+  );
+  // Dropdown "Nama BD" pada form intake = karyawan BizDev yang masih aktif.
+  const bdOptions = (emps ?? [])
+    .filter((e) => e.division === "BizDev" && e.active !== false)
+    .map((e) => ({ id: e.id, full_name: e.full_name }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
-  const leadList = (leads as Lead[] | null) ?? [];
-  const attList = (attempts as Attempt[] | null) ?? [];
-  const attByLead = new Map<string, Attempt[]>();
-  for (const a of attList) {
-    const arr = attByLead.get(a.parent_lead_id) ?? [];
-    arr.push(a);
-    attByLead.set(a.parent_lead_id, arr);
+  const businessTypeOptions: BusinessTypeOptions = Object.fromEntries(
+    BRAND_CATEGORIES.map((c) => [c, [] as string[]])
+  ) as BusinessTypeOptions;
+  for (const row of businessTypes ?? []) {
+    const cat = row.brand_category as BrandCategory;
+    if (businessTypeOptions[cat]) businessTypeOptions[cat].push(row.label);
   }
+  const benefitOptions = (benefits ?? []).map((b) => b.label);
 
-  const poolCount = leadList.filter((l) => l.status === "[Pool]").length;
-  const myOpen = attList.filter(
-    (a) => a.owner_id === me?.id && a.status.startsWith("[") && !a.status.startsWith("[Closed")
-  ).length;
-  const won = attList.filter((a) => a.won).length;
-  const contested = [...attByLead.values()].filter((arr) => arr.length > 1).length;
+  const leadList = (leads as PoolLead[] | null) ?? [];
+  const countByStatus = (status: string) => leadList.filter((l) => l.crm_status === status).length;
+  const recordedLeadIds = new Set(
+    (recordedDeals ?? []).map((d) => d.lead_id).filter((id): id is string => !!id)
+  );
+  // Riwayat nominal transaksi per lead — jadi saran "Nominal Deals" di form
+  // "Catat Transaksi", dibatasi ke lead yang bersangkutan saja.
+  const nominalHistoryByLead: Record<string, number[]> = {};
+  for (const d of recordedDeals ?? []) {
+    if (!d.lead_id || !d.nominal_harga) continue;
+    (nominalHistoryByLead[d.lead_id] ??= []).push(d.nominal_harga);
+  }
 
   return (
     <>
-      <h1>Leads &amp; Prospek</h1>
-      <p className="page-sub">
-        Pool lead dedup by nomor (E.164). Prospek = salinan kerja BizDev; yang pertama closing
-        menang, sisanya otomatis [Closed - Kalah Kompetisi].
-      </p>
+      <div className="page-header">
+        <div>
+          <h1>Leads &amp; Prospek</h1>
+          <p className="page-sub">
+            Pool lead dedup by nomor (E.164). Prospek = salinan kerja BizDev; yang pertama closing
+            menang, sisanya otomatis [Closed - Kalah Kompetisi].
+          </p>
+        </div>
+        {canManage && <NewLeadModal bdOptions={bdOptions} businessTypeOptions={businessTypeOptions} />}
+      </div>
 
       <div className="stats">
         <div className="stat">
@@ -105,139 +79,38 @@ export default async function LeadsPage() {
           <div className="v">{leadList.length}</div>
         </div>
         <div className="stat">
-          <div className="k">Di Pool</div>
-          <div className="v">{poolCount}</div>
+          <div className="k">Approaching</div>
+          <div className="v">{countByStatus("Approaching")}</div>
         </div>
         <div className="stat">
-          <div className="k">Prospek Saya (aktif)</div>
-          <div className="v">{myOpen}</div>
+          <div className="k">Follow Up</div>
+          <div className="v">{countByStatus("Follow Up")}</div>
         </div>
         <div className="stat">
-          <div className="k">Diperebutkan</div>
-          <div className="v">{contested}</div>
+          <div className="k">Dealing</div>
+          <div className="v">{countByStatus("Dealing")}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Renewal</div>
+          <div className="v">{countByStatus("Renewal")}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Rejected</div>
+          <div className="v">{countByStatus("Rejected")}</div>
         </div>
       </div>
 
-      <div className="card">
-        <h2>Pool Lead ({leadList.length})</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Kode</th>
-              <th>Nama</th>
-              <th>Nomor</th>
-              <th>Sumber</th>
-              <th>Status</th>
-              <th className="right">Prospek</th>
-              {isBizDev && <th>Aksi</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {leadList.map((l) => {
-              const n = attByLead.get(l.id)?.length ?? 0;
-              const claimable = l.status === "[Pool]" || l.status === "[Scouted - Aktif]";
-              return (
-                <tr key={l.id}>
-                  <td className="mono">{l.code ?? "—"}</td>
-                  <td>
-                    {l.lead_name} {l.stale && <span className="badge amber">stale</span>}
-                  </td>
-                  <td className="mono">{l.phone_normalized}</td>
-                  <td className="muted">{l.source}</td>
-                  <td>
-                    <span className={`badge ${LEAD_STATUS_CLASS[l.status] ?? "gray"}`}>
-                      {l.status}
-                    </span>
-                  </td>
-                  <td className="right">{n}</td>
-                  {isBizDev && (
-                    <td>{claimable ? <ClaimButton leadId={l.id} /> : <span className="muted">—</span>}</td>
-                  )}
-                </tr>
-              );
-            })}
-            {leadList.length === 0 && (
-              <tr>
-                <td colSpan={isBizDev ? 7 : 6} className="muted">
-                  Belum ada lead. Daftarkan atau impor di bawah.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="card">
-        <h2>Papan Kompetisi Prospek</h2>
-        <p className="section-sub">
-          Setiap prospek yang Anda lihat sesuai hak akses. Closing dilakukan di menu Merchant
-          (memanggil close_deal).
-        </p>
-        <table>
-          <thead>
-            <tr>
-              <th>Prospek</th>
-              <th>Lead</th>
-              <th>Owner (BizDev)</th>
-              <th>Status</th>
-              <th>Lanjutkan</th>
-            </tr>
-          </thead>
-          <tbody>
-            {attList.map((a) => {
-              const lead = leadList.find((l) => l.id === a.parent_lead_id);
-              return (
-                <tr key={a.id}>
-                  <td className="mono">{a.code ?? "(pending)"}</td>
-                  <td>
-                    <span className="mono">{lead?.code ?? "—"}</span> {lead?.lead_name ?? "?"}
-                  </td>
-                  <td>{empName.get(a.owner_id) ?? "—"}</td>
-                  <td>
-                    <span className={`badge ${ATTEMPT_STATUS_CLASS[a.status] ?? "gray"}`}>
-                      {a.status}
-                    </span>
-                    {a.not_qualified_reason && (
-                      <div className="muted" style={{ fontSize: 11 }}>
-                        {a.not_qualified_reason}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    {canControl(a.owner_id) ? (
-                      <AttemptControls id={a.id} status={a.status} />
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            {attList.length === 0 && (
-              <tr>
-                <td colSpan={5} className="muted">
-                  Belum ada prospek. BizDev dapat mengambil lead dari pool di atas.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {canRegister && (
-        <>
-          <div className="card">
-            <h2>Daftarkan Lead</h2>
-            <NewLeadForm campaigns={campaigns ?? []} />
-          </div>
-          <div className="card">
-            <details className="disclose">
-              <summary>Impor Massal (CSV)</summary>
-              <ImportCsvForm campaigns={campaigns ?? []} />
-            </details>
-          </div>
-        </>
-      )}
+      <PoolLeadSection
+        leads={leadList}
+        bdOptions={bdOptions}
+        bdNameById={bdNameById}
+        businessTypeOptions={businessTypeOptions}
+        benefitOptions={benefitOptions}
+        recordedLeadIds={recordedLeadIds}
+        nominalHistoryByLead={nominalHistoryByLead}
+        isBizDev={isBizDev}
+        canManage={canManage}
+      />
     </>
   );
 }

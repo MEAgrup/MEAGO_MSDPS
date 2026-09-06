@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
+import { AssignOwnerRow, BudgetCapRow, EditCreatorModal, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
 import { UploadReportForm, DeleteReportButton } from "./report-forms";
 import { IngestForm } from "../ingest-form";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -11,16 +11,33 @@ type Creator = {
   id: string;
   code: string | null;
   name: string;
+  platform: string | null;
   username: string | null;
+  city: string | null;
   niche: string | null;
   jenis_creator: string | null;
   creator_level: string | null;
   binding_status: string | null;
+  status: string;
+  status_kontrak: string | null;
+  gmv: number | null;
+  gmv_live: number | null;
+  gmv_video: number | null;
   commission_share: number | null;
   owner_cpm_id: string | null;
   live_roster: boolean;
   ads_budget_cap: number | null;
+  notes: string | null;
+  top_niches: unknown;
   auth_user_id: string | null;
+  created_at: string | null;
+  status_changed_by: string | null;
+  status_changed_at: string | null;
+};
+
+const STATUS_KONTRAK_BADGE: Record<string, { cls: string; label: string }> = {
+  kontrak: { cls: "green", label: "Kontrak" },
+  "non kontrak": { cls: "slate", label: "Non Kontrak" },
 };
 
 const BINDING_BADGE: Record<string, { cls: string; label: string }> = {
@@ -140,10 +157,16 @@ function num1(n: number | null): string {
 // creator_reports (portal F.2) — daftar report terbaru utk kartu "Report Kreator".
 type ReportRow = { id: string; mcn_creator_id: string; title: string; created_at: string };
 
-export default async function McnCreatorsPage() {
+export default async function McnCreatorsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ akun?: string }>;
+}) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
   const me = await getEmployee();
+
+  const sp = await searchParams;
 
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
@@ -166,14 +189,15 @@ export default async function McnCreatorsPage() {
 
   // Daftar CM aktif (divisi CreatorManagement) — dipakai di dropdown assign owner.
   // Hanya di-fetch bila section-nya bakal dirender (canAssignOwner).
-  const cmEmployeesQuery = canAssignOwner
-    ? supabase
-        .from("employees")
-        .select("id, full_name, rank")
-        .eq("division", "CreatorManagement")
-        .eq("active", true)
-        .order("full_name", { ascending: true })
-    : Promise.resolve({ data: [] as { id: string; full_name: string; rank: string }[] });
+  const cmEmployeesQuery =
+    canAssignOwner || canManageOps
+      ? supabase
+          .from("employees")
+          .select("id, full_name, rank")
+          .eq("division", "CreatorManagement")
+          .eq("active", true)
+          .order("full_name", { ascending: true })
+      : Promise.resolve({ data: [] as { id: string; full_name: string; rank: string }[] });
 
   // Kartu report hanya di-fetch bila bakal dirender (canReportCreator).
   const reportsQuery = canReportCreator
@@ -194,7 +218,7 @@ export default async function McnCreatorsPage() {
     supabase
       .from("mcn_creators")
       .select(
-        "id, code, name, username, niche, jenis_creator, creator_level, binding_status, commission_share, owner_cpm_id, live_roster, ads_budget_cap, auth_user_id"
+        "id, code, name, platform, username, city, niche, jenis_creator, creator_level, binding_status, status, status_kontrak, gmv, gmv_live, gmv_video, commission_share, owner_cpm_id, live_roster, ads_budget_cap, notes, top_niches, auth_user_id, created_at, status_changed_by, status_changed_at"
       )
       .order("name", { ascending: true }),
     supabase.from("employees").select("id, full_name"),
@@ -204,6 +228,26 @@ export default async function McnCreatorsPage() {
 
   const creators = (creatorsRaw as Creator[] | null) ?? [];
   const creatorIds = creators.map((c) => c.id);
+
+  // Card "Akun Portal Kreator" TIDAK boleh merender seluruh roster. Sejak impor
+  // 2026-09-03 production punya 2.250 kreator, dan tiap baris tanpa akun merender
+  // satu <PortalAccountRow> — yaitu satu form email+password. Merender semuanya =
+  // 2.250 form dalam satu halaman, plus satu panggilan admin.getUserById per
+  // kreator yang sudah tertaut. Jadi: yang sudah punya akun selalu tampil
+  // (jumlahnya kecil dan memang perlu terlihat), sisanya hanya lewat pencarian.
+  const PORTAL_SEARCH_LIMIT = 50;
+  const akunQuery = (sp.akun ?? "").trim();
+  const akunNeedle = akunQuery.toLowerCase();
+  const portalLinked = creators.filter((c) => c.auth_user_id);
+  const portalMatches = akunNeedle
+    ? creators.filter(
+        (c) =>
+          !c.auth_user_id &&
+          [c.name, c.username, c.code].some((f) => (f ?? "").toLowerCase().includes(akunNeedle))
+      )
+    : [];
+  const portalTruncated = portalMatches.length > PORTAL_SEARCH_LIMIT;
+  const portalCreators = [...portalLinked, ...portalMatches.slice(0, PORTAL_SEARCH_LIMIT)];
 
   // Baris yang ditampilkan di card ops: lead CM/Acquisition/management lihat semua;
   // CM staff hanya lihat kreator miliknya sendiri (mencegah kegagalan RLS yang
@@ -264,9 +308,8 @@ export default async function McnCreatorsPage() {
         // di environment) — kolom email cukup tampil "—".
         try {
           const admin = createAdminClient();
-          const linked = creators.filter((c) => c.auth_user_id);
           await Promise.all(
-            linked.map(async (c) => {
+            portalLinked.map(async (c) => {
               const { data } = await admin.auth.admin.getUserById(c.auth_user_id as string);
               if (data?.user?.email) accountEmail.set(c.id, data.user.email);
             })
@@ -330,6 +373,8 @@ export default async function McnCreatorsPage() {
                 <th className="right">Live stream</th>
                 <th className="right">Valid live stream</th>
                 <th>Roster Live</th>
+                <th>Kontrak</th>
+                {canManageOps && <th>Aksi</th>}
               </tr>
             </thead>
             <tbody>
@@ -378,12 +423,26 @@ export default async function McnCreatorsPage() {
                         <span className="muted">—</span>
                       )}
                     </td>
+                    <td>
+                      {c.status_kontrak ? (
+                        <span className={`badge ${STATUS_KONTRAK_BADGE[c.status_kontrak]?.cls ?? "gray"}`}>
+                          {STATUS_KONTRAK_BADGE[c.status_kontrak]?.label ?? c.status_kontrak}
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    {canManageOps && (
+                      <td>
+                        <EditCreatorModal creator={c} cmOptions={cmEmployees} />
+                      </td>
+                    )}
                   </tr>
                 );
               })}
               {creators.length === 0 && (
                 <tr>
-                  <td colSpan={15} className="muted">
+                  <td colSpan={canManageOps ? 17 : 16} className="muted">
                     Belum ada kreator terdaftar.
                   </td>
                 </tr>
@@ -446,21 +505,37 @@ export default async function McnCreatorsPage() {
           <p className="section-sub">
             Buat akun login portal /kreator untuk kreator (tidak ada pendaftaran mandiri).
             Hanya CM Lead / OD / Director. Kreator memakai email &amp; password ini untuk masuk.
+            Roster {creators.length.toLocaleString("id-ID")} kreator terlalu besar untuk
+            ditampilkan utuh — <strong>cari kreatornya dulu</strong>. Kreator yang sudah
+            punya akun selalu tampil di bawah.
           </p>
+          <form method="get" style={{ display: "flex", gap: 8, margin: "0 0 12px" }}>
+            <input
+              type="search"
+              name="akun"
+              defaultValue={akunQuery}
+              placeholder="Cari nama, username, atau kode kreator…"
+              aria-label="Cari kreator untuk dibuatkan akun portal"
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <button type="submit">Cari</button>
+          </form>
           <div style={{ overflowX: "auto" }}>
             <table>
               <thead>
                 <tr>
                   <th>Kode</th>
                   <th>Nama</th>
+                  <th>Username</th>
                   <th>Akun Portal</th>
                 </tr>
               </thead>
               <tbody>
-                {creators.map((c) => (
+                {portalCreators.map((c) => (
                   <tr key={c.id}>
                     <td className="mono">{c.code ?? "—"}</td>
                     <td>{c.name}</td>
+                    <td className="mono muted">{c.username ?? "—"}</td>
                     <td>
                       {c.auth_user_id ? (
                         <span>
@@ -473,16 +548,26 @@ export default async function McnCreatorsPage() {
                     </td>
                   </tr>
                 ))}
-                {creators.length === 0 && (
+                {portalCreators.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="muted">
-                      Belum ada kreator terdaftar.
+                    <td colSpan={4} className="muted">
+                      {creators.length === 0
+                        ? "Belum ada kreator terdaftar."
+                        : akunQuery
+                          ? `Tidak ada kreator cocok dengan "${akunQuery}".`
+                          : "Ketik nama, username, atau kode kreator di kotak pencarian di atas."}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          {portalTruncated && (
+            <p className="section-sub muted">
+              Menampilkan {PORTAL_SEARCH_LIMIT} dari {portalMatches.length.toLocaleString("id-ID")}{" "}
+              kreator yang cocok — persempit pencariannya.
+            </p>
+          )}
         </div>
       )}
 

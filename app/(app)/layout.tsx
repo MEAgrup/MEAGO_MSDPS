@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCreator, getCachedClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
+import { MobileShell } from "@/components/mobile-shell";
 
 export default async function AppLayout({
   children,
@@ -40,8 +41,50 @@ export default async function AppLayout({
   const seeCM = mgmt || div === "CreatorManagement";
   const seeBD = mgmt || div === "BizDev";
   const seeAcq = mgmt || div === "Acquisition";
+  const seeCampaign = mgmt || ["CampaignSpecialist", "BizDev", "Account"].includes(div);
   const seeProj =
     mgmt || isLead || ["CreatorManagement", "BizDev", "Acquisition"].includes(div);
+
+  // Notif "Leads & Prospek" + "Merchant Deals": brand berstatus Dealing/Renewal
+  // yang belum punya transaksi deal (brand_deals.lead_id). Sama untuk kedua
+  // link — dihitung sekali di sini. Dibatasi ke mgmt/BizDev (bukan seeLeads
+  // penuh) karena RLS brand_deals tidak mengizinkan Marketing SELECT — badge
+  // untuk Marketing akan selalu tampak "penuh" (dealtSet kosong) kalau dipaksa.
+  let missingDealCount = 0;
+  // Deal yang berhenti tanpa kategori_poi (baris Import Master Deal belum dilengkapi).
+  // Tracker operasional memfilter kolom itu, jadi baris seperti ini tak pernah
+  // dikerjakan siapa pun sampai ada yang membuka /deals dan sadar. Badge ini yang
+  // membuatnya terlihat dari nav.
+  let incompleteDealCount = 0;
+  if (mgmt || div === "BizDev") {
+    const supabase = await getCachedClient();
+    const [{ data: dealingLeads }, { data: dealtLeads }, { count: incompleteCount }] = await Promise.all([
+      supabase.from("leads").select("id").in("crm_status", ["Dealing", "Renewal"]),
+      supabase.from("brand_deals").select("lead_id").not("lead_id", "is", null),
+      supabase.from("brand_deals").select("id", { count: "exact", head: true }).is("kategori_poi", null),
+    ]);
+    const dealtSet = new Set((dealtLeads ?? []).map((d) => d.lead_id));
+    missingDealCount = (dealingLeads ?? []).filter((l) => !dealtSet.has(l.id)).length;
+    incompleteDealCount = incompleteCount ?? 0;
+  }
+
+  const NotifBadge = ({ count }: { count: number }) =>
+    count > 0 ? (
+      <span className="badge red" style={{ marginLeft: 6 }} title="Dealing/Renewal belum ada transaksi deal">
+        {count}
+      </span>
+    ) : null;
+
+  const IncompleteBadge = ({ count }: { count: number }) =>
+    count > 0 ? (
+      <span
+        className="badge amber"
+        style={{ marginLeft: 6 }}
+        title="Transaksi deal belum dilengkapi — belum masuk tracker operasional"
+      >
+        {count}
+      </span>
+    ) : null;
 
   const sectionHeading = (label: string) => (
     <div
@@ -59,13 +102,12 @@ export default async function AppLayout({
     </div>
   );
 
-  return (
-    <div className="app-shell">
-      <nav className="sidebar">
-        <div className="brand">MSDPS</div>
-        <div className="sub">MEAGO!</div>
+  const sidebar = (
+    <>
+      <div className="brand">MSDPS</div>
+      <div className="sub">MEAGO!</div>
 
-        {sectionHeading("Umum")}
+      {sectionHeading("Umum")}
         <Link href="/dashboard">Dashboard</Link>
         <Link href="/portal">Team Portal</Link>
         {seeFinance && <Link href="/finance">Keuangan</Link>}
@@ -76,12 +118,31 @@ export default async function AppLayout({
         {seeCM && sectionHeading("CM Kreator")}
         {(seeCM || div === "BizDev") && <Link href="/meago/creators">Data Kreator</Link>}
         {seeCM && <Link href="/meago/workspace">CM Workspace</Link>}
+        {(seeCM || div === "BizDev") && <Link href="/meago/gmv-video">GMV Video Mingguan</Link>}
         {(seeCM || div === "BizDev") && <Link href="/meago/schedule">Jadwal Live</Link>}
 
         {seeBD && sectionHeading("BizDev & Admin Ops")}
-        {seeLeads && <Link href="/leads">Leads &amp; Prospek</Link>}
-        {seeBD && <Link href="/deals">Merchant Deals</Link>}
+        {seeLeads && (
+          <Link href="/leads">
+            Leads &amp; Prospek
+            <NotifBadge count={missingDealCount} />
+          </Link>
+        )}
+        {seeLeads && <Link href="/leads/dashboard">Dashboard CRM</Link>}
+        {seeBD && (
+          <Link href="/deals">
+            Merchant Deals
+            <NotifBadge count={missingDealCount} />
+            <IncompleteBadge count={incompleteDealCount} />
+          </Link>
+        )}
         {seeBD && <Link href="/bizdev">BizDev Workspace</Link>}
+        {seeBD && <Link href="/bizdev/poi">POI Accommodation &amp; TTD</Link>}
+        {seeBD && <Link href="/bizdev/poi-dining">POI Dining</Link>}
+        {me?.is_director && <Link href="/bizdev/settings">Setting Bizdev &amp; Admin Ops</Link>}
+
+        {seeCampaign && sectionHeading("Campaign MEA GO")}
+        {seeCampaign && <Link href="/meago/campaigns">Campaign MEA GO</Link>}
 
         {seeAcq && sectionHeading("Akuisisi Kreator")}
         {seeAcq && <Link href="/acquisition">Akuisisi Kreator</Link>}
@@ -119,8 +180,12 @@ export default async function AppLayout({
             </button>
           </form>
         </div>
-      </nav>
-      <main className="main">{children}</main>
-    </div>
+    </>
+  );
+
+  return (
+    <MobileShell brand="MSDPS" sidebar={sidebar}>
+      {children}
+    </MobileShell>
   );
 }

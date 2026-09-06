@@ -62,12 +62,27 @@ export default async function AcquisitionPage() {
 
   const supabase = await getCachedClient();
 
-  const [{ data: creatorsRaw }, { data: acqRaw }, { data: refRaw }, { data: emps }, { data: projRaw }] =
-    await Promise.all([
+  const [
+    { data: creatorsRaw },
+    { data: prospekRaw },
+    { data: acqRaw },
+    { data: refRaw },
+    { data: emps },
+    { data: projRaw },
+  ] = await Promise.all([
       supabase
         .from("mcn_creators")
         .select("id, name, code, status, owner_cpm_id, username, niche, city, created_at")
         .order("name", { ascending: true }),
+      // Prospek di-query TERPISAH dengan filter status di server. Jangan andalkan
+      // filter status dari daftar `creators` di atas: PostgREST membatasi hasil ke
+      // 1000 baris, dan dengan >1000 kreator prospek bernama akhir-abjad ikut
+      // terpotong sehingga tak pernah tampil (mis. di dropdown "Catat Akuisisi").
+      supabase
+        .from("mcn_creators")
+        .select("id, code, name, username, niche, city, created_at")
+        .eq("status", "prospek")
+        .order("created_at", { ascending: false }),
       supabase
         .from("acquisitions")
         .select(
@@ -104,11 +119,23 @@ export default async function AcquisitionPage() {
         }[]
       | null) ?? [];
   const creatorMap = new Map(creators.map((c) => [c.id, c]));
-  const prospects = creators.filter((c) => c.status === "prospek").map((c) => ({ id: c.id, code: c.code, name: c.name }));
-  const prospectRows = creators
-    .filter((c) => c.status === "prospek")
-    .slice()
-    .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
+
+  // Sumber tunggal untuk daftar & dropdown prospek: hasil query berfilter status
+  // (bukan hasil filter array `creators` yang terpotong 1000 baris). `prospekRaw`
+  // sudah ter-order created_at desc dari DB.
+  const prospectRows =
+    (prospekRaw as
+      | {
+          id: string;
+          code: string | null;
+          name: string;
+          username: string | null;
+          niche: string | null;
+          city: string | null;
+          created_at: string;
+        }[]
+      | null) ?? [];
+  const prospects = prospectRows.map((c) => ({ id: c.id, code: c.code, name: c.name }));
 
   const acquisitions = (acqRaw as Acquisition[] | null) ?? [];
 

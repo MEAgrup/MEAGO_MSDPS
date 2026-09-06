@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient, hasAdminEnv } from "@/lib/supabase/admin";
 import { rupiah, num, tanggal } from "@/lib/format";
 import { NewCampaignForm, StatusButtons, BudgetForm } from "./forms";
 
@@ -53,7 +53,8 @@ export default async function CampaignsPage() {
   const canSeeMetrics = !!(me?.is_od || me?.is_director || me?.division === "Marketing");
 
   const supabase = await getCachedClient();
-  const admin = canSeeMetrics ? createAdminClient() : null;
+  // Tanpa service key, metrik tampil kosong — jangan jatuhkan seluruh halaman.
+  const admin = canSeeMetrics && hasAdminEnv() ? createAdminClient() : null;
 
   const [{ data: campaigns }, { data: budgets }, { data: metrics }, { data: owners }] =
     await Promise.all([

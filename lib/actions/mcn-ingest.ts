@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { fileHash8, buildBatchId, readWorkbookSheets } from "@/lib/mcn/file-read";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { fileHashFull, buildBatchId, readWorkbookSheets } from "@/lib/mcn/file-read";
 import {
   parsePlatformRows,
   aggregateRows,
@@ -23,6 +24,14 @@ export type ActionResult = { ok: boolean; message: string };
 const DEFAULT_PRICE_BOUNDS: PriceBounds = { low: 180000, entry: 800000, sweet: 3600000, high: 8000000 };
 // Ambang jenis_creator dari rasio GMV live:video — >70% salah satu sisi menang, else 'mixed'.
 const JENIS_RATIO = 0.7;
+
+// Bucket Storage privat tempat arsip RENDER (hasil agregat, bukan file mentah) disimpan.
+// File asli yang diunggah pengguna TIDAK PERNAH diunggah/dipersist ke mana pun — ia hanya
+// hidup sebagai buffer memori selama request ini lalu dibuang (drop-raw). Yang diarsipkan
+// di sini hanyalah JSON hasil render (summary/subcat/top_products) untuk kebutuhan audit &
+// reproduksi, dan hanya bisa disentuh service-role (lihat lib/actions/creator-reports.ts).
+const ARCHIVE_BUCKET = "weekly-archives";
+const DEFAULT_RETENTION_MONTHS = 6;
 
 async function ctx() {
   const supabase = await createClient();
@@ -87,13 +96,50 @@ async function checkOverlapGuard(
   return null;
 }
 
+// Guard duplikat: file dgn hash penuh identik sudah pernah diproses (status 'processed').
+// Dipakai kedua jalur ingest (legacy & Creator Analysis), dipanggil SEBELUM guard overlap.
+// force=true (dari checkbox "Proses ulang jika file duplikat" di form) melewati guard ini
+// dengan sengaja — dipakai saat pengguna memang ingin menimpa ulang periode yang sama.
+async function checkDuplicateGuard(
+  supabase: SupabaseClient,
+  hashFull: string,
+  force: boolean
+): Promise<ActionResult | null> {
+  if (force) return null;
+  const { data: dup, error } = await supabase
+    .from("upload_batches")
+    .select("batch_id, period_start, period_end, uploaded_at")
+    .eq("file_hash_full", hashFull)
+    .eq("status", "processed")
+    .limit(1)
+    .maybeSingle();
+  if (error) return { ok: false, message: `Gagal cek duplikat file: ${error.message}` };
+  if (dup) {
+    return {
+      ok: false,
+      message:
+        `File identik sudah diproses sebelumnya untuk periode ${dup.period_start}..${dup.period_end} ` +
+        `(batch ${dup.batch_id}, diunggah ${dup.uploaded_at}). Centang "Proses ulang jika file duplikat" ` +
+        `pada form bila memang ingin memproses ulang (menimpa data periode tersebut).`,
+    };
+  }
+  return null;
+}
+
 // Upsert upload_batches ke staging (idempoten via batch_id; dup 23505 → reset ke staging).
 // Dipakai kedua jalur ingest. Return batchRowId atau pesan error.
 async function upsertStagingBatch(
   supabase: SupabaseClient,
-  args: { batch_id: string; source_type: string; periodStart: string; periodEnd: string; hash8: string }
+  args: {
+    batch_id: string;
+    source_type: string;
+    periodStart: string;
+    periodEnd: string;
+    hash8: string;
+    hashFull: string;
+  }
 ): Promise<{ ok: true; batchRowId: string } | { ok: false; message: string }> {
-  const { batch_id, source_type, periodStart, periodEnd, hash8 } = args;
+  const { batch_id, source_type, periodStart, periodEnd, hash8, hashFull } = args;
   const { data: ins, error: insErr } = await supabase
     .from("upload_batches")
     .insert({
@@ -102,6 +148,7 @@ async function upsertStagingBatch(
       period_start: periodStart,
       period_end: periodEnd,
       file_hash: hash8,
+      file_hash_full: hashFull,
       status: "staging",
     })
     .select("id")
@@ -110,7 +157,14 @@ async function upsertStagingBatch(
     if (insErr.code === "23505") {
       const { data: upd, error: uErr } = await supabase
         .from("upload_batches")
-        .update({ status: "staging", error: null, source_type, period_end: periodEnd, file_hash: hash8 })
+        .update({
+          status: "staging",
+          error: null,
+          source_type,
+          period_end: periodEnd,
+          file_hash: hash8,
+          file_hash_full: hashFull,
+        })
         .eq("batch_id", batch_id)
         .select("id")
         .maybeSingle();
@@ -133,6 +187,121 @@ function makeFailBatch(supabase: SupabaseClient, batchRowId: string) {
   };
 }
 
+// Baca app_config 'mcn.retention_months' (default 6 bulan bila belum diset/invalid).
+async function getRetentionMonths(supabase: SupabaseClient): Promise<number> {
+  const { data } = await supabase
+    .from("app_config")
+    .select("value")
+    .eq("key", "mcn.retention_months")
+    .maybeSingle();
+  const n = data?.value != null ? Number(data.value) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_RETENTION_MONTHS;
+}
+
+// Tanggal cutoff retensi (YYYY-MM-DD) = hari ini dikurangi N bulan.
+function retentionCutoffDate(months: number): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  return d.toISOString().slice(0, 10);
+}
+
+// Arsip RENDER (hasil agregat, BUKAN file mentah) ke bucket privat weekly-archives, lalu
+// catat path-nya ke upload_batches. Dipanggil kedua jalur ingest setelah batch ditandai
+// processed. File asli yang diupload user tidak pernah disentuh di sini — ia sudah dibuang
+// begitu parsing selesai (drop-raw); yang diarsipkan hanyalah JSON hasil agregasi supaya
+// masih bisa diaudit/direproduksi tanpa perlu menyimpan raw data pelanggan mentah-mentah.
+async function archiveWeeklyRender(
+  supabase: SupabaseClient,
+  args: {
+    batchRowId: string;
+    batch_id: string;
+    source_type: string;
+    periodStart: string;
+    periodEnd: string;
+    hash8: string;
+    rowCountRaw: number;
+    creatorsCount: number;
+    summaryRows: unknown[];
+    subcatRows?: unknown[];
+    topRows?: unknown[];
+  }
+): Promise<string> {
+  const payload = {
+    batch_id: args.batch_id,
+    source_type: args.source_type,
+    period_start: args.periodStart,
+    period_end: args.periodEnd,
+    generated_at: new Date().toISOString(),
+    row_count_raw: args.rowCountRaw,
+    creators_count: args.creatorsCount,
+    summary: args.summaryRows,
+    subcat: args.subcatRows ?? [],
+    top_products: args.topRows ?? [],
+  };
+  const archive_path = `${args.periodStart}/${args.hash8}.json`;
+
+  const admin = createAdminClient();
+  const { error: upErr } = await admin.storage
+    .from(ARCHIVE_BUCKET)
+    .upload(archive_path, Buffer.from(JSON.stringify(payload)), {
+      contentType: "application/json",
+      upsert: true, // re-proses (mis. via force_reprocess) menimpa arsip lama di path yang sama
+    });
+  if (upErr) throw new Error(upErr.message);
+
+  const { error: patchErr } = await supabase
+    .from("upload_batches")
+    .update({ archive_path, archive_deleted_at: null })
+    .eq("id", args.batchRowId);
+  if (patchErr) throw new Error(patchErr.message);
+
+  return archive_path;
+}
+
+// sweepExpiredWeeklyData — retensi data mingguan: hapus baris agregat DB + arsip Storage
+// yang lebih tua dari cutoff (app_config 'mcn.retention_months', default 6 bulan). Dipanggil
+// best-effort (try/catch di pemanggil) setelah ingest sukses di KEDUA jalur, supaya retensi
+// jalan segera tanpa menunggu pg_cron bulanan (yang tetap ada sebagai safety net terpisah).
+async function sweepExpiredWeeklyData(supabase: SupabaseClient): Promise<void> {
+  const months = await getRetentionMonths(supabase);
+  const cutoff = retentionCutoffDate(months);
+
+  // Hapus baris agregat DB kedaluwarsa (client sesi user — RLS delete CM sudah mengizinkan).
+  for (const table of ["creator_period_summary", "creator_subcat_segment_gmv", "creator_top_products"]) {
+    await supabase.from(table).delete().lt("period_start", cutoff);
+  }
+
+  // Hapus arsip Storage kedaluwarsa (hanya batch yang masih punya archive_path).
+  const { data: expiredRaw } = await supabase
+    .from("upload_batches")
+    .select("id, archive_path")
+    .not("archive_path", "is", null)
+    .lt("period_start", cutoff);
+  const expired = (expiredRaw ?? []) as { id: string; archive_path: string | null }[];
+  const paths = expired.map((e) => e.archive_path).filter((p): p is string => !!p);
+  if (paths.length === 0) return;
+
+  const admin = createAdminClient();
+  const { error: rmErr } = await admin.storage.from(ARCHIVE_BUCKET).remove(paths);
+  if (rmErr) throw new Error(rmErr.message);
+
+  await supabase
+    .from("upload_batches")
+    .update({ archive_path: null, archive_deleted_at: new Date().toISOString() })
+    .in(
+      "id",
+      expired.map((e) => e.id)
+    );
+}
+
+// Baca flag checkbox "Proses ulang jika file duplikat" dari form (name=force_reprocess).
+function readForceReprocess(formData: FormData): boolean {
+  const raw = formData.get("force_reprocess");
+  if (raw === null) return false;
+  const v = String(raw).trim().toLowerCase();
+  return v === "1" || v === "true" || v === "on";
+}
+
 // runIngest: pipeline Upload Data Mingguan (process-on-ingest, drop-raw).
 export async function runIngest(
   _prev: ActionResult | null,
@@ -150,12 +319,15 @@ export async function runIngest(
   if (file.size === 0) return { ok: false, message: "File kosong." };
   const source_type = String(formData.get("source_type") || "").trim() || "tiktok";
   const platform = source_type; // MEAGO TikTok-only; platform mengikuti source_type.
+  const force = readForceReprocess(formData);
 
   let sheets: WorkbookSheet[];
   let hash8: string;
+  let hashFull: string;
   try {
     const buf = Buffer.from(await file.arrayBuffer());
-    hash8 = fileHash8(buf);
+    hashFull = fileHashFull(buf); // sekali hashing; hash8 (dipakai batch_id) diturunkan dari sini.
+    hash8 = hashFull.slice(0, 8);
     sheets = await readWorkbookSheets(file);
   } catch (e) {
     return { ok: false, message: `Gagal membaca file: ${e instanceof Error ? e.message : String(e)}` };
@@ -164,7 +336,7 @@ export async function runIngest(
   // Router format: workbook "Creator Analysis" (2 sheet Filter+Data) → jalur baru.
   // Selain itu → jalur legacy (report performa single-sheet, cells = sheet pertama).
   if (isCreatorAnalysisWorkbook(sheets)) {
-    return runCreatorAnalysisIngest(supabase, sheets, source_type, platform, hash8);
+    return runCreatorAnalysisIngest(supabase, sheets, source_type, platform, hash8, hashFull, force);
   }
   const cells: string[][] = sheets[0]?.cells ?? [];
 
@@ -191,6 +363,10 @@ export async function runIngest(
   // 3. Window W1-W5.
   const win = validateW1W5Period(periodStart, periodEnd);
   if (!win.ok) return { ok: false, message: win.message };
+
+  // 3b. Guard duplikat: file dgn hash penuh sama sudah pernah processed (kecuali force).
+  const dupErr = await checkDuplicateGuard(supabase, hashFull, force);
+  if (dupErr) return dupErr;
 
   // 4. Guard overlap: batch processed lain dgn period_start beda tapi rentang overlap.
   const overlapErr = await checkOverlapGuard(supabase, periodStart, periodEnd);
@@ -255,6 +431,7 @@ export async function runIngest(
     periodStart,
     periodEnd,
     hash8,
+    hashFull,
   });
   if (!staging.ok) return { ok: false, message: staging.message };
   const batchRowId = staging.batchRowId;
@@ -375,6 +552,36 @@ export async function runIngest(
     .eq("id", batchRowId);
   if (pErr) return failBatch(`Gagal menandai processed: ${pErr.message}`);
 
+  // 13. Arsip RENDER hasil agregat ke Storage privat (best-effort — gagal arsip TIDAK
+  //     menggagalkan ingest yang sudah tertulis, hanya dicatat di pesan sukses).
+  let archiveMsg = "";
+  try {
+    const retentionMonths = await getRetentionMonths(supabase);
+    const archivePath = await archiveWeeklyRender(supabase, {
+      batchRowId,
+      batch_id,
+      source_type,
+      periodStart,
+      periodEnd,
+      hash8,
+      rowCountRaw: parsed.rows.length,
+      creatorsCount: ids.length,
+      summaryRows,
+      subcatRows,
+      topRows,
+    });
+    archiveMsg = ` Arsip tersimpan: ${ARCHIVE_BUCKET}/${archivePath} (retensi ${retentionMonths} bulan).`;
+  } catch (e) {
+    archiveMsg = ` (Arsip gagal disimpan: ${e instanceof Error ? e.message : String(e)})`;
+  }
+
+  // 14. Sweep retensi (best-effort, jalan tanpa menunggu pg_cron bulanan).
+  try {
+    await sweepExpiredWeeklyData(supabase);
+  } catch {
+    // sengaja diabaikan; sweep hanya safety net tambahan, pg_cron tetap jalan bulanan.
+  }
+
   revalidatePath("/meago/workspace");
   revalidatePath("/meago/creators");
 
@@ -393,7 +600,7 @@ export async function runIngest(
 
   return {
     ok: true,
-    message: `Ingest ${periodStart}..${periodEnd} selesai: ${parsed.rows.length} baris, ${ids.length} kreator.${autoMsg}${unattrMsg}${skipMsg}`,
+    message: `Ingest ${periodStart}..${periodEnd} selesai: ${parsed.rows.length} baris, ${ids.length} kreator.${autoMsg}${unattrMsg}${skipMsg}${archiveMsg}`,
   };
 }
 
@@ -417,12 +624,18 @@ async function runCreatorAnalysisIngest(
   sheets: WorkbookSheet[],
   source_type: string,
   platform: string,
-  hash8: string
+  hash8: string,
+  hashFull: string,
+  force: boolean
 ): Promise<ActionResult> {
   // a. Parse workbook. Gagal → pesan error (belum ada batch row).
   const parsed = parseCreatorAnalysisWorkbook(sheets);
   if (!parsed.ok) return { ok: false, message: parsed.error };
   const { periodStart, periodEnd, rows, skipped } = parsed;
+
+  // a2. Guard duplikat: file dgn hash penuh sama sudah pernah processed (kecuali force).
+  const dupErr = await checkDuplicateGuard(supabase, hashFull, force);
+  if (dupErr) return dupErr;
 
   // b. Guard overlap periode (sama logika legacy).
   const overlapErr = await checkOverlapGuard(supabase, periodStart, periodEnd);
@@ -516,6 +729,7 @@ async function runCreatorAnalysisIngest(
     periodStart,
     periodEnd,
     hash8,
+    hashFull,
   });
   if (!staging.ok) return { ok: false, message: staging.message };
   const failBatch = makeFailBatch(supabase, staging.batchRowId);
@@ -632,6 +846,35 @@ async function runCreatorAnalysisIngest(
     .eq("id", staging.batchRowId);
   if (pErr) return failBatch(`Gagal menandai processed: ${pErr.message}`);
 
+  // k. Arsip RENDER hasil agregat ke Storage privat (best-effort — gagal arsip TIDAK
+  //    menggagalkan ingest yang sudah tertulis, hanya dicatat di pesan sukses). Format
+  //    Creator Analysis tak mengisi subcat/top_products → diomit dari payload arsip.
+  let archiveMsg = "";
+  try {
+    const retentionMonths = await getRetentionMonths(supabase);
+    const archivePath = await archiveWeeklyRender(supabase, {
+      batchRowId: staging.batchRowId,
+      batch_id,
+      source_type,
+      periodStart,
+      periodEnd,
+      hash8,
+      rowCountRaw: rows.length,
+      creatorsCount: ids.length,
+      summaryRows,
+    });
+    archiveMsg = ` Arsip tersimpan: ${ARCHIVE_BUCKET}/${archivePath} (retensi ${retentionMonths} bulan).`;
+  } catch (e) {
+    archiveMsg = ` (Arsip gagal disimpan: ${e instanceof Error ? e.message : String(e)})`;
+  }
+
+  // l. Sweep retensi (best-effort, jalan tanpa menunggu pg_cron bulanan).
+  try {
+    await sweepExpiredWeeklyData(supabase);
+  } catch {
+    // sengaja diabaikan; sweep hanya safety net tambahan, pg_cron tetap jalan bulanan.
+  }
+
   revalidatePath("/meago/workspace");
   revalidatePath("/meago/creators");
 
@@ -649,7 +892,7 @@ async function runCreatorAnalysisIngest(
 
   return {
     ok: true,
-    message: `Ingest Creator Analysis ${periodStart}..${periodEnd} selesai: ${rows.length} baris, ${ids.length} kreator.${autoMsg}${bindingMsg}${skipMsg}`,
+    message: `Ingest Creator Analysis ${periodStart}..${periodEnd} selesai: ${rows.length} baris, ${ids.length} kreator.${autoMsg}${bindingMsg}${skipMsg}${archiveMsg}`,
   };
 }
 

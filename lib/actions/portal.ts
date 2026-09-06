@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  createAdminClient,
+  hasAdminEnv,
+  adminKeyWarning,
+  ADMIN_ENV_MESSAGE,
+} from "@/lib/supabase/admin";
 import { parseRupiah } from "@/lib/mcn/parsers";
 import {
   PORTAL_REQUEST_TYPES,
@@ -131,6 +136,54 @@ export async function createComplaint(
   };
 }
 
+// updateBankAccount — kreator mengisi/mengoreksi rekening pencairan payout
+// campaign MEA GO dari profil portal (keputusan #11). RLS tidak bisa
+// membatasi per kolom (jebakan #6) — mcn_creators HANYA punya policy select
+// creator-self, tidak ada policy update, jadi kolom ini WAJIB lewat
+// service-role, sama seperti auth_user_id di createCreatorAccount.
+export async function updateBankAccount(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+    const { data: creator } = await supabase
+      .from("mcn_creators")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    if (!creator) return { ok: false, message: "Akun ini bukan kreator portal." };
+
+    const bank_name = String(formData.get("bank_name") || "").trim();
+    const bank_account_number = String(formData.get("bank_account_number") || "").trim();
+    const bank_account_name = String(formData.get("bank_account_name") || "").trim();
+    if (!bank_name || !bank_account_number || !bank_account_name) {
+      return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
+    }
+
+    if (!hasAdminEnv()) {
+      console.error("[updateBankAccount] SUPABASE_SERVICE_ROLE_KEY / NEXT_PUBLIC_SUPABASE_URL tidak tersedia di runtime.");
+      return { ok: false, message: adminKeyWarning() ?? ADMIN_ENV_MESSAGE };
+    }
+
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from("mcn_creators")
+      .update({ bank_name, bank_account_number, bank_account_name })
+      .eq("id", creator.id);
+    if (error) return { ok: false, message: `Gagal menyimpan rekening: ${error.message}` };
+
+    revalidatePath("/kreator/profil");
+    return { ok: true, message: "Rekening tersimpan." };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("[updateBankAccount] exception:", e);
+    return { ok: false, message: `Gagal menyimpan rekening: ${detail}` };
+  }
+}
+
 // ---- Sisi admin: akun portal kreator ---------------------------------------
 
 async function adminCtx() {
@@ -169,65 +222,90 @@ export async function createCreatorAccount(
   _prev: ActionResult | null,
   formData: FormData
 ): Promise<ActionResult> {
-  const { supabase, user, me } = await adminCtx();
-  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
-  if (!isCmLeadOrMgmt(me)) {
-    return { ok: false, message: "Hanya CM Lead atau management yang dapat membuat akun portal." };
-  }
-
-  const creator_id = String(formData.get("creator_id") || "");
-  const email = String(formData.get("email") || "").trim().toLowerCase();
-  const password = String(formData.get("password") || "");
-  if (!creator_id || !email || !password) {
-    return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
-  }
-  if (password.length < 8) {
-    return { ok: false, message: "Password minimal 8 karakter." };
-  }
-
-  // Pastikan kreator belum punya akun (baca via client biasa — RLS karyawan boleh baca).
-  const { data: creator, error: cErr } = await supabase
-    .from("mcn_creators")
-    .select("id, name, auth_user_id")
-    .eq("id", creator_id)
-    .maybeSingle();
-  if (cErr) return { ok: false, message: `Gagal membaca kreator: ${cErr.message}` };
-  if (!creator) return { ok: false, message: "Kreator tidak ditemukan." };
-  if (creator.auth_user_id) {
-    return { ok: false, message: "Kreator ini sudah memiliki akun portal." };
-  }
-
-  const admin = createAdminClient();
-  const { data: created, error: createErr } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-  });
-  if (createErr || !created?.user) {
-    const msg = createErr?.message ?? "gagal membuat user";
-    if (/already|registered|exist/i.test(msg)) {
-      return { ok: false, message: `Email "${email}" sudah terpakai oleh akun lain.` };
+  // Sama seperti createEmployee: action ini tidak boleh melempar, karena
+  // exception apa pun sampai ke user sebagai "internal server error" kosong.
+  try {
+    const { supabase, user, me } = await adminCtx();
+    if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+    if (!isCmLeadOrMgmt(me)) {
+      return { ok: false, message: "Hanya CM Lead atau management yang dapat membuat akun portal." };
     }
-    return { ok: false, message: `Gagal membuat akun: ${msg}` };
-  }
 
-  // Guard balapan: hanya kaitkan bila kreator masih tanpa akun (dua admin paralel).
-  const { data: linkedRows, error: linkErr } = await admin
-    .from("mcn_creators")
-    .update({ auth_user_id: created.user.id })
-    .eq("id", creator_id)
-    .is("auth_user_id", null)
-    .select("id");
-  if (!linkErr && (linkedRows ?? []).length === 0) {
-    await admin.auth.admin.deleteUser(created.user.id);
-    return { ok: false, message: "Kreator ini baru saja dikaitkan ke akun lain — muat ulang halaman." };
-  }
-  if (linkErr) {
-    // Rollback auth user agar tidak ada akun yatim tanpa kaitan kreator.
-    await admin.auth.admin.deleteUser(created.user.id);
-    return { ok: false, message: `Gagal mengaitkan akun: ${linkErr.message}` };
-  }
+    const creator_id = String(formData.get("creator_id") || "");
+    const email = String(formData.get("email") || "").trim().toLowerCase();
+    const password = String(formData.get("password") || "");
+    if (!creator_id || !email || !password) {
+      return { ok: false, message: "[data tidak lengkap, silahkan lengkapi semua pertanyaan wajib!]" };
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return { ok: false, message: "Format email tidak valid." };
+    }
+    if (password.length < 8) {
+      return { ok: false, message: "Password minimal 8 karakter." };
+    }
 
-  revalidatePath("/meago/creators");
-  return { ok: true, message: `Akun portal untuk "${creator.name}" dibuat (${email}).` };
+    // Pastikan kreator belum punya akun (baca via client biasa — RLS karyawan boleh baca).
+    const { data: creator, error: cErr } = await supabase
+      .from("mcn_creators")
+      .select("id, name, auth_user_id")
+      .eq("id", creator_id)
+      .maybeSingle();
+    if (cErr) return { ok: false, message: `Gagal membaca kreator: ${cErr.message}` };
+    if (!creator) return { ok: false, message: "Kreator tidak ditemukan." };
+    if (creator.auth_user_id) {
+      return { ok: false, message: "Kreator ini sudah memiliki akun portal." };
+    }
+
+    if (!hasAdminEnv()) {
+      console.error("[createCreatorAccount] SUPABASE_SERVICE_ROLE_KEY / NEXT_PUBLIC_SUPABASE_URL tidak tersedia di runtime.");
+      return { ok: false, message: adminKeyWarning() ?? ADMIN_ENV_MESSAGE };
+    }
+
+    const admin = createAdminClient();
+    const { data: created, error: createErr } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+    if (createErr || !created?.user) {
+      const msg = createErr?.message ?? "gagal membuat user";
+      console.error("[createCreatorAccount] createUser gagal:", createErr?.status, msg);
+      if (/already|registered|exist/i.test(msg)) {
+        return { ok: false, message: `Email "${email}" sudah terpakai oleh akun lain.` };
+      }
+      const warning = adminKeyWarning();
+      const suffix = warning ? ` — ${warning}` : "";
+      if (createErr?.status === 401 || createErr?.status === 403) {
+        return {
+          ok: false,
+          message: `Supabase menolak service-role key (${createErr.status}): ${msg}. Periksa SUPABASE_SERVICE_ROLE_KEY di environment${suffix}`,
+        };
+      }
+      return { ok: false, message: `Gagal membuat akun: ${msg}${suffix}` };
+    }
+
+    // Guard balapan: hanya kaitkan bila kreator masih tanpa akun (dua admin paralel).
+    const { data: linkedRows, error: linkErr } = await admin
+      .from("mcn_creators")
+      .update({ auth_user_id: created.user.id })
+      .eq("id", creator_id)
+      .is("auth_user_id", null)
+      .select("id");
+    if (!linkErr && (linkedRows ?? []).length === 0) {
+      await admin.auth.admin.deleteUser(created.user.id);
+      return { ok: false, message: "Kreator ini baru saja dikaitkan ke akun lain — muat ulang halaman." };
+    }
+    if (linkErr) {
+      // Rollback auth user agar tidak ada akun yatim tanpa kaitan kreator.
+      await admin.auth.admin.deleteUser(created.user.id);
+      return { ok: false, message: `Gagal mengaitkan akun: ${linkErr.message}` };
+    }
+
+    revalidatePath("/meago/creators");
+    return { ok: true, message: `Akun portal untuk "${creator.name}" dibuat (${email}).` };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("[createCreatorAccount] exception:", e);
+    return { ok: false, message: `Gagal membuat akun portal: ${detail}` };
+  }
 }
