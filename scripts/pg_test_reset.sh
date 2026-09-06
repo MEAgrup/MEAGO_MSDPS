@@ -55,7 +55,16 @@ do $$ begin
   if not exists (select 1 from pg_roles where rolname='supabase_admin') then create role supabase_admin nologin; end if;
 end $$;
 create schema if not exists auth;
-create table if not exists auth.users (id uuid primary key default gen_random_uuid(), email text);
+-- Kolom token GoTrue ikut distub supaya trigger auth_users_token_defaults
+-- (migrasi 0353) bisa benar-benar dijalankan di sini. Tanpa kolom-kolom ini
+-- setiap INSERT ke auth.users gagal dengan `record "new" has no field
+-- confirmation_token` — bukan bug triggernya, tapi stub yang tidak setia.
+create table if not exists auth.users (
+  id uuid primary key default gen_random_uuid(), email text,
+  confirmation_token text, recovery_token text,
+  email_change_token_new text, email_change_token_current text,
+  email_change text, phone_change text, phone_change_token text,
+  reauthentication_token text);
 create or replace function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 create or replace function auth.role() returns text language sql stable as $$

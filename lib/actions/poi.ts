@@ -12,7 +12,10 @@ function isReportStatus(value: string): value is ReportStatus {
 }
 
 // updatePoiSopProgress — form card POI Accommodation/TTD: Nama Ops (brand_deals),
-// Tanggal Ops, Actual VT, Total GMV, Link & Status Report Monthly (poi_sop_progress).
+// Tanggal Ops, Kreator Tercapai, Actual VT, Total GMV, Link & Status Report Monthly
+// (poi_sop_progress). "Kreator Tercapai" adalah metrik utama skor BD (migrasi 0355);
+// Actual VT total video, bisa melebihi jumlah kreator karena 1 kreator dapat posting
+// lebih dari satu video.
 export async function updatePoiSopProgress(
   _prev: ActionResult | null,
   formData: FormData
@@ -43,6 +46,15 @@ export async function updatePoiSopProgress(
     }
   }
 
+  const actualKreatorRaw = String(formData.get("actual_kreator") || "").trim();
+  let actual_kreator: number | null = null;
+  if (actualKreatorRaw) {
+    actual_kreator = Number(actualKreatorRaw);
+    if (!Number.isInteger(actual_kreator) || actual_kreator < 0) {
+      return { ok: false, message: "[Kreator Tercapai tidak valid]" };
+    }
+  }
+
   const actualVtRaw = String(formData.get("actual_vt") || "").trim();
   let actual_vt: number | null = null;
   if (actualVtRaw) {
@@ -65,7 +77,7 @@ export async function updatePoiSopProgress(
 
   const { error: progressErr } = await supabase
     .from("poi_sop_progress")
-    .update({ ops_datetime, actual_vt, total_gmv, report_link, report_status, notes })
+    .update({ ops_datetime, actual_kreator, actual_vt, total_gmv, report_link, report_status, notes })
     .eq("id", progress_id);
   if (progressErr) return { ok: false, message: `Gagal menyimpan tracker POI: ${progressErr.message}` };
 

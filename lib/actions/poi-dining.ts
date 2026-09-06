@@ -44,6 +44,15 @@ export async function updatePoiDiningCycleProgress(
     }
   }
 
+  const actualKreatorRaw = String(formData.get("actual_kreator") || "").trim();
+  let actual_kreator: number | null = null;
+  if (actualKreatorRaw) {
+    actual_kreator = Number(actualKreatorRaw);
+    if (!Number.isInteger(actual_kreator) || actual_kreator < 0) {
+      return { ok: false, message: "[Kreator Tercapai tidak valid]" };
+    }
+  }
+
   const actualVtRaw = String(formData.get("actual_vt") || "").trim();
   let actual_vt: number | null = null;
   if (actualVtRaw) {
@@ -66,7 +75,7 @@ export async function updatePoiDiningCycleProgress(
 
   const { error: cycleErr } = await supabase
     .from("poi_dining_cycles")
-    .update({ ops_datetime, actual_vt, total_gmv, report_link, report_status, notes })
+    .update({ ops_datetime, actual_kreator, actual_vt, total_gmv, report_link, report_status, notes })
     .eq("id", cycle_id);
   if (cycleErr) {
     const msg = cycleErr.message.match(/\[(.+)\]/)?.[0] ?? `Gagal menyimpan tracker POI Dining: ${cycleErr.message}`;

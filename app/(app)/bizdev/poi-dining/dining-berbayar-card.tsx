@@ -36,6 +36,7 @@ export type DiningBerbayarCycle = {
   period_start: string;
   period_end: string;
   ops_datetime: string | null;
+  actual_kreator: number | null;
   actual_vt: number | null;
   total_gmv: number | null;
   report_link: string | null;
@@ -247,6 +248,18 @@ export function DiningBerbayarCard({
                   <div>
                     <label>Actual VT</label>
                     <input type="number" name="actual_vt" min="0" step="1" defaultValue={cycle.actual_vt ?? ""} />
+                    <p className="hint">Total video siklus ini. Boleh melebihi jumlah kreator.</p>
+                  </div>
+                  <div>
+                    <label>Kreator Tercapai</label>
+                    <input
+                      type="number"
+                      name="actual_kreator"
+                      min="0"
+                      step="1"
+                      defaultValue={cycle.actual_kreator ?? ""}
+                    />
+                    <p className="hint">Jumlah kreator siklus ini, bukan jumlah video.</p>
                   </div>
                 </div>
 

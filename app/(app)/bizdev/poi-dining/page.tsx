@@ -27,6 +27,7 @@ type ProgressRow = {
   id: string;
   deal_id: string;
   ops_datetime: string | null;
+  actual_kreator: number | null;
   actual_vt: number | null;
   total_gmv: number | null;
   report_link: string | null;
@@ -43,6 +44,7 @@ type CycleRow = {
   period_start: string;
   period_end: string;
   ops_datetime: string | null;
+  actual_kreator: number | null;
   actual_vt: number | null;
   total_gmv: number | null;
   report_link: string | null;
@@ -90,7 +92,7 @@ export default async function PoiDiningPage() {
     fbDealIds.length > 0
       ? supabase
           .from("poi_sop_progress")
-          .select("id, deal_id, ops_datetime, actual_vt, total_gmv, report_link, report_status, notes")
+          .select("id, deal_id, ops_datetime, actual_kreator, actual_vt, total_gmv, report_link, report_status, notes")
           .in("deal_id", fbDealIds)
       : Promise.resolve({ data: [] as ProgressRow[] }),
   ]);
@@ -124,6 +126,7 @@ export default async function PoiDiningPage() {
         visit_start_time: d.visit_start_time,
         progress_id: progress.id,
         ops_datetime: progress.ops_datetime,
+        actual_kreator: progress.actual_kreator,
         actual_vt: progress.actual_vt,
         total_gmv: progress.total_gmv,
         report_link: progress.report_link,
@@ -140,7 +143,7 @@ export default async function PoiDiningPage() {
     bbDealIds.length > 0
       ? await supabase
           .from("poi_dining_cycles")
-          .select("id, deal_id, cycle_no, period_start, period_end, ops_datetime, actual_vt, total_gmv, report_link, report_status, notes")
+          .select("id, deal_id, cycle_no, period_start, period_end, ops_datetime, actual_kreator, actual_vt, total_gmv, report_link, report_status, notes")
           .in("deal_id", bbDealIds)
           .order("cycle_no", { ascending: true })
       : { data: [] as CycleRow[] };
@@ -180,6 +183,7 @@ export default async function PoiDiningPage() {
         period_start: c.period_start,
         period_end: c.period_end,
         ops_datetime: c.ops_datetime,
+        actual_kreator: c.actual_kreator,
         actual_vt: c.actual_vt,
         total_gmv: c.total_gmv,
         report_link: c.report_link,

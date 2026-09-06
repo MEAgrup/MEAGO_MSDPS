@@ -28,6 +28,7 @@ type ProgressRow = {
   id: string;
   deal_id: string;
   ops_datetime: string | null;
+  actual_kreator: number | null;
   actual_vt: number | null;
   total_gmv: number | null;
   report_link: string | null;
@@ -67,7 +68,7 @@ export default async function PoiSopPage() {
     dealIds.length > 0
       ? supabase
           .from("poi_sop_progress")
-          .select("id, deal_id, ops_datetime, actual_vt, total_gmv, report_link, report_status, notes")
+          .select("id, deal_id, ops_datetime, actual_kreator, actual_vt, total_gmv, report_link, report_status, notes")
           .in("deal_id", dealIds)
       : Promise.resolve({ data: [] as ProgressRow[] }),
   ]);
@@ -103,6 +104,7 @@ export default async function PoiSopPage() {
         visit_start_time: d.visit_start_time,
         progress_id: progress.id,
         ops_datetime: progress.ops_datetime,
+        actual_kreator: progress.actual_kreator,
         actual_vt: progress.actual_vt,
         total_gmv: progress.total_gmv,
         report_link: progress.report_link,

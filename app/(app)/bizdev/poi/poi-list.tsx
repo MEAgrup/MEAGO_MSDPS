@@ -115,6 +115,7 @@ export function PoiList({
         "SLA Total": sla.total,
         "Pre-Visit SLA": sla.preVisit,
         "Post-Visit SLA": sla.postVisit,
+        "Kreator Tercapai": t.actual_kreator ?? "",
         "Actual VT": t.actual_vt ?? "",
         "Total GMV": t.total_gmv ?? "",
         "Status Report": t.report_status ?? "",
