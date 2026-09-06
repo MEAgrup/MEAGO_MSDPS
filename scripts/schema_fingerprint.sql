@@ -26,6 +26,15 @@
 -- Baris yang HANYA muncul di satu sisi = objek hilang/kelebihan.
 -- Baris dengan nama sama tapi hash beda = definisinya menyimpang.
 --
+-- JANGAN meringkas keluaran ini jadi satu hash agregat di dalam SQL
+-- (`md5(string_agg(... order by name))`). Urutan `order by` mengikuti collation
+-- database, dan hasil `pg_test_reset.sh` biasanya `C.UTF-8` sementara Supabase
+-- `en_US.UTF-8` — isi yang IDENTIK bisa menghasilkan hash agregat berbeda. Kejadian
+-- nyata 2026-09-05: jalan pintas agregat melaporkan fungsi "berbeda" antara reset
+-- repo dan production padahal ke-103 definisinya sama persis. Keluarkan satu baris
+-- per objek seperti di bawah, urutkan dengan `LC_ALL=C sort` DI LUAR database,
+-- lalu diff.
+--
 -- Catatan: `schema_migrations` sengaja ikut dilaporkan sebagai satu baris per
 -- nama migrasi, TANPA timestamp — timestamp memang selalu beda antar environment;
 -- yang penting adalah migrasi mana yang tercatat pernah diterapkan.
