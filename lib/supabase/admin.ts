@@ -54,7 +54,14 @@ export type AdminKeyInfo = {
   format: "jwt" | "secret" | "publishable" | "unknown" | "none";
   role: string | null;
   projectRef: string | null;
-  hasWhitespace: boolean;
+  // Dipisah karena penanganannya berbeda. createAdminClient() memanggil trim(),
+  // jadi spasi di UJUNG sudah teratasi sendiri — informasi saja. Spasi di
+  // TENGAH tidak tersentuh trim(), pasti ditolak Supabase 401, dan hanya bisa
+  // diperbaiki manual. Sebelum dipisah keduanya dianggap satu (`raw !== trimmed`),
+  // sehingga spasi di tengah lolos tanpa peringatan dan penolakannya
+  // didiagnosa keliru sebagai "key sudah tidak berlaku".
+  edgeWhitespace: boolean;
+  innerWhitespace: boolean;
 };
 
 // Project ref Supabase yang dipakai repo ini (lihat docs/STAGING.md). Dipakai
@@ -110,7 +117,8 @@ export function describeAdminKey(): AdminKeyInfo {
       format: "none",
       role: null,
       projectRef: null,
-      hasWhitespace: false,
+      edgeWhitespace: false,
+      innerWhitespace: false,
     };
   }
   const trimmed = raw.trim();
@@ -132,7 +140,11 @@ export function describeAdminKey(): AdminKeyInfo {
     format,
     role: claims.role,
     projectRef: claims.ref,
-    hasWhitespace: raw !== trimmed,
+    edgeWhitespace: raw !== trimmed,
+    // Sesudah trim(), whitespace yang tersisa pasti ada di tengah. Tidak ada
+    // key Supabase yang sah memuatnya: JWT itu base64url, dan sb_secret_ /
+    // sb_publishable_ hanya alfanumerik + `-`/`_`.
+    innerWhitespace: /\s/.test(trimmed),
   };
 }
 
@@ -147,6 +159,18 @@ export function adminKeyWarning(info: AdminKeyInfo = describeAdminKey()): string
   }
   if (info.format === "publishable") {
     return "SUPABASE_SERVICE_ROLE_KEY berisi publishable key (sb_publishable_…), bukan secret key. Ambil `service_role` di Supabase → Settings → API.";
+  }
+  // Harus diperiksa SEBELUM cek apa pun yang bergantung pada pembacaan isi JWT.
+  // Buffer.from(..., "base64url") melewati karakter tak sah diam-diam, jadi key
+  // ber-spasi bisa gagal decode dan sebelumnya dilaporkan sebagai "terpotong
+  // saat paste" — diagnosa yang menyesatkan ke arah yang salah.
+  if (info.innerWhitespace) {
+    return (
+      "SUPABASE_SERVICE_ROLE_KEY memuat spasi/newline DI TENGAH nilainya — biasanya key " +
+      "terpotong jadi dua baris saat di-paste. Berbeda dengan spasi di ujung, yang ini " +
+      "TIDAK dipangkas otomatis dan selalu ditolak Supabase 401. Salin ulang key-nya " +
+      "sebagai satu baris utuh di Vercel → Settings → Environment Variables, lalu redeploy."
+    );
   }
   if (info.format === "jwt" && info.role && info.role !== "service_role") {
     return `SUPABASE_SERVICE_ROLE_KEY berisi key dengan role "${info.role}", bukan "service_role" — kemungkinan tertukar dengan anon key. Ambil \`service_role\` di Supabase → Settings → API.`;
@@ -170,9 +194,9 @@ export function adminKeyWarning(info: AdminKeyInfo = describeAdminKey()): string
   if (info.format === "unknown") {
     return "SUPABASE_SERVICE_ROLE_KEY tidak berbentuk key Supabase yang dikenal (bukan JWT `eyJ…` maupun `sb_secret_…`). Periksa nilainya.";
   }
-  if (info.hasWhitespace) {
+  if (info.edgeWhitespace) {
     // Sudah ditangani createAdminClient() lewat trim() — informasi saja.
-    return "SUPABASE_SERVICE_ROLE_KEY kebawa spasi/newline saat paste (sudah dipangkas otomatis, tapi sebaiknya dirapikan di Vercel).";
+    return "SUPABASE_SERVICE_ROLE_KEY kebawa spasi/newline di ujung saat paste (sudah dipangkas otomatis, tapi sebaiknya dirapikan di Vercel).";
   }
   return null;
 }
