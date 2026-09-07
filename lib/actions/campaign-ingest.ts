@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { readWorkbookSheets } from "@/lib/mcn/file-read";
 import { parseContentAnalysisWorkbook, isContentAnalysisWorkbook } from "@/lib/mcn/content-analysis";
+import { isCampaignStaff } from "@/lib/campaign-access";
 
 export type ActionResult = { ok: boolean; message: string };
 
-type Me = { id: string; division: string; is_od: boolean; is_director: boolean };
+type Me = { id: string; division: string; rank: string | null; is_od: boolean; is_director: boolean };
 
 async function ctx() {
   const supabase = await createClient();
@@ -17,15 +18,15 @@ async function ctx() {
   if (!user) return { supabase, user: null, me: null as Me | null };
   const { data: me } = await supabase
     .from("employees")
-    .select("id, division, is_od, is_director")
+    .select("id, division, rank, is_od, is_director")
     .eq("id", user.id)
     .maybeSingle();
   return { supabase, user, me: me as Me | null };
 }
 
-function canRunIngest(me: Me | null): boolean {
-  return !!me && (me.is_od || me.is_director || ["BizDev", "CampaignSpecialist", "Account"].includes(me.division));
-}
+// Cermin RLS tiktok_post_index (migrasi 0346, diperluas ke SPV Creator
+// Management oleh 0358).
+const canRunIngest = isCampaignStaff;
 
 // runCampaignPostIngest — upload export TikTok "Content Analysis › Video List"
 // (lib/mcn/content-analysis.ts). Mengisi tiktok_post_index GLOBAL (upsert per

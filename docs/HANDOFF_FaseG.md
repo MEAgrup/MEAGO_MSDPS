@@ -4,6 +4,87 @@
 > Dokumen ini adalah riwayat + keputusan terkunci Fase G; `HANDOFF_LANJUTAN.md` adalah
 > titik mulai yang berisi keadaan terkini dan daftar kerja berikutnya.
 
+## STATUS UPDATE 2026-09-07 — KOREKSI PRD: "Campaign Specialist" bukan divisi, akses ke SPV Creator Management
+
+Diminta user 2026-09-07: beri akses Campaign MEA GO ke **leader/SPV Creator Management**
+(akun `rizaalsa.work@gmail.com`, employee "Rizal", `CreatorManagement`/`lead`), dengan
+catatan **"akses utama di SPV Creator Management, BizDev"** dan **"cek PRD, perbaiki
+kalau salah"**.
+
+**PRD-nya memang salah.** Keputusan #3 §5 mengunci `CampaignSpecialist` sebagai divisi
+tersendiri (enum dibuat `0341`). Di production divisi itu **kosong**:
+
+```
+select division, rank, count(*) from employees where active group by 1,2;
+CampaignSpecialist : 0 karyawan
+CreatorManagement  : 3 lead (termasuk "Rizal", SPV) + 2 staff,
+                     salah satunya bernama "Campaign Specialist 1"
+```
+
+Jadi Campaign Specialist bukan divisi — dia peran **di bawah SPV Creator Management**.
+Akibat nyatanya: seluruh alur Fase G digerbang ke divisi yang tidak berpenghuni, dan SPV
+CM (pemilik alur yang sebenarnya) ter-*redirect* keluar dari `/meago/campaigns`.
+
+**Perbaikan — `0358_campaign_access_cm_lead.sql`:**
+- Dua helper SQL sebagai satu sumber kebenaran, menggantikan daftar divisi yang tadinya
+  disalin ke ~20 tempat: `is_campaign_owner()` (OD · Director · BizDev ·
+  CampaignSpecialist · **CreatorManagement rank `lead`**) dan `is_campaign_staff()`
+  (owner + Account). Cerminnya di sisi app: `lib/campaign-access.ts`.
+- SPV CM boleh menulis `brand_deals` **hanya untuk baris campaign** (`campaign_enabled`).
+  Merchant Deals biasa tetap director-only (PR #27 / `0348`) — tidak ikut terbuka.
+- **CM rank `staff` sengaja TIDAK diberi akses**, sesuai kalimat user "leader / SPV".
+  Kalau nanti Campaign Specialist di bawah CM perlu mengerjakan sendiri, itu keputusan
+  terpisah: entah naikkan orangnya jadi divisi `CampaignSpecialist`, atau longgarkan
+  `is_campaign_owner()` — jangan diputuskan sendiri.
+- `operational_team` campaign internal yang dibuat SPV CM dicatat `CreatorManagement`,
+  bukan divisi kosong yang tak bisa dihubungi siapa pun saat baris itu dibaca ulang.
+- Enum `CampaignSpecialist` **dipertahankan** di semua daftar (Postgres tidak punya
+  `alter type ... drop value`, dan divisi itu mungkin benar-benar diisi nanti).
+
+**Bug keamanan yang ikut tertutup** (ditemukan saat menulis migrasi, bukan bagian dari
+permintaan). Pola lama `if not (is_od() or ... auth_division() in (...))` mengembalikan
+**NULL** untuk sesi kreator Portal Kreator (`auth_division()` NULL karena mereka bukan
+karyawan) — dan `if NULL then raise` tidak pernah jalan. Empat gerbang bocor; dua di
+antaranya tereksploitasi penuh:
+
+| Gerbang | Akibat sebelum 0358 |
+|---|---|
+| `validate_campaign_posts()` | **Penuh** — kreator mana pun bisa menimpa `tiktok_verdict` seluruh peserta satu campaign |
+| `campaign_submission_guard()` | **Penuh** — kunci deadline (keputusan #14) tidak berlaku untuk kreator |
+| `campaign_participants_curation_guard()` | Gerbang dilewati (approve diri sendiri), kandas di FK `reviewed_by → employees` — kebetulan, bukan pertahanan |
+| `close_curation_batch()` | Gerbang dilewati (RPC pembuat payout), kandas di FK `closed_by → employees` |
+
+Belum ada bukti pernah terjadi (tabel campaign 0 baris di production). Keempatnya
+direproduksi di database `pg_test_reset.sh` dan sekarang dikunci sebagai assertion
+regresi.
+
+**Uji baru: `scripts/test_campaign_access.sql`** — 29 assertion matriks wewenang
+(SPV CM / staff CM / BizDev / AM / Director / kreator × insert, update, RPC), dijalankan
+di atas hasil `pg_test_reset.sh`, satu transaksi, di-rollback:
+```bash
+bash scripts/pg_test_reset.sh
+psql -h /tmp -p 55432 -U postgres -d msdps_reset -f scripts/test_campaign_access.sql
+```
+Mengembalikan pola lama membuat assertion regresi merah — sudah dibuktikan, bukan
+assertion yang selalu hijau.
+
+**Ekor: `0359_campaign_helpers_revoke_anon.sql`.** Supabase advisor (lint 0028)
+langsung menandai bahwa `is_campaign_owner()`/`is_campaign_staff()` yang baru bisa
+dipanggil TANPA login lewat `/rest/v1/rpc/...` — Postgres memberi EXECUTE ke PUBLIC
+secara default untuk fungsi baru, dan helper rumah lain (`is_od`, `is_lead`,
+`auth_division`, `auth_creator_id`) memang sudah dicabut dari anon sejak lama.
+Kebocorannya nihil (tanpa `auth.uid()` keduanya `false`), tapi diselaraskan.
+
+**Diterapkan ke staging DAN production** (0358 lalu 0359, staging dulu). Sidik jari
+27 objek terdampak (18 policy + 6 fungsi + …) **identik** di kedua environment:
+`a7208be57a7b221217f49281a99eab78`.
+
+**Verifikasi sesi ini:** `pg_test_reset.sh` → 80 migrasi lolos dari nol ·
+`test_campaign_access.sql` → 29/29 · `test_campaign_completion.mjs` → 15/15 ·
+`npx tsc --noEmit` bersih · `npm run build` bersih.
+
+---
+
 ## STATUS UPDATE 2026-09-04 (sore) — tabrakan nomor migrasi dengan PR #27, sudah direkonsiliasi
 
 Branch ini di-merge dengan `main` (yang sudah memuat PR #26 dan **PR #27**, "Nominal
@@ -339,8 +420,8 @@ sebelum sesi ini.
 | # | Keputusan |
 |---|---|
 | 1 | Campaign = **extend `brand_deals`**, satu entitas dengan Merchant Deals |
-| 2 | Sumber: Campaign Specialist (budget internal) & BizDev (budget brand) |
-| 3 | Divisi: **`CampaignSpecialist` enum BARU**; penerima campaign BizDev = divisi `Account` |
+| 2 | Sumber: Campaign Specialist (budget internal) & BizDev (budget brand). **Koreksi 2026-09-07:** "Campaign Specialist" adalah peran di bawah SPV Creator Management, bukan divisi tersendiri |
+| 3 | ~~Divisi: **`CampaignSpecialist` enum BARU**~~ **DIKOREKSI 2026-09-07 (`0358`)** — enum tetap ada tapi 0 karyawan; pemilik alur yang sebenarnya = **SPV Creator Management** (`CreatorManagement`/`lead`) + BizDev. Penerima campaign BizDev = divisi `Account` (tetap). Lihat status update paling atas. |
 | 4 | CS kerjakan sendiri; BizDev **lempar** ke AM. Penerima = "bagian operasional" |
 | 5 | Over-budget: **hard block staff**, Lead+ override → wajib alasan + label `[Over Budget]` + log |
 | 6 | Alokasi = **`base_fee × kuota slot`** ≤ `creator_budget` |
