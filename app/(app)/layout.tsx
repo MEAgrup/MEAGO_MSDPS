@@ -139,6 +139,7 @@ export default async function AppLayout({
         {seeBD && <Link href="/bizdev">BizDev Workspace</Link>}
         {seeBD && <Link href="/bizdev/poi">POI Accommodation &amp; TTD</Link>}
         {seeBD && <Link href="/bizdev/poi-dining">POI Dining</Link>}
+        {seeBD && <Link href="/bizdev/skor">Papan Skor BD</Link>}
         {me?.is_director && <Link href="/bizdev/settings">Setting Bizdev &amp; Admin Ops</Link>}
 
         {seeCampaign && sectionHeading("Campaign MEA GO")}
