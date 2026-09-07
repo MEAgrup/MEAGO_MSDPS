@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
+import { isCampaignOwner, isCampaignStaff } from "@/lib/campaign-access";
 import { CampaignsToolbar, CampaignIngestForm } from "./forms";
 import { CampaignsTable, type CampaignRow } from "./table";
 
@@ -13,12 +14,9 @@ export default async function CampaignsPage() {
   if (!user) redirect("/login");
 
   const me = await getEmployee();
-  const div = me?.division ?? "";
-  const mgmt = !!(me?.is_od || me?.is_director);
-  const canView = mgmt || ["BizDev", "CampaignSpecialist", "Account"].includes(div);
-  if (!canView) redirect("/dashboard");
+  if (!isCampaignStaff(me)) redirect("/dashboard");
 
-  const canCreate = mgmt || div === "BizDev" || div === "CampaignSpecialist";
+  const canCreate = isCampaignOwner(me);
 
   const supabase = await getCachedClient();
   const [{ data: campaignsRaw }, { data: emps }] = await Promise.all([

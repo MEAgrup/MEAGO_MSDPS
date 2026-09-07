@@ -58,12 +58,17 @@ Catatan:
 
 ## Langkah 2 — buat campaign
 
+Masuk sebagai **SPV Creator Management / BizDev / OD / Director** — peran lain
+ter-*redirect* ke `/dashboard` (AM di divisi Account bisa masuk dan mengurasi, tapi
+tidak membuat campaign atau mengubah budget). Matriksnya di `lib/campaign-access.ts`,
+digerbang RLS lewat `is_campaign_owner()` / `is_campaign_staff()` (migrasi `0358`).
+
 Di `/meago/campaigns` → **Buat Campaign**. Yang wajib supaya bisa diaktifkan nanti:
 
 | Field | Catatan |
 |---|---|
 | Brand name | bebas, tandai jelas ini uji (mis. "UJI COBA — <brand>") |
-| Funding source | `internal` → tim operasional otomatis CampaignSpecialist. `brand` mewajibkan pilih AM. |
+| Funding source | `internal` → tim operasional diisi otomatis: `CreatorManagement` bila dibuat SPV CM, selain itu `CampaignSpecialist`. `brand` mewajibkan pilih AM. |
 | Track | video / live |
 | Base fee | boleh 0, tapi **tidak boleh kosong** |
 | Kuota kreator | isi kecil dulu, mis. 2–3 |

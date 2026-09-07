@@ -10,6 +10,7 @@ import {
   validateBudgetFields,
 } from "@/lib/campaign-budget";
 import { isCampaignStage } from "@/lib/campaign-stage";
+import { isCampaignOwner } from "@/lib/campaign-access";
 
 export type ActionResult = { ok: boolean; message: string };
 
@@ -29,13 +30,12 @@ async function ctx() {
   return { supabase, user, me: me as Me | null };
 }
 
-// canManageCampaigns — sama dengan cakupan RLS brand_deals_insert/update untuk
-// CampaignSpecialist/BizDev (migrasi 0342 §7). Account TIDAK termasuk di sini
-// karena aksesnya dibatasi per-baris (operational_owner_id) oleh RLS sendiri —
-// action ini tetap dipanggil, DB yang menolak baris yang bukan miliknya.
-function canManageCampaigns(me: Me | null): boolean {
-  return !!me && (me.is_od || me.is_director || me.division === "BizDev" || me.division === "CampaignSpecialist");
-}
+// canManageCampaigns — sama dengan cakupan RLS brand_deals_insert/update
+// (migrasi 0342 §7, diperluas ke SPV Creator Management oleh 0358). Account
+// TIDAK termasuk di sini karena aksesnya dibatasi per-baris
+// (operational_owner_id) oleh RLS sendiri — action ini tetap dipanggil, DB
+// yang menolak baris yang bukan miliknya.
+const canManageCampaigns = isCampaignOwner;
 
 function splitStringList(raw: FormDataEntryValue | null): string[] | null {
   const s = String(raw ?? "").trim();
@@ -70,9 +70,14 @@ export async function createCampaign(_prev: ActionResult | null, formData: FormD
     return { ok: false, message: "[mode campaign tidak dikenal]" };
   }
 
-  // Keputusan #3/#4: CS kerjakan sendiri (operational_team=CampaignSpecialist);
+  // Keputusan #3/#4: budget internal dikerjakan sendiri oleh tim campaign;
   // BizDev melempar ke AM di Account (operational_team=Account, wajib pilih AM).
-  const operational_team = funding_source === "internal" ? "CampaignSpecialist" : "Account";
+  // Koreksi 0358: tim campaign yang nyata adalah Creator Management (tidak ada
+  // karyawan berdivisi CampaignSpecialist), jadi campaign internal yang dibuat
+  // SPV CM dicatat sebagai operational_team=CreatorManagement — bukan divisi
+  // kosong yang tidak bisa dihubungi siapa pun saat baris ini dibaca ulang.
+  const internalTeam = me.division === "CreatorManagement" ? "CreatorManagement" : "CampaignSpecialist";
+  const operational_team = funding_source === "internal" ? internalTeam : "Account";
   if (funding_source === "brand" && !operational_owner_id) {
     return { ok: false, message: "[AM penerima (Account) wajib dipilih untuk campaign budget brand]" };
   }

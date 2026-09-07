@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCreator, getCachedClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
+import { isCampaignStaff } from "@/lib/campaign-access";
 import { MobileShell } from "@/components/mobile-shell";
 
 export default async function AppLayout({
@@ -41,7 +42,9 @@ export default async function AppLayout({
   const seeCM = mgmt || div === "CreatorManagement";
   const seeBD = mgmt || div === "BizDev";
   const seeAcq = mgmt || div === "Acquisition";
-  const seeCampaign = mgmt || ["CampaignSpecialist", "BizDev", "Account"].includes(div);
+  // Campaign MEA GO: pemilik = BizDev + SPV Creator Management (rank lead),
+  // pelaksana = AM (Account). Lihat lib/campaign-access.ts.
+  const seeCampaign = isCampaignStaff(me);
   const seeProj =
     mgmt || isLead || ["CreatorManagement", "BizDev", "Acquisition"].includes(div);
 

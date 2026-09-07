@@ -1,5 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
+import { isCampaignOwner, isCampaignStaff } from "@/lib/campaign-access";
 import {
   CampaignDetail,
   type CampaignDetailRow,
@@ -28,14 +29,13 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
   if (!user) redirect("/login");
 
   const me = await getEmployee();
-  const div = me?.division ?? "";
-  const mgmt = !!(me?.is_od || me?.is_director);
-  const canView = mgmt || ["BizDev", "CampaignSpecialist", "Account"].includes(div);
-  if (!canView) redirect("/dashboard");
+  if (!isCampaignStaff(me)) redirect("/dashboard");
 
-  const canManageBudgetStage = mgmt || div === "BizDev" || div === "CampaignSpecialist";
+  // Budget & stage = wewenang pemilik campaign. AM (Account) ikut mengurasi
+  // pendaftar tapi tidak mengubah angka — cermin RLS brand_deals_update.
+  const canManageBudgetStage = isCampaignOwner(me);
 
-  const canCurate = mgmt || ["BizDev", "CampaignSpecialist", "Account"].includes(div);
+  const canCurate = isCampaignStaff(me);
 
   const supabase = await getCachedClient();
   const [{ data: deal }, { data: budgetLogRaw }, { data: adsSpendRaw }, { data: emps }, { data: participantsRaw }] =
