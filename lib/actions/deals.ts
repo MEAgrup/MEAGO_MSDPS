@@ -257,6 +257,33 @@ export async function registerDealTransaction(
   return { ok: true, message: `Transaksi deal ${deal.code} — ${parsed.brand_name} tersimpan.` };
 }
 
+// createPoiFinance (B0, bridge MSDPS→CDPS Fase 1) — menyambungkan
+// create_poi_finance() (SQL, sudah ada di staging+production sejak
+// 0352_reconcile_function_drift.sql, direbut oleh apa pun sampai sekarang)
+// ke UI. Fungsi SQL sudah memuat gerbang dan pesan BI-nya sendiri
+// ([deal ini bukan deal POI], [deal ini bukan kerjasama berbayar], [transaksi
+// untuk deal ini sudah dibuat]) — diteruskan apa adanya, RLS/RPC tetap
+// penjaga terakhir (dipanggil lewat sesi pengguna, bukan service-role).
+// Nol SQL baru: satu-satunya yang kurang selama ini adalah pemanggilnya.
+export async function createPoiFinance(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang membuat transaksi Finance." };
+
+  const dealId = String(formData.get("deal_id") ?? "").trim();
+  if (!dealId) return { ok: false, message: "Deal tidak valid." };
+  const paymentIntent = String(formData.get("payment_intent") ?? "Lunas");
+
+  const { data, error } = await supabase.rpc("create_poi_finance", {
+    p_deal_id: dealId,
+    p_payment_intent: paymentIntent,
+  });
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/deals");
+  return { ok: true, message: `Transaksi Finance ${data as string} dibuat — verifikasi lewat halaman Finance.` };
+}
+
 // dealLabels — snapshot kode & nama POI utk baris deal_change_requests, supaya
 // permintaan "Hapus" yang sudah disetujui tetap terbaca setelah deal-nya hilang.
 async function dealLabels(

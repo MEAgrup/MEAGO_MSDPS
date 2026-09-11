@@ -36,7 +36,7 @@ Diperbaiki oleh `0320_brand_deals_poi_reconcile.sql` dan `0339_schema_reconcile.
 
 ```bash
 bash scripts/pg_test_reset.sh
-# ✅ 71 migrasi lolos dari nol (database msdps_reset, port 55432)
+# ✅ 81 migrasi lolos dari nol (database msdps_reset, port 55432)
 ```
 
 Butuh paket `postgresql` lokal (`psql` + `initdb`). Skrip membuat cluster sementara,
@@ -105,6 +105,11 @@ dengan sidik jari struktur, bukan cuma daftar nama.
 ## Status terakhir (2026-09-04, setelah 0349 + 0350 & perbaikan staging)
 
 - Rantai migrasi: **71 file, lolos dari nol** (`bash scripts/pg_test_reset.sh`).
+  **Update 2026-09-11:** sekarang **81 file** (0351–0360 ditambahkan sejak
+  tanggal di atas, termasuk `0360_bridge_cdps.sql` — Bridge MSDPS→CDPS Fase 1),
+  masih lolos dari nol. Paritas staging↔production di bawah ini TIDAK
+  diverifikasi ulang pada tanggal update ini — baris ini hanya mengoreksi
+  hitungan file yang basi.
 - Paritas staging ↔ production: identik pada kolom, constraint, RLS policy, fungsi,
   trigger, view, enum, bucket Storage, dan job pg_cron — kecuali tiga objek yang
   dicatat sebagai "drift yang masih terbuka" di bagian temuan 2026-09-04 di bawah.
