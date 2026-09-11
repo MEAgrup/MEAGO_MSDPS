@@ -84,3 +84,23 @@ itu sebabnya payout campaign MEA GO butuh tabel sendiri, bukan menumpang di sana
 `brand_deals.konten_needed` dan `videos_needed` sama-sama ada (yang kedua dari `0312`,
 info-only untuk portal). Di lapangan tim menyebut satu video sebagai **"VT"**
 ("Post 50 VT"). Satu VT = satu baris di export TikTok = satu `Post ID`.
+
+---
+
+## "Order" / `ORD-` — bukan entitas MSDPS
+
+`ORD-YYYYMM-NNNN` adalah kode `external_orders` di **CDPS** (`MEAgrup/AgencyAPP`),
+dimint di sana saat delivery job Bridge MSDPS→CDPS Fase 1 (migrasi `0360`, tabel
+`cdps_outbox`/`deal_bridge_lines`) berhasil mengirim satu deal. MSDPS **tidak
+pernah** memint kode itu sendiri — ia hanya menyimpannya balik ke
+`deal_bridge_lines.ord_code`/`cdps_outbox.ord_code` setelah CDPS membalasnya.
+Jangan tertukar dengan:
+
+- `brand_deals.code` (`DEAL-…`) — deal MSDPS itu sendiri.
+- `transactions.code` (`TRX-…`) — transaksi Finance MSDPS.
+- `campaign_requests.code` (`CRQ-…`) — routing kreator, entitas terpisah, 0 baris
+  di live (lihat "Campaign" di atas).
+
+Satu deal MSDPS ⇒ **paling banyak satu** `ORD-` seumur Fase 1 (idempotency_key
+`cdps_outbox` terkunci ke `<DEAL code>:1`, lihat `docs/BRIDGE_MSDPS_CONTRACT.md`
+sisi CDPS) — belum ada mekanisme "tambah baris ke order yang sudah terkirim".

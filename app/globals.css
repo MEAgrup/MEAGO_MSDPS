@@ -105,6 +105,11 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .inline-form input, .inline-form select { margin-bottom: 0; }
 .actions-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* Bridge MSDPS→CDPS (B4) — satu baris layanan di modal "Teruskan ke CDPS". */
+.bridge-line-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.bridge-line-row select, .bridge-line-row input { margin-bottom: 0; }
+.bridge-line-row input[type="text"] { flex: 1; min-width: 140px; }
+
 .badge.blue { background: #dbeafe; color: #1d4ed8; }
 .badge.red { background: #fee2e2; color: #b91c1c; }
 .badge.slate { background: #e2e8f0; color: #334155; }

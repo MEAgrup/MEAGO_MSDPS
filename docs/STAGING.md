@@ -114,6 +114,24 @@ ke nilai Supabase staging di atas, supaya *semua* preview (termasuk PR/feature b
 otomatis aman dan tidak menyentuh DB production. Kalau ada kebutuhan spesifik test
 langsung ke production dari sebuah branch, baru override per-branch seperlunya.
 
+### 3a. Bridge MSDPS→CDPS Fase 1 (migr. 0360) — env tambahan
+
+Empat variable baru, **Production DAN Preview (`staging`) dengan nilai BERBEDA**
+di tiap scope — jangan salin nilai Production ke Preview atau sebaliknya. Tanpa
+prefix `NEXT_PUBLIC_` (server-only, dipakai `app/api/internal/bridge/deliver`).
+
+| Key | Value | Catatan |
+|---|---|---|
+| `CDPS_BRIDGE_INGEST_SECRET` | secret yang SAMA dengan `BRIDGE_INGEST_SECRET` di project Vercel CDPS (`agency-app-api`) | dikirim sebagai `Authorization: Bearer` ke CDPS — **beda project, harus dikoordinasikan manual**, tidak ada mekanisme sync otomatis |
+| `CRON_SECRET` | secret bebas (mis. hasil `openssl rand -hex 32`) | Vercel Cron otomatis mengirim ini sebagai `Authorization: Bearer` — nama variable **harus persis** `CRON_SECRET` agar Vercel mengisinya |
+| `BRIDGE_DELIVER_SECRET` | boleh sama dengan `CRON_SECRET`, atau berbeda untuk pemicu manual (curl/GitHub Actions) | dikirim via header `x-bridge-deliver-secret`, bukan `Authorization` |
+| `CDPS_BRIDGE_BASE_URL` | kosongkan di Production (default `https://agency-app-api.vercel.app` sudah benar); isi dengan URL CDPS staging di Preview **bila** CDPS punya deployment staging sendiri | lihat `lib/bridge/deliver.ts` untuk default-nya |
+
+> Kedua secret INBOUND (`CRON_SECRET`/`BRIDGE_DELIVER_SECRET`) unset ⇒ tick delivery
+> job ditolak 401 (fail-closed). `CDPS_BRIDGE_INGEST_SECRET` unset ⇒ tick **diam +
+> log**, bukan error — supaya kesalahan konfigurasi tidak menghabiskan jatah retry
+> baris `cdps_outbox` (lihat komentar `app/api/internal/bridge/deliver/route.ts`).
+
 ---
 
 ## 4. Menerapkan migrasi ke staging

@@ -9,8 +9,10 @@ import {
   approveDealChangeRequest,
   rejectDealChangeRequest,
   cancelDealChangeRequest,
+  createPoiFinance,
   type ActionResult,
 } from "@/lib/actions/deals";
+import { addBridgeLines } from "@/lib/actions/bridge";
 import { DealIntakeFields } from "./intake-fields";
 import { DealsToolbar } from "./forms";
 import type { BdOption } from "../leads/intake-fields";
@@ -43,6 +45,11 @@ export type Deal = {
   konten_needed: number | null;
   total_jam_live: number | null;
   brief_link: string | null;
+  // B0 (bridge MSDPS→CDPS Fase 1) — null selama nol transaksi Finance dibuat
+  // untuk deal ini; begitu terisi, "Buat Transaksi Finance" tidak lagi tampil
+  // (create_poi_finance() sendiri menolak dobel: [transaksi untuk deal ini
+  // sudah dibuat]).
+  transaction_id: string | null;
   created_at: string;
 };
 
@@ -135,6 +142,219 @@ function DeleteDealButton({
         </span>
       )}
     </form>
+  );
+}
+
+// CreatePoiFinanceButton (B0, bridge MSDPS→CDPS Fase 1) — sambungan UI ke
+// create_poi_finance() (SQL, sudah ada di staging+production, nol pemanggil
+// sampai sekarang). Hanya tampil untuk deal Berbayar yang belum punya
+// transaction_id — begitu ada, Finance yang mengambil alih lewat /finance
+// (verify_payment()), dan barisnya membuka gerbang bridge (D4+D13).
+function CreatePoiFinanceButton({ dealId, label }: { dealId: string; label: string }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(createPoiFinance, null);
+  return (
+    <form
+      action={action}
+      className="inline-form"
+      onSubmit={(e) => {
+        if (!confirm(`Buat transaksi Finance untuk "${label}"? Nilainya = nominal harga deal.`)) e.preventDefault();
+      }}
+    >
+      <input type="hidden" name="deal_id" value={dealId} />
+      <select name="payment_intent" defaultValue="Lunas" className="sm">
+        <option value="Lunas">Lunas</option>
+        <option value="Bayar Sebagian">Bayar Sebagian</option>
+        <option value="Termin">Termin</option>
+        <option value="Bayar di Belakang">Bayar di Belakang</option>
+      </select>
+      <button className="sm" disabled={pending}>
+        {pending ? "…" : "Buat Transaksi Finance"}
+      </button>
+      {state && !state.ok && (
+        <span className="badge red" title={state.message}>
+          gagal
+        </span>
+      )}
+    </form>
+  );
+}
+
+// Bridge MSDPS→CDPS Fase 1 (B4) — "Teruskan ke CDPS" + status pengiriman.
+// Satu order per deal seumur Fase 1 (idempotency_key terkunci ke
+// payload_versi=1) — begitu bridgeInfo ada, tombol diganti badge status,
+// bukan dibiarkan bisa dipencet lagi.
+const BRIDGE_JENIS = ["Account", "Ads", "Creative", "Store Operation", "KOL-Non-Roster"] as const;
+type BridgeJenis = (typeof BRIDGE_JENIS)[number];
+type BridgeLineDraft = {
+  jenis: BridgeJenis;
+  qty: string;
+  catatan: string;
+  alasan_non_roster: string;
+  nilai_cross_charge: string;
+};
+const emptyBridgeLine = (): BridgeLineDraft => ({
+  jenis: "Account",
+  qty: "1",
+  catatan: "",
+  alasan_non_roster: "",
+  nilai_cross_charge: "",
+});
+
+function BridgeStatusBadge({ info }: { info: { status: string; ord_code: string | null; last_error: string | null } }) {
+  if (info.status === "sent") {
+    return (
+      <span className="badge green mono" title="Diterima antrian CDPS">
+        {info.ord_code ?? "ORD-…"}
+      </span>
+    );
+  }
+  if (info.status === "dead") {
+    return (
+      <span className="badge red" title={info.last_error ?? "Gagal permanen — hubungi engineering"}>
+        Gagal permanen
+      </span>
+    );
+  }
+  if (info.status === "failed") {
+    return (
+      <span className="badge amber" title={info.last_error ?? "Akan dicoba lagi otomatis"}>
+        Gagal, dicoba lagi
+      </span>
+    );
+  }
+  return (
+    <span className="badge indigo" title="Menunggu delivery job berikutnya">
+      Menunggu kirim
+    </span>
+  );
+}
+
+function BridgeLinesModal({
+  deal,
+  verified,
+  bridgeInfo,
+}: {
+  deal: Deal;
+  verified: boolean;
+  bridgeInfo?: { status: string; ord_code: string | null; last_error: string | null };
+}) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<BridgeLineDraft[]>([emptyBridgeLine()]);
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(addBridgeLines, null);
+
+  useEffect(() => {
+    if (state?.ok) setOpen(false);
+  }, [state]);
+
+  if (bridgeInfo) return <BridgeStatusBadge info={bridgeInfo} />;
+
+  const blockedReason =
+    deal.bentuk_kerjasama !== "Berbayar"
+      ? "[deal free/barter tidak dikerjakan CDPS]"
+      : !deal.transaction_id
+        ? "Belum ada transaksi Finance untuk deal ini"
+        : !verified
+          ? "Pembayaran belum terverifikasi Finance"
+          : null;
+
+  function updateRow(i: number, patch: Partial<BridgeLineDraft>) {
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="sm ghost2"
+        disabled={!!blockedReason}
+        title={blockedReason ?? "Pilih layanan yang dikerjakan MEA Agency lewat CDPS"}
+        onClick={() => setOpen(true)}
+      >
+        Teruskan ke CDPS
+      </button>
+      {open && (
+        <div className="modal-backdrop" onClick={() => setOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>Teruskan ke CDPS{deal.code ? ` · ${deal.code}` : ""}</h3>
+              <button type="button" className="sm ghost2" onClick={() => setOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <form action={action}>
+              <div className="modal-body">
+                {state && !state.ok && <div className="err">{state.message}</div>}
+                <p className="hint">
+                  Layanan yang dipilih dikirim ke MEA Agency (CDPS) sebagai satu order — tidak bisa
+                  ditambah lagi setelah terkirim.
+                </p>
+                <input type="hidden" name="deal_id" value={deal.id} />
+                <input type="hidden" name="lines_json" value={JSON.stringify(rows)} />
+                {rows.map((r, i) => (
+                  <div key={i} className="bridge-line-row">
+                    <select
+                      value={r.jenis}
+                      onChange={(e) => updateRow(i, { jenis: e.target.value as BridgeJenis })}
+                    >
+                      {BRIDGE_JENIS.map((j) => (
+                        <option key={j} value={j}>
+                          {j}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="qty"
+                      value={r.qty}
+                      onChange={(e) => updateRow(i, { qty: e.target.value })}
+                      style={{ width: 70 }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Catatan"
+                      value={r.catatan}
+                      onChange={(e) => updateRow(i, { catatan: e.target.value })}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Nilai cross-charge (Rp)"
+                      value={r.nilai_cross_charge}
+                      onChange={(e) => updateRow(i, { nilai_cross_charge: e.target.value })}
+                    />
+                    {r.jenis === "KOL-Non-Roster" && (
+                      <input
+                        type="text"
+                        placeholder="Alasan non-roster (wajib)"
+                        value={r.alasan_non_roster}
+                        onChange={(e) => updateRow(i, { alasan_non_roster: e.target.value })}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="sm dangerbtn"
+                      disabled={rows.length === 1}
+                      onClick={() => setRows((rs) => rs.filter((_, idx) => idx !== i))}
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                ))}
+                <button type="button" className="sm ghost2" onClick={() => setRows((rs) => [...rs, emptyBridgeLine()])}>
+                  + Tambah Layanan
+                </button>
+              </div>
+              <div className="modal-foot">
+                <button type="button" onClick={() => setOpen(false)}>
+                  Batal
+                </button>
+                <button disabled={pending}>{pending ? "Mengirim…" : "Teruskan ke CDPS"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -635,6 +855,8 @@ export function DealsBoard({
   canRegister,
   canEditDelete,
   canRequestChange = false,
+  verifiedByTrxId = {},
+  bridgeByDeal = {},
 }: {
   deals: Deal[];
   dealingLeads: PoolLead[];
@@ -647,6 +869,9 @@ export function DealsBoard({
   canRegister: boolean;
   canEditDelete: boolean;
   canRequestChange?: boolean;
+  // Bridge MSDPS→CDPS Fase 1 (B4).
+  verifiedByTrxId?: Record<string, boolean>;
+  bridgeByDeal?: Record<string, { status: string; ord_code: string | null; last_error: string | null }>;
 }) {
   const [query, setQuery] = useState("");
   const [bdFilter, setBdFilter] = useState("");
@@ -997,6 +1222,16 @@ export function DealsBoard({
                         needsApproval={!canEditDelete}
                         blocked={!canEditDelete && pendingRequestByDeal.has(d.id)}
                       />
+                      {d.bentuk_kerjasama === "Berbayar" && !d.transaction_id && (
+                        <CreatePoiFinanceButton dealId={d.id} label={d.brand_name} />
+                      )}
+                      {d.bentuk_kerjasama === "Berbayar" && d.transaction_id && (
+                        <BridgeLinesModal
+                          deal={d}
+                          verified={!!verifiedByTrxId[d.transaction_id]}
+                          bridgeInfo={bridgeByDeal[d.id]}
+                        />
+                      )}
                     </div>
                   </td>
                 )}
