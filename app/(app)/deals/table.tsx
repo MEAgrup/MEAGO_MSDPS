@@ -200,6 +200,57 @@ const emptyBridgeLine = (): BridgeLineDraft => ({
   nilai_cross_charge: "",
 });
 
+// Referensi harga resmi paket MEAGO (dokumen "Merchant Existing TikTok GO
+// Package — Sept"), murni untuk BANTU BD/CM mengetik `nilai_cross_charge`
+// per baris di atas — TIDAK mengisi apa pun otomatis. Alokasi ke satu/lebih
+// baris jenis (Account/Ads/Creative/Store Operation/KOL-Non-Roster) tetap
+// keputusan manusia: satu fee paket sering membundel Live (D2 — tidak pernah
+// dibridge ke CDPS) + Content, jadi tidak ada pemecahan mekanis yang aman
+// ditebak di sini.
+const MEAGO_PACKAGE_REFERENCE: { nama: string; tiers: string }[] = [
+  { nama: "1. Starter Pack", tiers: "Rp 8.000.000 (2 bln, sharing commission 8%)" },
+  { nama: "2. Content Package", tiers: "Reguler Rp 15.000.000 · Premium Rp 35.000.000 · Premium+ Rp 75.000.000" },
+  { nama: "3. Content + Sharing Commission", tiers: "Reguler Rp 12.000.000 (share 10%) · Premium Rp 25.000.000 (8%) · Premium+ Rp 60.000.000 (8%)" },
+  { nama: "4. Content 1 Bulan (Basic)", tiers: "Rp 25.000.000" },
+  { nama: "5. Content Package (varian lain)", tiers: "Reguler Rp 37.500.000 · Premium Rp 90.000.000" },
+  { nama: "6. Live Non-Exclusive", tiers: "Reguler Rp 6.000.000 · Premium Rp 20.000.000 · Premium+ Rp 36.000.000" },
+  { nama: "7. Live Exclusive", tiers: "Reguler Rp 12.000.000 · Premium Rp 36.000.000 · Premium+ Rp 60.000.000" },
+  { nama: "8. Live on Brand Account", tiers: "Reguler Rp 17.000.000 · Premium Rp 34.500.000 · Premium+ Rp 52.000.000" },
+  { nama: "9. Live Brand + Sharing Commission", tiers: "Reguler Rp 12.000.000 · Premium Rp 18.000.000 · Premium+ Rp 36.000.000" },
+  { nama: "10. Live Brand + Creator", tiers: "Reguler Rp 17.280.000 · Premium Rp 51.840.000 · Premium+ Rp 86.400.000" },
+  { nama: "11. Bundling Content + Live Non-Exclusive", tiers: "Reguler Rp 14.000.000 · Premium Rp 37.500.000 · Premium+ Rp 80.000.000" },
+  { nama: "12. Bundling Content + Live on Brand Account", tiers: "Reguler Rp 46.500.000 · Premium Rp 97.500.000 · Premium+ Rp 181.000.000" },
+  { nama: "13. Bundling Super Brand Day / Premium / Premium+", tiers: "SBD Rp 85.000.000 · Premium Rp 145.000.000 · Premium+ Rp 240.000.000" },
+  { nama: "14. Bundling Platinum", tiers: "Rp 300.000.000 (1 tahun)" },
+  { nama: "15. Bundling Super Brand Day (varian)", tiers: "Rp 300.000.000 (1 bulan)" },
+  { nama: "16. MEAGO Growth Program", tiers: "Varian A: 3 bln Rp 19.000.000 / 6 bln Rp 10.000.000 · Varian B: 3 bln Rp 30.000.000 / 6 bln Rp 15.000.000" },
+];
+
+function MeagoPriceReference() {
+  return (
+    <details className="bridge-price-ref">
+      <summary>Lihat harga resmi paket MEAGO (referensi cross-charge)</summary>
+      <p className="hint">
+        Bukan pengisi otomatis — cek nilai deal ini terhadap harga resmi di
+        bawah, lalu ketik alokasinya sendiri di kolom &quot;Nilai cross-charge&quot;
+        per baris. Fee sering membundel Live (tidak pernah dibridge ke CDPS) +
+        Content, jadi porsi yang masuk cross-charge tiap baris jenis tetap
+        keputusan BD/CM.
+      </p>
+      <table className="bridge-price-ref-table">
+        <tbody>
+          {MEAGO_PACKAGE_REFERENCE.map((p) => (
+            <tr key={p.nama}>
+              <td>{p.nama}</td>
+              <td>{p.tiers}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
+  );
+}
+
 function BridgeStatusBadge({ info }: { info: { status: string; ord_code: string | null; last_error: string | null } }) {
   if (info.status === "sent") {
     return (
@@ -290,6 +341,7 @@ function BridgeLinesModal({
                 </p>
                 <input type="hidden" name="deal_id" value={deal.id} />
                 <input type="hidden" name="lines_json" value={JSON.stringify(rows)} />
+                <MeagoPriceReference />
                 {rows.map((r, i) => (
                   <div key={i} className="bridge-line-row">
                     <select
