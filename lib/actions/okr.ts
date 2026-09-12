@@ -1,9 +1,15 @@
 "use server";
 
-// M14 · Target OKR — Director/OD menetapkan target per section (bukan hardcode).
-// Enforcement tetap di Postgres: RLS okr_manage (is_od/is_director) + unique index
-// parsial (satu target aktif per period/role/metric). Pola supersede: nonaktifkan
-// baris lama (active=false) lalu insert baris baru — histori target tidak diedit.
+// Target OKR — Director/OD menetapkan target per divisi (bukan hardcode).
+// Enforcement tetap di Postgres: RLS okr_meago_manage (is_od/is_director) + unique
+// index parsial (satu target aktif per period/division/metric). Pola supersede:
+// nonaktifkan baris lama (active=false) lalu insert baris baru — histori target
+// tidak pernah diedit.
+//
+// PENSIUN 2026-09-12: menulis ke `okr_targets_meago`, BUKAN `okr_targets`. Tabel
+// lama dibekukan bersama M14 (kolom role bertipe enum perf_role yang hanya memuat
+// divisi operasional — lihat header migrasi 0361 kenapa enum itu tidak diperluas).
+// Baris lamanya tetap ada sebagai riwayat; nol jalur tulis dari sini.
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
@@ -11,7 +17,7 @@ import { OKR_METRIC_KEYS, PERIOD_RE } from "@/lib/okr-metrics";
 
 export type ActionResult = { ok: boolean; message: string };
 
-const ROLES = new Set(["Ecommerce", "Ads", "KOL", "AM"]);
+const ROLES = new Set(["BizDev", "CreatorManagement", "Acquisition", "Marketing", "Finance"]);
 const COMPARATORS = new Set(["gte", "lte"]);
 
 // Tetapkan / ubah target satu metrik untuk satu periode.
@@ -44,10 +50,10 @@ export async function setOkrTarget(
 
   // Baris aktif saat ini (jika ada) untuk period/role/metric.
   const { data: existing, error: selErr } = await supabase
-    .from("okr_targets")
+    .from("okr_targets_meago")
     .select("id, target_value, comparator")
     .eq("period", period)
-    .eq("role", role)
+    .eq("division", role)
     .eq("metric", metric)
     .eq("active", true)
     .maybeSingle();
@@ -60,7 +66,7 @@ export async function setOkrTarget(
   // Supersede: nonaktifkan yang lama dulu (unique index melarang dua baris aktif).
   if (existing) {
     const { data: upd, error: updErr } = await supabase
-      .from("okr_targets")
+      .from("okr_targets_meago")
       .update({ active: false })
       .eq("id", existing.id)
       .select("id");
@@ -71,8 +77,16 @@ export async function setOkrTarget(
   }
 
   const { data: ins, error: insErr } = await supabase
-    .from("okr_targets")
-    .insert({ period, role, metric, target_value: value, comparator, active: true, set_by: user.id })
+    .from("okr_targets_meago")
+    .insert({
+      period,
+      division: role,
+      metric,
+      target_value: value,
+      comparator,
+      active: true,
+      set_by: user.id,
+    })
     .select("id");
   if (insErr) return { ok: false, message: `Gagal menyimpan target: ${insErr.message}` };
   if (!ins || ins.length === 0) {
@@ -80,7 +94,6 @@ export async function setOkrTarget(
   }
 
   revalidatePath("/okr");
-  revalidatePath("/management");
   return {
     ok: true,
     message: `Target tersimpan: ${role} · ${metric} = ${comparator === "lte" ? "≤" : "≥"} ${value} (${period}).`,
@@ -102,7 +115,7 @@ export async function clearOkrTarget(
   if (!id) return { ok: false, message: "Target tidak valid." };
 
   const { data, error } = await supabase
-    .from("okr_targets")
+    .from("okr_targets_meago")
     .update({ active: false })
     .eq("id", id)
     .eq("active", true)
@@ -113,6 +126,5 @@ export async function clearOkrTarget(
   }
 
   revalidatePath("/okr");
-  revalidatePath("/management");
-  return { ok: true, message: "Target dinonaktifkan — engine kembali memakai nilai default." };
+  return { ok: true, message: "Target dinonaktifkan — kembali memakai nilai default katalog." };
 }

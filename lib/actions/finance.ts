@@ -60,7 +60,7 @@ export async function setPayoutStatus(
   if (error) return { ok: false, message: `Transisi ditolak: ${error.message}` };
 
   revalidatePath("/finance");
-  revalidatePath("/kol");
+  // /kol pensiun 2026-09-12 (nisan statis) — nol gunanya di-revalidate.
   return { ok: true, message: `Status payout diubah ke ${to_status}.` };
 }
 

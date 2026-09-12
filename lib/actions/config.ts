@@ -50,6 +50,7 @@ export async function updateAppConfig(
     .eq("key", key);
   if (error) return { ok: false, message: `Gagal menyimpan konfigurasi: ${error.message}` };
 
-  revalidatePath("/management");
+  // /management pensiun 2026-09-12 (nisan statis); app_config kini dibaca /okr.
+  revalidatePath("/okr");
   return { ok: true, message: `Konfigurasi "${key}" diperbarui.` };
 }
