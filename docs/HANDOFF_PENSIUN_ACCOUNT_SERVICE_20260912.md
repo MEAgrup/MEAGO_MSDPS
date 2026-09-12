@@ -339,3 +339,37 @@ Ecommerce/LiveStream) dan P4 adalah tujuh angka target OKR nyata dari Director.
 Kode/skema sudah siap menerima keduanya kapan pun dijawab (§3 tabel 7 metrik +
 prasyarat P3 di atas) — tidak ada pekerjaan tertunda di sisi migrasi untuk ini,
 hanya menunggu keputusan manusia.
+
+## 11. P3+P4 dijawab (2026-09-12, sesi lanjutan ke-3 — "fix p3 & p4")
+
+**P3 — dijawab: nonaktifkan.** Dicek dulu langsung ke live sebelum eksekusi:
+tidak ada satu pun karyawan aktif di divisi `LiveStream` (kolom `division` di
+`employees` tidak pernah punya nilai itu) — jadi cakupan nyata P3 hanya
+Account (6) + Ecommerce (2) + Ads (2) + KOL (3) = 13 orang. Tiga di antaranya
+punya peran berlapis lintas-sistem yang TIDAK ada hubungannya dengan
+Account/Ads/KOL/Ecommerce pensiun — **Yohan Agustian** (Account/lead,
+`is_director=true`), **Ghifari** (Account/lead, `is_director=true`), **Rara**
+(Account/lead, `is_od=true`). Menonaktifkan mereka akan mencabut akses
+Director/OD di SELURUH sistem (`/okr`, `/merchants`, `/campaigns`, dst), bukan
+cuma sidebar modul yang pensiun — jadi dikonfirmasi eksplisit ke pemilik
+sebelum eksekusi, dan yang dieksekusi HANYA 10 orang tanpa peran berlapis:
+
+`UPDATE employees SET active = false WHERE id IN (...)` untuk **Anty, Mey,
+Sari** (Account) · **Sepri, Eka** (Ecommerce) · **Erlina, Adit** (Ads) ·
+**Rizal, Sembo, Koko** (KOL) — dijalankan langsung ke live
+`mvcckptntrvzujqaoxxh` (bukan migrasi — ini data, bukan skema). Diverifikasi:
+`returning` mengonfirmasi 10 baris `active=false`, dan `audit_log` (`entity=
+'employee'`) mencatat 10 baris `UPDATE` immutable pada `2026-09-12 13:12:50Z`
+lewat `trg_audit_employees` yang sudah ada — nol trigger baru diperlukan.
+**Yohan Agustian, Ghifari, Rara TETAP `active=true`.**
+
+Konsekuensi langsung: kesepuluh orang ini akan gagal login (atau ter-logout
+di sesi berikutnya via gate `is_employee()`/RLS yang membaca `employees.active`)
+— pengumuman ke mereka masih perlu dikirim manusia (di luar cakupan migrasi/
+kode), tapi jalur aksesnya sudah tertutup di DB per keputusan ini.
+
+**P4 — dijawab: biarkan default, jangan tulis apa pun.** Nol baris ditulis ke
+`okr_targets_meago`. Tujuh metrik di `/okr` tetap tampil dengan `target_source
+= 'default'` (fallback katalog di `v_okr_attainment_meago_internal`, migr.
+0361) sampai Director benar-benar menetapkan angka lewat halaman `/okr` —
+status quo, bukan perubahan.
