@@ -265,3 +265,36 @@ npx next build                         # JANGAN saat `npm run dev` menyala
 node scripts/qc_bridge_payload.mjs     # 50
 node scripts/test_bridge_delivery.mjs  # 16
 ```
+
+---
+
+## 9. Resolusi P1 (2026-09-12, sesi lanjutan)
+
+**P1 dijawab pemilik: "live stream tetap diteruskan ke CDPS."** D2 (docs/DECISIONS.md
+sisi AgencyAPP, 2026-09-10) yang mengunci `jenis` bridge pada lima nilai dan
+eksplisit mengecualikan `Live Stream` **dibalik** — dicatat sebagai amandemen
+D2, bukan ditimpa diam-diam (test lama yang menegaskan penolakan diperbarui,
+bukan dihapus). `/livestream` **tetap** nisan (migr. 0361) — jawabannya bukan
+"masih dikerjakan di MSDPS", jadi tidak dikeluarkan dari daftar pensiun.
+
+Dikerjakan (migr. `0362_bridge_livestream_jenis.sql`):
+- `deal_bridge_lines.jenis` CHECK naik ke ENAM nilai: + `Live Stream`.
+- `lib/bridge/payload.ts`, `lib/actions/bridge.ts` (`JENIS_VALUES`),
+  `app/(app)/deals/table.tsx` (`BRIDGE_JENIS`) — union/array diperluas.
+- `scripts/test_bridge_gates.sql`: assertion `'Live Stream' DITOLAK` dibalik
+  jadi `DITERIMA`; assertion penolakan closed-set baru ditambah dengan nilai
+  bogus lain (`'Vendor Eksternal'`) supaya cakupan "closed set" tidak hilang.
+- **Nol perubahan sisi CDPS diperlukan** — `packages/domain/src/bridge.ts`
+  memperlakukan `jenis` sebagai string bebas yang dicocokkan ke
+  `external_service_map.external_service_type` (admin-configurable); closed
+  set hanya pernah hidup sebagai CHECK constraint MSDPS.
+- Verifikasi: `pg_test_reset.sh` → 83 migrasi lolos dari nol,
+  `test_bridge_gates.sql` → 26 assertion hijau, `qc_bridge_payload.mjs` → 50,
+  `test_bridge_delivery.mjs` → 16, `npx tsc --noEmit` bersih.
+
+**Belum berubah / masih berlaku:** prasyarat operasional §6 (paket Live Stream
+di Master Service List CDPS + baris `external_service_map` terkait) — itu data
+yang diisi manusia di CDPS, di luar migrasi ini. Sampai baris itu ada, baris
+bridge `jenis='Live Stream'` akan tersimpan di `cdps_outbox`/terkirim tapi
+`accept()` di CDPS menolak dengan `[layanan MEAGO belum dipetakan ke Master
+Service List]`, persis seperti jenis lain yang belum dipetakan.

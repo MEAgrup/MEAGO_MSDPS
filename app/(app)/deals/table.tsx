@@ -183,7 +183,7 @@ function CreatePoiFinanceButton({ dealId, label }: { dealId: string; label: stri
 // Satu order per deal seumur Fase 1 (idempotency_key terkunci ke
 // payload_versi=1) — begitu bridgeInfo ada, tombol diganti badge status,
 // bukan dibiarkan bisa dipencet lagi.
-const BRIDGE_JENIS = ["Account", "Ads", "Creative", "Store Operation", "KOL-Non-Roster"] as const;
+const BRIDGE_JENIS = ["Account", "Ads", "Creative", "Store Operation", "KOL-Non-Roster", "Live Stream"] as const;
 type BridgeJenis = (typeof BRIDGE_JENIS)[number];
 type BridgeLineDraft = {
   jenis: BridgeJenis;
@@ -203,10 +203,10 @@ const emptyBridgeLine = (): BridgeLineDraft => ({
 // Referensi harga resmi paket MEAGO (dokumen "Merchant Existing TikTok GO
 // Package — Sept"), murni untuk BANTU BD/CM mengetik `nilai_cross_charge`
 // per baris di atas — TIDAK mengisi apa pun otomatis. Alokasi ke satu/lebih
-// baris jenis (Account/Ads/Creative/Store Operation/KOL-Non-Roster) tetap
-// keputusan manusia: satu fee paket sering membundel Live (D2 — tidak pernah
-// dibridge ke CDPS) + Content, jadi tidak ada pemecahan mekanis yang aman
-// ditebak di sini.
+// baris jenis (Account/Ads/Creative/Store Operation/KOL-Non-Roster/Live Stream,
+// D2 dibalik 2026-09-12 — lihat docs/BUILD_PLAN.md baris Bridge) tetap
+// keputusan manusia: satu fee paket sering membundel Live + Content, jadi
+// tidak ada pemecahan mekanis yang aman ditebak di sini.
 const MEAGO_PACKAGE_REFERENCE: { nama: string; tiers: string }[] = [
   { nama: "1. Starter Pack", tiers: "Rp 8.000.000 (2 bln, sharing commission 8%)" },
   { nama: "2. Content Package", tiers: "Reguler Rp 15.000.000 · Premium Rp 35.000.000 · Premium+ Rp 75.000.000" },
