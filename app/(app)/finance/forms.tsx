@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useActionState } from "react";
 import {
   verifyPayment,
@@ -8,6 +9,7 @@ import {
   type ActionResult,
 } from "@/lib/actions/finance";
 import { setCampaignPayoutStatus, type ActionResult as CampaignPayoutActionResult } from "@/lib/actions/campaign-payouts";
+import { rupiah } from "@/lib/format";
 
 export function VerifyForm({
   transactionId,
@@ -20,19 +22,46 @@ export function VerifyForm({
     verifyPayment,
     null
   );
+  const [mode, setMode] = useState<"penuh" | "sebagian">("penuh");
+
   return (
     <form action={action} className="inline-form">
       <input type="hidden" name="transaction_id" value={transactionId} />
-      <input
-        name="amount"
-        type="number"
-        min={1}
-        max={outstanding}
-        step="1000"
-        placeholder="Jumlah diterima"
-        required
-        style={{ width: 140 }}
-      />
+      <div className="verify-mode-row" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <label style={{ display: "flex", gap: 4, alignItems: "center", fontWeight: "normal" }}>
+          <input
+            type="radio"
+            checked={mode === "penuh"}
+            onChange={() => setMode("penuh")}
+          />
+          Bayar Penuh
+        </label>
+        <label style={{ display: "flex", gap: 4, alignItems: "center", fontWeight: "normal" }}>
+          <input
+            type="radio"
+            checked={mode === "sebagian"}
+            onChange={() => setMode("sebagian")}
+          />
+          Bayar Sebagian
+        </label>
+      </div>
+      {mode === "penuh" ? (
+        <>
+          <input type="hidden" name="amount" value={outstanding} />
+          <span className="muted">{rupiah(outstanding)}</span>
+        </>
+      ) : (
+        <input
+          name="amount"
+          type="number"
+          min={1}
+          max={outstanding}
+          step="1"
+          placeholder="Jumlah diterima"
+          required
+          style={{ width: 140 }}
+        />
+      )}
       <input name="proof" placeholder="No. bukti (opsional)" style={{ width: 140 }} />
       <button className="sm" disabled={pending}>
         {pending ? "…" : "Verifikasi"}
