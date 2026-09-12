@@ -110,6 +110,13 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .bridge-line-row select, .bridge-line-row input { margin-bottom: 0; }
 .bridge-line-row input[type="text"] { flex: 1; min-width: 140px; }
 
+.bridge-price-ref { margin-bottom: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.bridge-price-ref summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.bridge-price-ref .hint { margin-top: 6px; }
+.bridge-price-ref-table { width: 100%; font-size: 12px; margin-top: 8px; border-collapse: collapse; }
+.bridge-price-ref-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.bridge-price-ref-table td:first-child { font-weight: 600; white-space: nowrap; }
+
 .badge.blue { background: #dbeafe; color: #1d4ed8; }
 .badge.red { background: #fee2e2; color: #b91c1c; }
 .badge.slate { background: #e2e8f0; color: #334155; }

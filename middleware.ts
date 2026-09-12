@@ -87,6 +87,13 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // `api/` dikecualikan: route di bawahnya (mis. `/api/internal/bridge/deliver`)
+    // punya gerbang secret sendiri (`deliverSecretOk`, dipanggil Vercel Cron
+    // TANPA cookie sesi) — kalau tidak dikecualikan, middleware ini menganggap
+    // setiap panggilan cron "belum login" dan me-redirect 307 ke /login SEBELUM
+    // route sempat mengecek secret-nya sendiri. Bug ini yang membuat delivery
+    // tick Bridge MSDPS→CDPS tidak pernah benar-benar jalan sejak dibangun —
+    // ditemukan lewat runtime log Vercel (cron 200-sukses vs 307 nyata).
+    "/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
