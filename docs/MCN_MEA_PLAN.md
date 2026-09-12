@@ -14,6 +14,8 @@ User (Yohan) ingin menambahkan fitur MCN (manajemen kreator affiliate TikTok) ya
 4. **Special Project & Campaign** (fitur baru, konsep user) — Lead mendaftarkan project: nama, kebutuhan kreator (jumlah target), tanggal mulai–akhir, ads budget, merchant peserta, kategori industri (Dining/Accommodation/Things to Do), target GMV. Summary/reporting project muncul di workspace CM, BD, dan Akuisisi.
 5. **Team Account & Service** — fitur existing (Merchant Board, E-com, Ads, KOL, LiveStream, dll) — tidak berubah, hanya ditata ulang navigasinya.
 
+> **KOREKSI 2026-09-12 (migr. 0361).** Tidak lagi berlaku. Team Account/Ads/Creative/Store Operation duduk di MEA Agency dan bekerja di CDPS, bukan di MEAGO. Sejak Bridge Fase 1 (0360) modul M6–M15 di MSDPS dipensiunkan: `/account /ecommerce /ads /kol /livestream /board /portal /management` jadi halaman nisan, sementara `/merchants` (M4) dan `/campaigns` (M3) tetap hidup di grup nav "Merchant & Kampanye". DB-nya utuh — nol `drop`. Lihat baris "Pensiun Account & Service" di `docs/BUILD_PLAN.md`.
+
 **Navigasi**: sidebar dikelompokkan per team; member hanya melihat grup yang relevan (role-gated seperti sekarang).
 
 ### Keputusan interview (final, jangan re-litigasi)
@@ -200,6 +202,8 @@ Nav `layout.tsx` ditata jadi seksi berjudul per team (headings kecil di sidebar)
 4. **Special Project** (`seeProj = mgmt || is_lead || div in (CM,BizDev,Acquisition)`): `/projects`.
 5. **Account & Service** (gate existing dipertahankan): `/board /account /ecommerce /ads /kol /livestream /merchants /campaigns`.
 6. **Umum/Manajemen**: `/dashboard /portal /finance /okr /management /employees` (gate existing).
+
+> **KOREKSI 2026-09-12 (migr. 0361).** Dua baris di atas sudah berubah. Grup 5 menyusut jadi **"Merchant & Kampanye"** berisi `/merchants` + `/campaigns` saja (`seeMerchants` tidak lagi memuat divisi `Account`); `/board /account /ecommerce /ads /kol /livestream` dicabut dari nav dan route-nya jadi nisan. Di grup 6, `/portal` dan `/management` ikut dicabut; `/okr` tetap ada tapi menilai divisi non-operasional saja.
 
 Halaman baru (pola page.tsx server component + forms.tsx client):
 - `/mcn/creators` — tabel master (nama, platform, status, niche, jenis, GMV bulanan, owner CM, roster, komisi RO) + form tambah prospek + assign owner + toggle roster + set cap.

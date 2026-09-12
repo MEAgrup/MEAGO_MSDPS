@@ -36,7 +36,7 @@ Diperbaiki oleh `0320_brand_deals_poi_reconcile.sql` dan `0339_schema_reconcile.
 
 ```bash
 bash scripts/pg_test_reset.sh
-# ✅ 81 migrasi lolos dari nol (database msdps_reset, port 55432)
+# ✅ 82 migrasi lolos dari nol (database msdps_reset, port 55432)
 ```
 
 Butuh paket `postgresql` lokal (`psql` + `initdb`). Skrip membuat cluster sementara,
@@ -230,3 +230,29 @@ tetapi tidak ada satu pun baris kode aplikasi yang menulis kolom-kolom itu — y
 benar-benar diisi tim adalah `poi_sop_progress.actual_vt`. Struktur cocok, perilaku
 tidak. Untuk hal seperti ini, bandingkan `pg_get_functiondef` / `pg_get_triggerdef`
 antara reset lokal dan live secara manual saat menyentuh modul terkait.
+
+
+---
+
+## Delta yang DISENGAJA sesudah pensiun Account & Service (0361, 2026-09-12)
+
+Sidik jari (`scripts/schema_fingerprint.sql`) akan melaporkan **tiga baris
+`cron_job` lebih sedikit** dibanding sebelum migrasi 0361:
+
+| Job | Asal | Status sesudah 0361 |
+|---|---|---|
+| `msdps_health_weekly` | 0208 | dilepas (`cron.unschedule`) |
+| `msdps_health_monthly` | 0208 | dilepas |
+| `msdps_perf_weekly` | 0209 | dilepas |
+| `msdps_retention_monthly` | 0315 | **tetap jalan** — tidak terkait M13/M14 |
+
+**Itu hasil yang diinginkan, bukan drift.** Fungsi `generate_health_snapshots`,
+`generate_health_monthly`, dan `generate_performance_scores` sendiri tidak
+disentuh dan masih bisa dipanggil manual OD/Director; yang berhenti hanya
+penjadwalannya. Membalikkannya = tiga `cron.schedule` dengan jadwal yang
+tertulis di komentar migrasi 0361.
+
+Di arah sebaliknya, 0361 **menambah** tiga objek baru yang harus muncul di
+kedua sisi: tabel `okr_targets_meago`, view internal
+`v_okr_attainment_meago_internal` + fungsi `v_okr_attainment_meago_rows()`, dan
+view publik `v_okr_attainment_meago` (pola tiga lapis 0314).

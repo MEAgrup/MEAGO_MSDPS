@@ -104,3 +104,46 @@ Jangan tertukar dengan:
 Satu deal MSDPS ⇒ **paling banyak satu** `ORD-` seumur Fase 1 (idempotency_key
 `cdps_outbox` terkunci ke `<DEAL code>:1`, lihat `docs/BRIDGE_MSDPS_CONTRACT.md`
 sisi CDPS) — belum ada mekanisme "tambah baris ke order yang sudah terkirim".
+
+---
+
+## "Account & Service" / "eksekusi layanan" — artinya berubah 2026-09-12
+
+Ini jebakan baca terbesar di repo sesudah pensiun: hampir semua dokumen yang
+ditulis sebelum tanggal ini memakai kata "Account & Service" dalam arti lama.
+
+| Kosakata | Arti | Di mana |
+|---|---|---|
+| **MSDPS sebelum 2026-09-12** | M6–M11 + portal/manajemen (M12–M15): strategi, brief, SKU, ADC, booking KOL, live stream, board, speed score, health, skor performa. | `/account /ecommerce /ads /kol /livestream /board /portal /management` — **PENSIUN, halaman nisan** (migr. 0361) |
+| **MSDPS sekarang** | MSDPS berhenti di *closing* + *bridge*: deal → transaksi terverifikasi Finance → `ORD-` ke CDPS. | `/deals`, `/merchants`, `deal_bridge_lines`, `cdps_outbox` (0360) |
+| **CDPS** | Tempat eksekusi layanan sebenarnya berjalan sejak 2026-09-11. | repo/app terpisah (`MEAgrup/AgencyAPP`) — **tidak disentuh dari MSDPS** |
+
+Tiga hal yang sering salah disimpulkan dari pensiun ini:
+
+1. **Datanya tidak hilang.** Migrasi 0361 nol `drop`/`delete`/`truncate`. Seluruh
+   baris `briefs`, `strategies`, `complaints`, `sku_work_units`,
+   `ad_campaign_records`, `creator_bookings`, `live_stream_results`,
+   `merchant_health_snapshots`, `performance_scores` beserta audit log-nya tetap
+   utuh dan terbaca OD/Director lewat SQL. Yang berhenti hanya pintu masuk
+   manusianya dan tiga pg_cron M13/M14.
+2. **`/merchants` dan `/campaigns` TIDAK ikut pensiun.** Keduanya dulu berada di
+   grup nav yang sama, tapi bukan modul eksekusi: `merchants`/`services` adalah
+   induk yang dipakai `close_deal` dan bridge, `campaigns` (M3) menyuapi Leads
+   (M1) dan ROAS Marketing (M2). Sekarang mereka di grup **"Merchant & Kampanye"**.
+3. **File `forms.tsx` dan `lib/actions/{account,ecommerce,ads,kol,livestream,blocks}.ts`
+   yang tampak yatim itu disengaja.** Baca header `components/retired.tsx` sebelum
+   menghapusnya — ketiadaan import-nya justru yang menutup endpoint Server Action.
+
+## "OKR" / "attainment" / "target role" — juga berubah tanggal yang sama
+
+| | Sebelum | Sesudah |
+|---|---|---|
+| Divisi dinilai | Ecommerce, Ads, KOL, AM | BizDev, Creator Management, Akuisisi, Marketing, Keuangan |
+| Tabel target | `okr_targets` (kolom `role`, enum `perf_role`) — **DIBEKUKAN**, jangan ditulisi lagi | `okr_targets_meago` (kolom `division`, text + CHECK) |
+| Attainment | `v_okr_attainment` (M14), ditampilkan di `/management` | `v_okr_attainment_meago`, ditampilkan di `/okr` sendiri |
+| Mesin skor | `generate_performance_scores` mingguan lewat pg_cron | tidak ada — attainment dihitung on-read oleh view |
+
+`perf_role` sengaja **tidak** diperluas: Postgres tidak punya `drop value`, dan
+menambah label justru akan membuat `generate_performance_scores` (0209:94) mulai
+menghasilkan angka untuk divisi yang mesinnya baru saja dihentikan. Alasan
+lengkapnya di header migrasi `0361`.

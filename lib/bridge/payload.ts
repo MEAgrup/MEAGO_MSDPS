@@ -39,7 +39,7 @@ export interface BridgeMerchantRow {
 }
 
 export interface BridgeLineRow {
-  jenis: "Account" | "Ads" | "Creative" | "Store Operation" | "KOL-Non-Roster";
+  jenis: "Account" | "Ads" | "Creative" | "Store Operation" | "KOL-Non-Roster" | "Live Stream";
   qty: number | null;
   catatan: string | null;
   alasan_non_roster: string | null;

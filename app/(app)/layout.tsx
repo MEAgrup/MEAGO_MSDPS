@@ -30,13 +30,11 @@ export default async function AppLayout({
   const isLead = me?.rank === "lead";
   const canManage = mgmt;
   const seeLeads = mgmt || div === "BizDev" || div === "Marketing";
-  const seeMerchants = mgmt || ["BizDev", "Account", "Finance"].includes(div);
+  const seeMerchants = mgmt || ["BizDev", "Finance"].includes(div);
   const seeFinance = mgmt || div === "Finance";
-  const seeAccount = mgmt || div === "Account";
-  const seeEcommerce = mgmt || ["Ecommerce", "Account"].includes(div);
-  const seeAds = mgmt || ["Ads", "Account"].includes(div);
-  const seeKol = mgmt || ["KOL", "Account"].includes(div);
-  const seeLivestream = mgmt || ["Account", "LiveStream"].includes(div);
+  // seeAccount/seeEcommerce/seeAds/seeKol/seeLivestream DIHAPUS 2026-09-12:
+  // eksekusi layanan pindah ke CDPS lewat Bridge Fase 1, halamannya dinisankan
+  // (components/retired.tsx). Route-nya masih ada dan menjelaskan dirinya sendiri.
 
   // ---- MCN nav groups ----
   const seeCM = mgmt || div === "CreatorManagement";
@@ -112,10 +110,8 @@ export default async function AppLayout({
 
       {sectionHeading("Umum")}
         <Link href="/dashboard">Dashboard</Link>
-        <Link href="/portal">Team Portal</Link>
         {seeFinance && <Link href="/finance">Keuangan</Link>}
         {mgmt && <Link href="/okr">Target OKR</Link>}
-        {mgmt && <Link href="/management">Manajemen</Link>}
         {canManage && <Link href="/employees">Kelola Karyawan</Link>}
 
         {seeCM && sectionHeading("CM Kreator")}
@@ -154,13 +150,12 @@ export default async function AppLayout({
         {seeProj && sectionHeading("Special Project")}
         {seeProj && <Link href="/projects">Special Project</Link>}
 
-        {sectionHeading("Account & Service")}
-        <Link href="/board">Merchant Board</Link>
-        {seeAccount && <Link href="/account">Account</Link>}
-        {seeEcommerce && <Link href="/ecommerce">E-commerce</Link>}
-        {seeAds && <Link href="/ads">Ads</Link>}
-        {seeKol && <Link href="/kol">KOL</Link>}
-        {seeLivestream && <Link href="/livestream">Live Stream</Link>}
+        {/* Grup "Account & Service" PENSIUN 2026-09-12 — /board /account /ecommerce
+            /ads /kol /livestream beserta /portal dan /management dinisankan; eksekusinya
+            di CDPS. Yang tersisa di sini bukan modul eksekusi: Merchant (M4) adalah induk
+            yang dipakai close_deal + bridge, Kampanye (M3) menyuapi Leads (M1) dan ROAS
+            Marketing (M2). Keduanya tetap hidup. */}
+        {sectionHeading("Merchant & Kampanye")}
         {seeMerchants && <Link href="/merchants">Merchant</Link>}
         <Link href="/campaigns">Kampanye</Link>
 

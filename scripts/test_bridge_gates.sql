@@ -156,9 +156,14 @@ select pg_temp.expect('bd', false, 'INSERT deal bentuk_kerjasama NULL DITOLAK (I
     ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','Account')$$);
 
 -- ---- 3. jenis: closed set + KOL-Non-Roster wajib alasan --------------------
-select pg_temp.expect('bd', false, '''Live Stream'' BUKAN jenis sah DITOLAK',
+-- D2 dibalik 2026-09-12 (migr. 0362): 'Live Stream' kini jenis sah keenam.
+select pg_temp.expect('bd', true, '''Live Stream'' kini jenis sah DITERIMA (D2 dibalik, migr. 0362)',
   $$insert into deal_bridge_lines (deal_id, jenis) values
     ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Live Stream')$$);
+
+select pg_temp.expect('bd', false, '''Vendor Eksternal'' BUKAN jenis sah DITOLAK',
+  $$insert into deal_bridge_lines (deal_id, jenis) values
+    ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Vendor Eksternal')$$);
 
 select pg_temp.expect('bd', false, 'KOL-Non-Roster TANPA alasan_non_roster DITOLAK',
   $$insert into deal_bridge_lines (deal_id, jenis) values

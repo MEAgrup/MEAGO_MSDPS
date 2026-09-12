@@ -38,7 +38,7 @@ function canManageBridge(me: Me | null): boolean {
   return !!me && (me.is_od || me.is_director || me.division === "BizDev" || me.division === "CreatorManagement");
 }
 
-const JENIS_VALUES = ["Account", "Ads", "Creative", "Store Operation", "KOL-Non-Roster"] as const;
+const JENIS_VALUES = ["Account", "Ads", "Creative", "Store Operation", "KOL-Non-Roster", "Live Stream"] as const;
 type Jenis = (typeof JENIS_VALUES)[number];
 function isJenis(v: string): v is Jenis {
   return (JENIS_VALUES as readonly string[]).includes(v);

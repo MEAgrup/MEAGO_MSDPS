@@ -14,6 +14,8 @@ Sidebar dikelompokkan per team (role-gated, member hanya melihat grup relevan):
 4. **Special Project** (baru; multi-divisi): Kelola project, summary di tiap workspace
 5. **Account & Service** (existing, ditata ulang): Merchant Board, E-com, Ads, KOL, LiveStream, dll
 
+> **KOREKSI 2026-09-12 (migr. 0361).** Tidak lagi berlaku. Team Account/Ads/Creative/Store Operation duduk di MEA Agency dan bekerja di CDPS, bukan di MEAGO. Sejak Bridge Fase 1 (0360) modul M6–M15 di MSDPS dipensiunkan: `/account /ecommerce /ads /kol /livestream /board /portal /management` jadi halaman nisan, sementara `/merchants` (M4) dan `/campaigns` (M3) tetap hidup di grup nav "Merchant & Kampanye". DB-nya utuh — nol `drop`. Lihat baris "Pensiun Account & Service" di `docs/BUILD_PLAN.md`.
+
 Divisi baru di enum `division`: `CreatorManagement` dan `Acquisition` (BizDev sudah ada sejak Fase 0). Struktur tim memungkinkan workflow khusus: CM handle kreator internal, BizDev kelola deal/merchant, Akuisisi cari kreator baru + closing binding.
 
 ---
