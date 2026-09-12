@@ -298,3 +298,44 @@ yang diisi manusia di CDPS, di luar migrasi ini. Sampai baris itu ada, baris
 bridge `jenis='Live Stream'` akan tersimpan di `cdps_outbox`/terkirim tapi
 `accept()` di CDPS menolak dengan `[layanan MEAGO belum dipetakan ke Master
 Service List]`, persis seperti jenis lain yang belum dipetakan.
+
+## 10. P2/P5/P6/P7 diproses (2026-09-12, sesi lanjutan ke-2 — "proces p2-p7")
+
+**P2 — dijawab: apply ke live SEKARANG, bukan tunggu.** Sebelum apply, dicek
+langsung ke `mvcckptntrvzujqaoxxh`: `external_service_map` (CDPS) ternyata
+**sudah** terisi 5 baris (bukan kosong seperti asumsi §6), dan satu deal nyata
+sudah mengalir end-to-end SEBELUM sesi ini menyentuh apa pun: `DEAL-202609-0078`
+→ `ORD-202609-0001` → `CLI-202609-0017`, `[Diterima]` 2026-09-12 06:29 UTC.
+Itu 1 dari target exit-criteria 5–10 deal — belum lolos, tapi cukup bukti
+bridge-nya nyata (bukan cuma lolos di kode). `0361`+`0362`+`0363` di-apply ke
+live lewat `apply_migration` (bukan `psql -f`, sesuai aturan rumah), migration
+ledger `list_migrations` mengonfirmasi ketiganya terdaftar berurutan.
+**Bukti integritas (§4 butir 3) dijalankan sebelum DAN sesudah apply — angkanya
+identik**: briefs 10 · strategies 3 · complaints 2 · sku 5 · adc 2 · bookings 13
+· lsr 3 · health 11 · perf 14. `cron.job` sesudah apply → hanya
+`msdps_retention_monthly` aktif (tiga job M13/M14 hilang). `get_advisors`
+sesudah apply → nol temuan security baru di luar yang sudah diantisipasi di
+migrasi itu sendiri.
+
+**P5 — dijawab: ya, ditutup** (migr. `0363`). `information_schema.routine_privileges`
+dicek sesudah apply: `authenticated` tidak lagi punya `EXECUTE` atas
+`generate_health_snapshots`/`generate_health_monthly`/`generate_performance_scores`
+— hanya `postgres`/`service_role` yang tersisa. Reversibel dengan satu `grant`.
+
+**P6 — dijawab: ya, boleh** (dipraktikkan, bukan cuma dijawab). Sesi ini
+menyentuh `AgencyAPP/docs/DECISIONS.md`, `docs/BRIDGE_MSDPS_CONTRACT.md`, dan
+`docs/backlog/BRIDGE_MSDPS_BACKLOG.md` untuk D2 (§9) + memperbaiki baris "Part
+B belum dimulai" yang sudah usang (diverifikasi lewat `git log` langsung —
+`MEAGO_MSDPS#38`/`#39` sudah merge ke `main` 2026-09-11/12).
+
+**P7 — dijawab: ditandai inert** (migr. `0363`). `okr_targets` (tabel) dan
+`v_okr_attainment` (view) lama dapat `comment on` yang menunjuk ke pengganti
+`okr_targets_meago`/`v_okr_attainment_meago`. Nol `DROP`.
+
+**P3 dan P4 TIDAK dijawab di sesi ini** — keduanya butuh input yang tidak bisa
+ditebak tanpa melanggar batasan anti-halusinasi repo ini: P3 adalah keputusan
+personalia (nonaktifkan/pindah divisi/biarkan+umumkan karyawan Account/Ads/KOL/
+Ecommerce/LiveStream) dan P4 adalah tujuh angka target OKR nyata dari Director.
+Kode/skema sudah siap menerima keduanya kapan pun dijawab (§3 tabel 7 metrik +
+prasyarat P3 di atas) — tidak ada pekerjaan tertunda di sisi migrasi untuk ini,
+hanya menunggu keputusan manusia.
