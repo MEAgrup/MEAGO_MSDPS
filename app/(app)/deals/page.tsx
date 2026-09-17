@@ -30,6 +30,9 @@ export default async function DealsPage() {
   if (!canView) redirect("/dashboard");
 
   const canRegister = mgmt || div === "BizDev" || div === "CreatorManagement";
+  // Import Bulking dibatasi ke mgmt/BizDev — sama seperti canImportDeals di
+  // lib/actions/deals.ts.
+  const canImport = mgmt || div === "BizDev";
   // Edit & Hapus transaksi deal LANGSUNG dibatasi ke role "leader dan atasnya"
   // — untuk saat ini is_director() saja (migrasi 0341/lib/actions/deals.ts).
   const canEditDelete = !!me?.is_director;
@@ -121,6 +124,7 @@ export default async function DealsPage() {
         canRegister={canRegister}
         canEditDelete={canEditDelete}
         canRequestChange={canRequestChange}
+        canImport={canImport}
         verifiedByTrxId={verifiedByTrxId}
         bridgeByDeal={bridgeByDeal}
       />

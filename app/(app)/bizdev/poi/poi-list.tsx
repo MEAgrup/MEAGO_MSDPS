@@ -5,7 +5,6 @@ import { PoiCard, type PoiTransaction } from "./poi-card";
 import {
   POI_TAB_CATEGORIES,
   POI_CATEGORY_LABELS,
-  POI_SOP_STEPS,
   PRE_VISIT_END_STEP,
   POST_VISIT_END_STEP,
   effectiveOpsDatetime,
@@ -38,11 +37,11 @@ const SCHEDULE_FILTERS: { key: ScheduleFilter; label: string }[] = [
 export function PoiList({
   transactions,
   opsNames,
-  stepDefs = POI_SOP_STEPS,
+  stepDefs,
 }: {
   transactions: PoiTransaction[];
   opsNames: readonly string[];
-  stepDefs?: PoiSopStepDef[];
+  stepDefs: PoiSopStepDef[];
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<PoiTabCategory | "all">("all");
@@ -63,7 +62,7 @@ export function PoiList({
         const opsEffective = effectiveOpsDatetime(t.ops_datetime, t.visit_start_date);
         if (!opsEffective || jakartaYMD(opsEffective) !== tomorrowYMD) return false;
       }
-      if (schedule === "notDone" && sopProgressStatus(t.steps).allDone) return false;
+      if (schedule === "notDone" && sopProgressStatus(t.steps, stepDefs).allDone) return false;
 
       if (q) {
         const hay = `${t.brand_name} ${t.code ?? ""} ${t.pic_name ?? ""} ${t.bd_name}`.toLowerCase();
@@ -71,7 +70,7 @@ export function PoiList({
       }
       return true;
     });
-  }, [transactions, query, category, opsFilter, schedule, tomorrowYMD]);
+  }, [transactions, query, category, opsFilter, schedule, tomorrowYMD, stepDefs]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const clampedPage = Math.min(page, pageCount);

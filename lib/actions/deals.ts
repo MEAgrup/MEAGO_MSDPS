@@ -46,6 +46,12 @@ function canRequestDealChange(me: Me | null): boolean {
   return canManageDeals(me) && !canEditDeleteDeals(me);
 }
 
+// canImportDeals: "Import Bulking" (Merchant Deals) dibatasi ke mgmt/BizDev —
+// sama seperti fitur "Import Master Deal" sebelum dihapus di PR #26.
+function canImportDeals(me: Me | null): boolean {
+  return !!me && (me.is_od || me.is_director || me.division === "BizDev");
+}
+
 // Field form "Daftarkan Transaksi" apa adanya (belum dinormalisasi) — dipakai
 // sebagai payload permintaan approval, supaya saat Director menyetujui,
 // validasinya diulang lewat readDealFields() yang sama persis, bukan percaya
@@ -255,6 +261,137 @@ export async function registerDealTransaction(
   revalidatePath("/deals");
   revalidatePath("/leads");
   return { ok: true, message: `Transaksi deal ${deal.code} — ${parsed.brand_name} tersimpan.` };
+}
+
+export type ImportDealRow = {
+  unique_id: string;
+  bentuk_kerjasama: string;
+  nominal: string;
+  benefit: string;
+  visit_mulai: string;
+  visit_berakhir: string;
+  jumlah_kreator: string;
+  jumlah_konten: string;
+  link_brief: string;
+};
+
+function normalizeBentukKerjasamaCell(raw: string): "Berbayar" | "Free/Barter" | null {
+  const v = raw.trim().toLowerCase();
+  if (v === "berbayar") return "Berbayar";
+  if (v === "free" || v === "barter" || v === "free/barter") return "Free/Barter";
+  return null;
+}
+
+// parseDealDateTimeCell — menerima "YYYY-MM-DD", "YYYY-MM-DD HH:mm", atau
+// "YYYY-MM-DDTHH:mm" (SheetJS bisa mengembalikan salah satu tergantung format
+// sel di Excel/tanggal-as-text). Jam opsional, default 00:00.
+function parseDealDateTimeCell(raw: string): { date: string; time: string } | null {
+  const m = raw.trim().match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?/);
+  if (!m) return null;
+  return { date: m[1], time: m[2] ?? "00:00" };
+}
+
+// importMasterDealBulk — "Import Bulking" (tab Merchant Deals): tiap baris
+// disimpan sebagai brand_deals TANPA kategori_poi/lead_id/bd_id/ops_name/PIC
+// (sengaja dikosongkan — trigger brand_deals_validate melewati seluruh
+// validasi wajib POI selama kategori_poi masih null, lihat migrasi 0333).
+// Baris hasil import ditandai "Belum Lengkap" di tabel (isIncomplete()) dan
+// dilengkapi satu per satu lewat tombol "Lengkapi Data" (updateDealTransaction)
+// — pola yang sama seperti importMasterDeal sebelum dihapus (PR #26), hanya
+// sumber datanya kini file .xlsx/.csv (di-parse client-side), bukan textarea CSV.
+export async function importMasterDealBulk(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+  if (!canImportDeals(me)) return { ok: false, message: "Tidak berwenang mengimpor Merchant Deals." };
+
+  const raw = String(formData.get("rows") || "").trim();
+  if (!raw) return { ok: false, message: "Tidak ada baris untuk diimpor." };
+
+  let rows: ImportDealRow[];
+  try {
+    rows = JSON.parse(raw);
+  } catch {
+    return { ok: false, message: "Data import tidak valid." };
+  }
+  if (!Array.isArray(rows) || rows.length === 0) return { ok: false, message: "Tidak ada baris untuk diimpor." };
+  if (rows.length > 500) return { ok: false, message: "Maksimal 500 baris per import — pecah file jadi beberapa batch." };
+
+  let inserted = 0;
+  const skipped: { row: number; reason: string }[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const rowNum = i + 2; // +1 header, +1 karena baris pertama data = baris 2 di sheet
+    const r = rows[i];
+
+    const unique_id = String(r.unique_id ?? "").trim();
+    if (!unique_id) {
+      skipped.push({ row: rowNum, reason: "Unique ID kosong" });
+      continue;
+    }
+    const bentuk_kerjasama = normalizeBentukKerjasamaCell(String(r.bentuk_kerjasama ?? ""));
+    if (!bentuk_kerjasama) {
+      skipped.push({ row: rowNum, reason: `Bentuk Kerjasama tidak dikenal: "${r.bentuk_kerjasama ?? ""}"` });
+      continue;
+    }
+    const nominal_harga = bentuk_kerjasama === "Free/Barter" ? 0 : parseRupiah(String(r.nominal ?? "")) ?? null;
+    if (bentuk_kerjasama === "Berbayar" && (nominal_harga === null || nominal_harga <= 0)) {
+      skipped.push({ row: rowNum, reason: "Nominal wajib diisi (angka > 0) untuk Berbayar" });
+      continue;
+    }
+    const kreator_needed = parseIntTolerant(String(r.jumlah_kreator ?? ""));
+    if (kreator_needed === null || kreator_needed <= 0) {
+      skipped.push({ row: rowNum, reason: "Jumlah Kreator wajib diisi (angka > 0)" });
+      continue;
+    }
+    const visitMulai = parseDealDateTimeCell(String(r.visit_mulai ?? ""));
+    const visitBerakhir = parseDealDateTimeCell(String(r.visit_berakhir ?? ""));
+    if (String(r.visit_mulai ?? "").trim() && !visitMulai) {
+      skipped.push({ row: rowNum, reason: "Format Visit Mulai tidak dikenali (pakai YYYY-MM-DD)" });
+      continue;
+    }
+    if (String(r.visit_berakhir ?? "").trim() && !visitBerakhir) {
+      skipped.push({ row: rowNum, reason: "Format Visit Berakhir tidak dikenali (pakai YYYY-MM-DD)" });
+      continue;
+    }
+
+    const benefit = String(r.benefit ?? "").trim() || null;
+    const konten_needed = String(r.jumlah_konten ?? "").trim() ? parseIntTolerant(String(r.jumlah_konten)) : null;
+    const brief_link = String(r.link_brief ?? "").trim() || null;
+
+    const { error } = await supabase.from("brand_deals").insert({
+      brand_name: unique_id,
+      unique_id,
+      sourced_by_role: me.division === "CreatorManagement" && !(me.is_od || me.is_director) ? "cm" : "bd",
+      bentuk_kerjasama,
+      nominal_harga,
+      benefit,
+      visit_start_date: visitMulai?.date ?? null,
+      visit_start_time: visitMulai?.time ?? null,
+      visit_end_date: visitBerakhir?.date ?? null,
+      visit_end_time: visitBerakhir?.time ?? null,
+      kreator_needed,
+      konten_needed,
+      brief_link,
+    });
+    if (error) {
+      skipped.push({ row: rowNum, reason: error.code === "23505" ? `Unique ID duplikat (${unique_id})` : error.message });
+      continue;
+    }
+    inserted++;
+  }
+
+  revalidatePath("/deals");
+  const preview = skipped
+    .slice(0, 10)
+    .map((s) => `baris ${s.row}: ${s.reason}`)
+    .join("; ");
+  const more = skipped.length > 10 ? ` (+${skipped.length - 10} lagi)` : "";
+  return {
+    ok: inserted > 0,
+    message: `Import selesai: ${inserted} baris masuk (tandai "Lengkapi Data" utk isi POI/Merchant, BD, Kategori, dst), ${skipped.length} dilewati${
+      skipped.length ? ` — ${preview}${more}` : ""
+    }.`,
+  };
 }
 
 // createPoiFinance (B0, bridge MSDPS→CDPS Fase 1) — menyambungkan

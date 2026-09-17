@@ -1,12 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { OPS_NAMES } from "@/lib/deals/intake";
-import {
-  POI_DINING_FREEBARTER_STEPS,
-  POI_DINING_BERBAYAR_STEPS,
-  applySlaOverrides,
-  type PoiSlaOverrideRow,
-} from "@/lib/mcn/poi-sop";
+import { toStepDefs } from "@/lib/mcn/poi-sop";
 import { type PoiTransaction } from "../poi/poi-card";
 import { type DiningBerbayarCycle } from "./dining-berbayar-card";
 import { DiningList, type DiningCard } from "./dining-list";
@@ -74,11 +69,20 @@ export default async function PoiDiningPage() {
       .eq("kategori_poi", "Dining")
       .order("visit_start_date", { ascending: false }),
     supabase.from("employees").select("id, full_name"),
-    supabase.from("poi_sla_settings").select("step_no, sla_days, sla_label").eq("flow", "poi_dining_freebarter"),
-    supabase.from("poi_sla_settings").select("step_no, sla_days, sla_label").eq("flow", "poi_dining_berbayar"),
+    supabase
+      .from("poi_sop_step_defs")
+      .select("step_no, task, sla_days, sla_label, is_optional")
+      .eq("flow", "poi_dining_freebarter")
+      .eq("active", true),
+    supabase
+      .from("poi_sop_step_defs")
+      .select("step_no, task, sla_days, sla_label, is_optional")
+      .eq("flow", "poi_dining_berbayar")
+      .eq("active", true),
   ]);
-  const freebarterStepDefs = applySlaOverrides(POI_DINING_FREEBARTER_STEPS, (fbSlaRaw as PoiSlaOverrideRow[] | null) ?? []);
-  const berbayarStepDefs = applySlaOverrides(POI_DINING_BERBAYAR_STEPS, (bbSlaRaw as PoiSlaOverrideRow[] | null) ?? []);
+  type StepDefRaw = { step_no: number; task: string; sla_days: number | null; sla_label: string | null; is_optional: boolean };
+  const freebarterStepDefs = toStepDefs((fbSlaRaw as StepDefRaw[] | null) ?? []);
+  const berbayarStepDefs = toStepDefs((bbSlaRaw as StepDefRaw[] | null) ?? []);
 
   const deals = (dealsRaw as DealRow[] | null) ?? [];
   const bdNameById = new Map(((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name]));
