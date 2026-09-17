@@ -1,13 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
-import {
-  POI_TAB_CATEGORIES,
-  POI_CATEGORY_LABELS,
-  POI_SOP_STEPS,
-  applySlaOverrides,
-  type PoiTabCategory,
-  type PoiSlaOverrideRow,
-} from "@/lib/mcn/poi-sop";
+import { POI_TAB_CATEGORIES, POI_CATEGORY_LABELS, toStepDefs, type PoiTabCategory } from "@/lib/mcn/poi-sop";
 import { OPS_NAMES } from "@/lib/deals/intake";
 import { type PoiTransaction } from "./poi-card";
 import { PoiList } from "./poi-list";
@@ -56,9 +49,15 @@ export default async function PoiSopPage() {
       .in("kategori_poi", Array.from(POI_TAB_CATEGORIES))
       .order("visit_start_date", { ascending: false }),
     supabase.from("employees").select("id, full_name"),
-    supabase.from("poi_sla_settings").select("step_no, sla_days, sla_label").eq("flow", "poi_accommodation_ttd"),
+    supabase
+      .from("poi_sop_step_defs")
+      .select("step_no, task, sla_days, sla_label, is_optional")
+      .eq("flow", "poi_accommodation_ttd")
+      .eq("active", true),
   ]);
-  const stepDefs = applySlaOverrides(POI_SOP_STEPS, (slaRaw as PoiSlaOverrideRow[] | null) ?? []);
+  const stepDefs = toStepDefs(
+    (slaRaw as { step_no: number; task: string; sla_days: number | null; sla_label: string | null; is_optional: boolean }[] | null) ?? []
+  );
 
   const deals = (dealsRaw as DealRow[] | null) ?? [];
   const bdNameById = new Map(((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name]));

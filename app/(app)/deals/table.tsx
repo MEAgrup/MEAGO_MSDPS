@@ -907,6 +907,7 @@ export function DealsBoard({
   canRegister,
   canEditDelete,
   canRequestChange = false,
+  canImport = false,
   verifiedByTrxId = {},
   bridgeByDeal = {},
 }: {
@@ -921,6 +922,7 @@ export function DealsBoard({
   canRegister: boolean;
   canEditDelete: boolean;
   canRequestChange?: boolean;
+  canImport?: boolean;
   // Bridge MSDPS→CDPS Fase 1 (B4).
   verifiedByTrxId?: Record<string, boolean>;
   bridgeByDeal?: Record<string, { status: string; ord_code: string | null; last_error: string | null }>;
@@ -1103,6 +1105,7 @@ export function DealsBoard({
           bdOptions={bdOptions}
           benefitOptions={benefitOptions}
           nominalHistoryByLead={nominalHistoryByLead}
+          canImport={canImport}
         />
       )}
 

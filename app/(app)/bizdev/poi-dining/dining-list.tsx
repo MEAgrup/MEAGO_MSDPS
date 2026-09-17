@@ -4,9 +4,6 @@ import { useMemo, useState } from "react";
 import { PoiCard, type PoiTransaction } from "../poi/poi-card";
 import { DiningBerbayarCard, type DiningBerbayarCycle } from "./dining-berbayar-card";
 import {
-  POI_DINING_FREEBARTER_STEPS,
-  POI_DINING_BERBAYAR_STEPS,
-  POI_DINING_BERBAYAR_TOTAL_STEPS,
   DINING_FREEBARTER_PRE_VISIT_END_STEP,
   DINING_FREEBARTER_POST_VISIT_END_STEP,
   effectiveOpsDatetime,
@@ -69,14 +66,14 @@ export function DiningList({
   cards,
   opsNames,
   canApproveSkip,
-  freebarterStepDefs = POI_DINING_FREEBARTER_STEPS,
-  berbayarStepDefs = POI_DINING_BERBAYAR_STEPS,
+  freebarterStepDefs,
+  berbayarStepDefs,
 }: {
   cards: DiningCard[];
   opsNames: readonly string[];
   canApproveSkip: boolean;
-  freebarterStepDefs?: PoiSopStepDef[];
-  berbayarStepDefs?: PoiSopStepDef[];
+  freebarterStepDefs: PoiSopStepDef[];
+  berbayarStepDefs: PoiSopStepDef[];
 }) {
   const [query, setQuery] = useState("");
   const [bentuk, setBentuk] = useState<BentukFilter>("all");
@@ -108,8 +105,8 @@ export function DiningList({
       if (schedule === "notDone") {
         const allDone =
           card.kind === "freebarter"
-            ? sopProgressStatus(card.tx.steps, POI_DINING_FREEBARTER_STEPS).allDone
-            : diningBerbayarStatus(card.cycle.steps).allDone;
+            ? sopProgressStatus(card.tx.steps, freebarterStepDefs).allDone
+            : diningBerbayarStatus(card.cycle.steps, berbayarStepDefs).allDone;
         if (allDone) return false;
       }
 
@@ -119,7 +116,7 @@ export function DiningList({
       }
       return true;
     });
-  }, [cards, query, bentuk, opsFilter, schedule, tomorrowYMD]);
+  }, [cards, query, bentuk, opsFilter, schedule, tomorrowYMD, freebarterStepDefs, berbayarStepDefs]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const clampedPage = Math.min(page, pageCount);
@@ -177,9 +174,10 @@ export function DiningList({
       }
 
       const c = card.cycle;
-      const { lastCompletedSequentialStep, currentStep, allDone } = diningBerbayarStatus(c.steps);
+      const totalBerbayarSteps = berbayarStepDefs.length;
+      const { lastCompletedSequentialStep, currentStep, allDone } = diningBerbayarStatus(c.steps, berbayarStepDefs);
       const opsAt = c.ops_datetime ? new Date(c.ops_datetime) : null;
-      const lastStepCompletedAt = stepCompletedAt(c.steps, POI_DINING_BERBAYAR_TOTAL_STEPS);
+      const lastStepCompletedAt = stepCompletedAt(c.steps, totalBerbayarSteps);
       return {
         "ID Merchant": c.code ?? "",
         "POI / Merchant": c.brand_name,
@@ -192,8 +190,8 @@ export function DiningList({
         "Tanggal Visit": "",
         "Jam Visit": "",
         "Tanggal Ops": formatJakartaDatetime(opsAt),
-        "Step Selesai": allDone ? POI_DINING_BERBAYAR_TOTAL_STEPS : lastCompletedSequentialStep,
-        "Total Step": POI_DINING_BERBAYAR_TOTAL_STEPS,
+        "Step Selesai": allDone ? totalBerbayarSteps : lastCompletedSequentialStep,
+        "Total Step": totalBerbayarSteps,
         "Step Berjalan": allDone ? "Selesai" : `Step ${currentStep?.step} — ${currentStep?.task}`,
         "SLA Total": formatSlaDuration(opsAt, lastStepCompletedAt ? new Date(lastStepCompletedAt) : now),
         "Pre-Visit SLA": "",

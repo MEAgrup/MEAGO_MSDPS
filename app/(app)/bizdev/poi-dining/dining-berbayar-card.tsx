@@ -9,9 +9,6 @@ import {
   type ActionResult,
 } from "@/lib/actions/poi-dining";
 import {
-  POI_DINING_BERBAYAR_STEPS,
-  POI_DINING_BERBAYAR_TOTAL_STEPS,
-  DINING_BERBAYAR_OPTIONAL_STEPS_END,
   REPORT_STATUS_OPTIONS,
   toJakartaDatetimeLocalInput,
   formatJakartaDatetime,
@@ -128,30 +125,31 @@ export function DiningBerbayarCard({
   cycle,
   opsNames,
   canApproveSkip,
-  stepDefs = POI_DINING_BERBAYAR_STEPS,
+  stepDefs,
 }: {
   cycle: DiningBerbayarCycle;
   opsNames: readonly string[];
   canApproveSkip: boolean;
-  stepDefs?: PoiSopStepDef[];
+  stepDefs: PoiSopStepDef[];
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(updatePoiDiningCycleProgress, null);
 
+  const totalSteps = stepDefs.length;
   const now = new Date();
-  const { optionalResolvedCount, optionalDone, lastCompletedSequentialStep, currentStep, allDone } =
-    diningBerbayarStatus(cycle.steps);
-  const step6CompletedAt = stepCompletedAt(cycle.steps, 6);
-  const opsVisible = !!step6CompletedAt;
+  const { optionalResolvedCount, optionalTotal, optionalDone, firstSequentialStep, lastCompletedSequentialStep, currentStep, allDone } =
+    diningBerbayarStatus(cycle.steps, stepDefs);
+  const opsGateCompletedAt = firstSequentialStep != null ? stepCompletedAt(cycle.steps, firstSequentialStep) : null;
+  const opsVisible = !!opsGateCompletedAt;
   const opsAt = cycle.ops_datetime ? new Date(cycle.ops_datetime) : null;
-  const lastStepCompletedAt = stepCompletedAt(cycle.steps, POI_DINING_BERBAYAR_TOTAL_STEPS);
+  const lastStepCompletedAt = stepCompletedAt(cycle.steps, totalSteps);
   const slaTotal = formatSlaDuration(opsAt, lastStepCompletedAt ? new Date(lastStepCompletedAt) : now);
 
   const sopLabel = allDone
-    ? `Selesai (${POI_DINING_BERBAYAR_TOTAL_STEPS}/${POI_DINING_BERBAYAR_TOTAL_STEPS} step)`
+    ? `Selesai (${totalSteps}/${totalSteps} step)`
     : !optionalDone
-      ? `MOU/Invoice: ${optionalResolvedCount}/5 step opsional resolved`
-      : `Step ${lastCompletedSequentialStep}/${POI_DINING_BERBAYAR_TOTAL_STEPS} selesai · sedang: Step ${currentStep?.step} — ${currentStep?.task}`;
+      ? `MOU/Invoice: ${optionalResolvedCount}/${optionalTotal} step opsional resolved`
+      : `Step ${lastCompletedSequentialStep}/${totalSteps} selesai · sedang: Step ${currentStep?.step} — ${currentStep?.task}`;
 
   const periodLabel = `${tanggal(cycle.period_start)} – ${tanggal(cycle.period_end)}`;
 
@@ -177,7 +175,7 @@ export function DiningBerbayarCard({
             {opsVisible ? (
               formatJakartaDatetime(opsAt)
             ) : (
-              <span className="muted">isi setelah Step 6 selesai</span>
+              <span className="muted">isi setelah Step {firstSequentialStep ?? "—"} selesai</span>
             )}
           </dd>
           <dt>SOP</dt>
@@ -186,7 +184,7 @@ export function DiningBerbayarCard({
         <div className="poi-sla-row" style={{ gridTemplateColumns: "1fr" }}>
           <div>
             <div className="muted" style={{ fontSize: 11 }}>
-              SLA Total (Tanggal Ops → Step {POI_DINING_BERBAYAR_TOTAL_STEPS})
+              SLA Total (Tanggal Ops → Step {totalSteps})
             </div>
             <strong>{slaTotal}</strong>
           </div>
@@ -241,7 +239,7 @@ export function DiningBerbayarCard({
                     ) : (
                       <>
                         <input value="—" readOnly disabled />
-                        <p className="hint">Muncul & dapat diisi setelah Step 6 selesai.</p>
+                        <p className="hint">Muncul & dapat diisi setelah Step {firstSequentialStep ?? "—"} selesai.</p>
                       </>
                     )}
                   </div>
@@ -297,10 +295,10 @@ export function DiningBerbayarCard({
                 </div>
               </form>
 
-              <h3 style={{ marginTop: 20 }}>Task SOP ({POI_DINING_BERBAYAR_TOTAL_STEPS} step)</h3>
+              <h3 style={{ marginTop: 20 }}>Task SOP ({totalSteps} step)</h3>
               <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
-                Step 1-5 (MOU/Invoice/Payment) opsional & bebas urutan — bisa dilewati dengan approval Director. Step
-                6-22 berurutan, baru bisa mulai setelah step 1-5 selesai/dilewati.
+                Step opsional (MOU/Invoice/Payment) di awal — bebas urutan, bisa dilewati dengan approval Director.
+                Step berurutan setelahnya baru bisa mulai setelah seluruh step opsional selesai/dilewati.
               </p>
               <ul className="poi-steps">
                 {stepDefs.map((step) => (
@@ -310,7 +308,7 @@ export function DiningBerbayarCard({
                     step={step}
                     completedAt={stepCompletedAt(cycle.steps, step.step)}
                     skippedAt={cycle.steps.find((s) => s.step_no === step.step)?.skipped_at ?? null}
-                    isOptional={step.step <= DINING_BERBAYAR_OPTIONAL_STEPS_END}
+                    isOptional={!!step.isOptional}
                     isCurrent={currentStep?.step === step.step}
                     canApproveSkip={canApproveSkip}
                   />

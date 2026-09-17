@@ -5,7 +5,6 @@ import { rupiah, tanggal } from "@/lib/format";
 import { updatePoiSopProgress, completePoiSopStep, type ActionResult } from "@/lib/actions/poi";
 import {
   POI_CATEGORY_LABELS,
-  POI_SOP_STEPS,
   REPORT_STATUS_OPTIONS,
   REPORT_WARNING_STEP,
   PRE_VISIT_END_STEP,
@@ -105,7 +104,7 @@ function StepItem({
 export function PoiCard({
   tx,
   opsNames,
-  stepDefs = POI_SOP_STEPS,
+  stepDefs,
   preVisitEndStep = PRE_VISIT_END_STEP,
   postVisitEndStep = POST_VISIT_END_STEP,
   reportWarningStep = REPORT_WARNING_STEP,
@@ -113,7 +112,7 @@ export function PoiCard({
 }: {
   tx: PoiTransaction;
   opsNames: readonly string[];
-  stepDefs?: PoiSopStepDef[];
+  stepDefs: PoiSopStepDef[];
   preVisitEndStep?: number;
   postVisitEndStep?: number;
   reportWarningStep?: number;
