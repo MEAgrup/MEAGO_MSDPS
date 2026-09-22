@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCreator, getCachedClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
 import { isCampaignStaff } from "@/lib/campaign-access";
+import { LEAD_ONBOARDING_KEY, isWindowOpen, parseWindow } from "@/lib/employee-onboarding";
 import { MobileShell } from "@/components/mobile-shell";
 
 export default async function AppLayout({
@@ -25,10 +26,30 @@ export default async function AppLayout({
     redirect("/login");
   }
 
+  // Password sementara (migrasi 0367): akun yang dibuat SPV/Lead atau OD dengan
+  // password titipan tidak boleh memakai sistem sebelum menetapkan passwordnya
+  // sendiri. /ganti-password sengaja di luar grup (app) supaya redirect ini
+  // tidak memutar pada dirinya sendiri.
+  if (me?.must_change_password) redirect("/ganti-password");
+
   const div = me?.division ?? "";
   const mgmt = !!(me?.is_od || me?.is_director);
   const isLead = me?.rank === "lead";
-  const canManage = mgmt;
+
+  // Nav "Kelola Karyawan" terbuka untuk SPV/Lead HANYA selama jendela onboarding
+  // berlaku — sesudah tutup, menu itu hilang lagi dengan sendirinya. Satu baris
+  // app_config (primary key) dan hanya untuk lead non-mgmt.
+  let leadWindowOpen = false;
+  if (isLead && !mgmt) {
+    const supabase = await getCachedClient();
+    const { data: cfg } = await supabase
+      .from("app_config")
+      .select("value")
+      .eq("key", LEAD_ONBOARDING_KEY)
+      .maybeSingle();
+    leadWindowOpen = isWindowOpen(parseWindow(cfg?.value));
+  }
+  const canManage = mgmt || leadWindowOpen;
   const seeLeads = mgmt || div === "BizDev" || div === "Marketing";
   const seeMerchants = mgmt || ["BizDev", "Finance"].includes(div);
   const seeFinance = mgmt || div === "Finance";
