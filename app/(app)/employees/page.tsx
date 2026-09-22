@@ -1,16 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { AddEmployeeForm, AdminConnectionCheck } from "./add-form";
-
-type Employee = {
-  id: string;
-  full_name: string;
-  division: string;
-  rank: string;
-  is_od: boolean;
-  is_director: boolean;
-  active: boolean;
-};
+import { EmployeesTable } from "./employees-table";
 
 export default async function EmployeesPage() {
   const user = await getSessionUser();
@@ -22,7 +13,7 @@ export default async function EmployeesPage() {
   const supabase = await getCachedClient();
   const { data: employees } = await supabase
     .from("employees")
-    .select("id, full_name, division, rank, is_od, is_director, active")
+    .select("id, full_name, email, division, rank, is_od, is_director, active")
     .order("division")
     .order("full_name");
 
@@ -35,37 +26,7 @@ export default async function EmployeesPage() {
 
       <div className="card">
         <h2>Daftar Karyawan ({employees?.length ?? 0})</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Nama</th>
-              <th>Divisi</th>
-              <th>Level</th>
-              <th>Peran</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(employees as Employee[] | null)?.map((e) => (
-              <tr key={e.id}>
-                <td>{e.full_name}</td>
-                <td>{e.division}</td>
-                <td>{e.rank === "lead" ? "Lead / SPV" : "Staff"}</td>
-                <td>
-                  {e.is_director && <span className="badge indigo">Director</span>}{" "}
-                  {e.is_od && <span className="badge amber">OD</span>}
-                  {!e.is_director && !e.is_od && <span className="badge gray">Staff</span>}
-                </td>
-              </tr>
-            ))}
-            {(!employees || employees.length === 0) && (
-              <tr>
-                <td colSpan={4} style={{ color: "var(--muted)" }}>
-                  Belum ada karyawan. Jalankan seed atau tambah di bawah.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        <EmployeesTable employees={employees ?? []} />
       </div>
 
       {canManage && (

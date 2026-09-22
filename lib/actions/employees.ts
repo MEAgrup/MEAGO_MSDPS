@@ -181,6 +181,7 @@ export async function createEmployee(
     const { error: iErr } = await admin.from("employees").insert({
       id: created.user.id,
       full_name,
+      email,
       division,
       rank,
       is_od,
