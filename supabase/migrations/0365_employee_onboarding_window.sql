@@ -59,7 +59,7 @@ insert into app_config (key, value) values
    jsonb_build_object(
      'enabled',   true,
      'opens_at',  null,
-     'closes_at', to_char((now() + interval '14 days') at time zone 'utc',
+     'closes_at', to_char((now() + interval '7 days') at time zone 'utc',
                           'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
      'divisions', null,
      'note',      'Pengisian tim awal MEAGO!. Tutup lebih cepat lewat /employees bila semua divisi sudah lengkap.'
