@@ -115,7 +115,7 @@ export async function checkAdminConnection(): Promise<ActionResult> {
 }
 
 
-// ---- Jendela onboarding (migrasi 0365) --------------------------------------
+// ---- Jendela onboarding (migrasi 0367) --------------------------------------
 // Konteks pemanggil: identitas + konfigurasi jendela, sekali baca. Dipakai
 // createEmployee dan aksi pengelolaan jendela.
 async function onboardingCtx() {
@@ -182,7 +182,7 @@ export async function createEmployee(
     }
 
     // Password. Jalur lead SELALU sementara dan SELALU dibuat sistem — bukan
-    // pilihan UI, karena policy 0365 menolak barisnya kalau must_change_password
+    // pilihan UI, karena policy 0367 menolak barisnya kalau must_change_password
     // tidak true. Jalur OD boleh mengetik sendiri; kosong = dibuatkan juga.
     const typed = String(formData.get("password") || "");
     const generated = verdict.via === "lead_window" || typed === "";
@@ -213,11 +213,12 @@ export async function createEmployee(
     }
 
     // Baris employees ditulis lewat SESI PENAMBAH, bukan service-role: itu yang
-    // membuat policy 0365 benar-benar menjadi gerbangnya (service-role melewati
+    // membuat policy 0367 benar-benar menjadi gerbangnya (service-role melewati
     // RLS), dan yang membuat audit_log mencatat aktornya alih-alih NULL.
     const { error: iErr } = await supabase.from("employees").insert({
       id: created.user.id,
       full_name,
+      email,
       division,
       rank,
       is_od,

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 // Halaman ganti password wajib untuk akun yang masih memegang password
-// sementara (migrasi 0365). SENGAJA di luar grup route (app): layout (app)
+// sementara (migrasi 0367). SENGAJA di luar grup route (app): layout (app)
 // me-redirect ke sini, jadi kalau halaman ini ikut di dalamnya, redirect-nya
 // memutar tanpa henti.
 //

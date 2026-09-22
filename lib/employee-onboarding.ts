@@ -1,4 +1,4 @@
-// Jendela onboarding karyawan (migrasi 0365) — logika murni.
+// Jendela onboarding karyawan (migrasi 0367) — logika murni.
 //
 // Aturan siapa-boleh-menambah-siapa ditegakkan DI DB (policy
 // `employees_lead_onboard_insert`). File ini bukan gerbangnya; ia ada supaya UI
@@ -108,7 +108,7 @@ export type AddVerdict = { ok: true; via: "od" | "lead_window" } | { ok: false; 
 
 // Satu tempat yang menjawab "boleh atau tidak" — dipakai server action (sebelum
 // menyentuh Supabase) dan halaman /employees (untuk memutuskan form mana yang
-// dirender). Cerminan WITH CHECK policy 0365; DB tetap pemutus terakhir.
+// dirender). Cerminan WITH CHECK policy 0367; DB tetap pemutus terakhir.
 export function verdictForAdd(
   me: Actor,
   target: { division: string; rank: string; is_od: boolean; is_director: boolean },

@@ -1,4 +1,4 @@
-// QC logika jendela onboarding karyawan (migrasi 0365) — lib/employee-onboarding.ts.
+// QC logika jendela onboarding karyawan (migrasi 0367) — lib/employee-onboarding.ts.
 //
 // Yang ditegakkan DB sudah diuji scripts/test_employee_onboarding.sql. Yang
 // diuji di sini adalah lapis yang TIDAK dilihat DB: pembacaan konfigurasi
@@ -163,7 +163,7 @@ eq(
   false,
 );
 
-// ===== 4. verdictForAdd — cerminan WITH CHECK policy 0365 ====================
+// ===== 4. verdictForAdd — cerminan WITH CHECK policy 0367 ====================
 const OD = { division: "Marketing", rank: "staff", is_od: true, is_director: false };
 const DIR = { division: "Account", rank: "lead", is_od: false, is_director: true };
 const LEAD = { division: "CreatorManagement", rank: "lead", is_od: false, is_director: false };

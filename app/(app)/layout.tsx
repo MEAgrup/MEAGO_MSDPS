@@ -26,7 +26,7 @@ export default async function AppLayout({
     redirect("/login");
   }
 
-  // Password sementara (migrasi 0365): akun yang dibuat SPV/Lead atau OD dengan
+  // Password sementara (migrasi 0367): akun yang dibuat SPV/Lead atau OD dengan
   // password titipan tidak boleh memakai sistem sebelum menetapkan passwordnya
   // sendiri. /ganti-password sengaja di luar grup (app) supaya redirect ini
   // tidak memutar pada dirinya sendiri.

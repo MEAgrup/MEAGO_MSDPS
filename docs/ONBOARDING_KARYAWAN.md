@@ -1,7 +1,7 @@
 # Onboarding Karyawan MSDPS — siapa boleh menambah siapa
 
 Dokumen operasional untuk OD/HR dan Director. Rancangan teknisnya ada di
-migrasi `supabase/migrations/0365_employee_onboarding_window.sql`.
+migrasi `supabase/migrations/0367_employee_onboarding_window.sql`.
 
 ## 1. Matriks wewenang
 
@@ -72,7 +72,7 @@ Tiga jalan, semuanya berakhir sama (dan ketiganya diuji di
 3. **Hapus centang** izin lalu simpan.
 
 Sesudah dicabut, penambahan karyawan kembali sepenuhnya ke OD/HR dan Director —
-persis keadaan sebelum migrasi 0365. Tidak ada yang perlu di-drop atau
+persis keadaan sebelum migrasi 0367. Tidak ada yang perlu di-drop atau
 di-rollback.
 
 ## 5. Jejak dan audit

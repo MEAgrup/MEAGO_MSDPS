@@ -1,5 +1,5 @@
 -- =============================================================================
--- MSDPS · Migration 0365 — Jendela onboarding: SPV/Lead boleh menambah timnya
+-- MSDPS · Migration 0367 — Jendela onboarding: SPV/Lead boleh menambah timnya
 -- =============================================================================
 -- Kenapa ada: MEAGO! dipakai SELURUH tim, tapi sejak Phase 0 (migrasi 0002)
 -- satu-satunya jalur menambah karyawan adalah OD/Director (`employees_manage`).
@@ -41,9 +41,9 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 comment on column employees.created_by is
-  'Karyawan yang membuat akun ini. NULL = dibuat sebelum migrasi 0365 (seed/manual).';
+  'Karyawan yang membuat akun ini. NULL = dibuat sebelum migrasi 0367 (seed/manual).';
 comment on column employees.created_via is
-  'Jalur pembuatan: od = OD/Director, lead_window = SPV/Lead lewat jendela onboarding (0365).';
+  'Jalur pembuatan: od = OD/Director, lead_window = SPV/Lead lewat jendela onboarding (0367).';
 comment on column employees.must_change_password is
   'TRUE = password yang dipegang pemilik akun masih password sementara; aplikasi menahannya di /ganti-password.';
 
@@ -76,7 +76,7 @@ create or replace function lead_onboarding_window() returns jsonb
 $$;
 
 comment on function lead_onboarding_window() is
-  'Konfigurasi jendela onboarding lead (migrasi 0365). Sumber tunggal untuk RLS dan UI.';
+  'Konfigurasi jendela onboarding lead (migrasi 0367). Sumber tunggal untuk RLS dan UI.';
 
 create or replace function lead_onboarding_open() returns boolean
   language sql stable security definer set search_path = public as $$
@@ -121,7 +121,7 @@ create policy employees_lead_onboard_insert on employees
   );
 
 comment on policy employees_lead_onboard_insert on employees is
-  'Jendela onboarding 0365: SPV/Lead menambah staff DIVISINYA SENDIRI selama lead_onboarding_open(). Tanpa UPDATE/DELETE — koreksi tetap wewenang OD/Director.';
+  'Jendela onboarding 0367: SPV/Lead menambah staff DIVISINYA SENDIRI selama lead_onboarding_open(). Tanpa UPDATE/DELETE — koreksi tetap wewenang OD/Director.';
 
 -- ---- Pemilik akun menutup status "password sementara" -----------------------
 -- Staff tidak punya UPDATE atas employees (dan tidak seharusnya punya), jadi

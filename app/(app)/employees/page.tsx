@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import {
   LEAD_ONBOARDING_KEY,
-  formatWib,
   parseWindow,
   windowStatus,
 } from "@/lib/employee-onboarding";
@@ -12,12 +11,13 @@ import {
   AdminConnectionCheck,
   LeadAddEmployeeForm,
   OnboardingWindowForm,
-  ResetPasswordButton,
 } from "./add-form";
+import { EmployeesTable } from "./employees-table";
 
 type Employee = {
   id: string;
   full_name: string;
+  email: string | null;
   division: string;
   rank: string;
   is_od: boolean;
@@ -41,7 +41,7 @@ export default async function EmployeesPage() {
     supabase
       .from("employees")
       .select(
-        "id, full_name, division, rank, is_od, is_director, active, created_by, created_via, must_change_password"
+        "id, full_name, email, division, rank, is_od, is_director, active, created_by, created_via, must_change_password"
       )
       .order("division")
       .order("full_name"),
@@ -49,13 +49,12 @@ export default async function EmployeesPage() {
   ]);
 
   const rows = (employees as Employee[] | null) ?? [];
-  const nameById = new Map(rows.map((e) => [e.id, e.full_name]));
 
   const window = parseWindow(cfg?.value);
   const status = windowStatus(window);
 
   // SPV/Lead menambah hanya selama jendela berlaku DAN divisinya termasuk. Yang
-  // ditegakkan tetap policy 0365 di DB; ini hanya menentukan form mana dirender.
+  // ditegakkan tetap policy 0367 di DB; ini hanya menentukan form mana dirender.
   const leadDivisionAllowed =
     !window.divisions ||
     window.divisions.length === 0 ||
@@ -122,63 +121,7 @@ export default async function EmployeesPage() {
             mengganti password sendiri saat login pertama.
           </p>
         )}
-        <table>
-          <thead>
-            <tr>
-              <th>Nama</th>
-              <th>Divisi</th>
-              <th>Level</th>
-              <th>Peran</th>
-              <th>Password</th>
-              <th>Ditambahkan oleh</th>
-              {mgmt && <th>Aksi</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((e) => (
-              <tr key={e.id}>
-                <td>
-                  {e.full_name}
-                  {!e.active && <span className="badge gray" style={{ marginLeft: 6 }}>nonaktif</span>}
-                </td>
-                <td>{DIVISION_LABELS[e.division as Division] ?? e.division}</td>
-                <td>{e.rank === "lead" ? "Lead / SPV" : "Staff"}</td>
-                <td>
-                  {e.is_director && <span className="badge indigo">Director</span>}{" "}
-                  {e.is_od && <span className="badge amber">OD</span>}
-                  {!e.is_director && !e.is_od && <span className="badge gray">Staff</span>}
-                </td>
-                <td>
-                  {e.must_change_password ? (
-                    <span className="badge amber">sementara</span>
-                  ) : (
-                    <span className="badge green">sendiri</span>
-                  )}
-                </td>
-                <td style={{ color: "var(--muted)", fontSize: 13 }}>
-                  {e.created_by ? (nameById.get(e.created_by) ?? "—") : "—"}
-                  {e.created_via === "lead_window" && (
-                    <span className="badge gray" style={{ marginLeft: 6 }}>
-                      via SPV
-                    </span>
-                  )}
-                </td>
-                {mgmt && (
-                  <td>
-                    <ResetPasswordButton employeeId={e.id} name={e.full_name} />
-                  </td>
-                )}
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={mgmt ? 7 : 6} style={{ color: "var(--muted)" }}>
-                  Belum ada karyawan. Jalankan seed atau tambah di bawah.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        <EmployeesTable employees={rows} canManage={mgmt} />
       </div>
 
       {mgmt && (
