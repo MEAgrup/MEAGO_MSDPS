@@ -1,7 +1,6 @@
 # Tutorial Penggunaan MSDPS — Panduan Lengkap Semua User
 
-Aplikasi: **https://app.meago.id**
-Staging (untuk uji coba, bukan data asli): **https://meago-msdps-git-staging-meagency.vercel.app**
+Aplikasi (production): **https://app.meago.id**
 
 Dokumen ini adalah panduan pakai untuk **semua pengguna MSDPS** (karyawan MEAGO! dari semua
 divisi, SPV/Lead, OD/HR, Director, sampai kreator di Portal Kreator). Isinya murni cara pakai
@@ -25,9 +24,8 @@ dibahas di sini.
 6. [Portal Kreator (untuk kreator, bukan karyawan)](#6-portal-kreator-untuk-kreator-bukan-karyawan)
 7. [Target OKR](#7-target-okr)
 8. [Bridge ke CDPS — batas akhir alur di MSDPS](#8-bridge-ke-cdps--batas-akhir-alur-di-msdps)
-9. [Menu yang Sudah Pensiun](#9-menu-yang-sudah-pensiun)
-10. [Istilah yang Sering Bikin Salah Paham](#10-istilah-yang-sering-bikin-salah-paham)
-11. [Troubleshooting — Apa yang Harus Dilaporkan](#11-troubleshooting--apa-yang-harus-dilaporkan)
+9. [Istilah yang Sering Bikin Salah Paham](#9-istilah-yang-sering-bikin-salah-paham)
+10. [Troubleshooting — Apa yang Harus Dilaporkan](#10-troubleshooting--apa-yang-harus-dilaporkan)
 
 ---
 
@@ -47,13 +45,13 @@ hilang"/"tombol tidak aktif" akarnya di sini, bukan bug.
 
 ### Ringkasan per tingkat
 
-| Tingkat | Contoh | Bisa apa |
-|---|---|---|
-| **Director** | mis. Yohan Agustian, Ghifari | Akses baca ke semua divisi & semua data; kelola karyawan tanpa batas (tambah/ubah/nonaktifkan/reset password siapa saja); satu-satunya yang boleh **Edit/Hapus transaksi deal** langsung (bukan lewat antrean approval); satu-satunya yang boleh membuka **Setting BizDev & Admin Ops**; ikut memutuskan bridge deal ke CDPS; atur **Target OKR**. |
-| **OD / HR** | mis. Rara | Sama dengan Director untuk urusan kelola karyawan (tambah semua divisi/level, reset password siapa saja, buka/tutup jendela onboarding SPV); melihat & mengatur Target OKR. |
-| **SPV / Lead** | satu per divisi | Menu & aksi level divisinya (approve pendaftar campaign, assign CM, dsb — lihat modul terkait); **sementara** (hanya saat jendela onboarding dibuka OD/Director) bisa menambah **Staff baru di divisinya sendiri** dengan password sementara; **tidak bisa** menaikkan orang jadi Lead, memberi flag OD/Director, pindah divisi, mengubah, atau menghapus data karyawan siapa pun — termasuk dirinya sendiri. |
-| **Staff** | karyawan biasa | Input data & aksi harian di modul divisinya masing-masing. Tidak bisa menambah karyawan. |
-| **Kreator (Portal)** | kreator affiliate TikTok MEA GO | Bukan karyawan — login terpisah, hanya bisa mengakses menu di bawah "MCN MEA / Portal Kreator" (Bagian 6). Tidak bisa membuka menu karyawan sama sekali. |
+| Tingkat | Bisa apa |
+|---|---|
+| **Director** | Akses baca ke semua divisi & semua data; kelola karyawan tanpa batas (tambah/ubah/nonaktifkan/reset password siapa saja); satu-satunya yang boleh **Edit/Hapus transaksi deal** langsung (bukan lewat antrean approval); satu-satunya yang boleh membuka **Setting BizDev & Admin Ops**; ikut memutuskan bridge deal ke CDPS; atur **Target OKR**. |
+| **OD / HR** | Sama dengan Director untuk urusan kelola karyawan (tambah semua divisi/level, reset password siapa saja, buka/tutup jendela onboarding SPV); melihat & mengatur Target OKR. |
+| **SPV / Lead** | Menu & aksi level divisinya (approve pendaftar campaign, assign CM, dsb — lihat modul terkait); **sementara** (hanya saat jendela onboarding dibuka OD/Director) bisa menambah **Staff baru di divisinya sendiri** dengan password sementara; **tidak bisa** menaikkan orang jadi Lead, memberi flag OD/Director, pindah divisi, mengubah, atau menghapus data karyawan siapa pun — termasuk dirinya sendiri. |
+| **Staff** | Input data & aksi harian di modul divisinya masing-masing. Tidak bisa menambah karyawan. |
+| **Kreator (Portal)** | Bukan karyawan — login terpisah, hanya bisa mengakses menu di bawah "MCN MEA / Portal Kreator" (Bagian 6). Tidak bisa membuka menu karyawan sama sekali. |
 
 ### Peta menu vs siapa yang melihatnya
 
@@ -77,8 +75,8 @@ hilang"/"tombol tidak aktif" akarnya di sini, bukan bug.
 ## 2. Login & Ganti Password
 
 1. Buka **https://app.meago.id**.
-2. Masukkan **email** kantor + **password** → **Masuk**. Tidak ada tombol daftar — kalau belum
-   punya akun, itu memang belum dibuatkan, hubungi OD/HR atau SPV Anda.
+2. Masukkan **email pribadi** yang didaftarkan + **password** → **Masuk**. Tidak ada tombol
+   daftar — kalau belum punya akun, itu memang belum dibuatkan, hubungi OD/HR atau SPV Anda.
 3. Sistem otomatis mengarahkan sesuai jenis akun Anda:
    - Akun karyawan → **Dashboard**.
    - Akun kreator Portal → **Performa Saya**.
@@ -106,8 +104,8 @@ hilang"/"tombol tidak aktif" akarnya di sini, bukan bug.
 ### 3-A. OD / HR & Director — menambah karyawan (semua divisi & level)
 
 1. Menu **Kelola Karyawan** → kartu **Tambah Karyawan**.
-2. Isi **Nama**, **Email**, **Divisi**, **Level**. Centang **OD** / **Director** kalau memang
-   perlu diberi flag itu.
+2. Isi **Nama**, **Email pribadi** (bukan email kantor — dipakai untuk login), **Divisi**,
+   **Level**. Centang **OD** / **Director** kalau memang perlu diberi flag itu.
 3. **Password Awal**: kosongkan supaya sistem membuatkan password sementara secara otomatis.
    Biarkan centang **Password ini sementara** tercentang, supaya pemiliknya wajib menggantinya
    sendiri saat login pertama.
@@ -138,7 +136,8 @@ SPV/Lead **tidak bisa** melakukan reset ini, meskipun untuk stafnya sendiri.
 
 1. Login → menu **Kelola Karyawan**.
 2. Scroll ke kartu **Tambah Anggota Tim [nama divisi Anda]**.
-3. Isi **Nama Lengkap** dan **Email** (email kantor yang dipakai login).
+3. Isi **Nama Lengkap** dan **Email pribadi** (bukan email kantor — inilah yang akan dipakai
+   untuk login).
 4. Klik **Tambah Anggota Tim** → muncul kotak hijau berisi password sementara
    (`MEAGO-XXXX-XXXX-XXXX`). **Salin sekarang**, hanya tampil sekali.
 5. Kirim email + password sementara ke anggota tim lewat **chat pribadi**, bukan grup.
@@ -166,7 +165,7 @@ Di tabel **Daftar Karyawan**:
 | "Jendela onboarding ditutup" / kartu Tambah Anggota Tim tidak muncul (untuk SPV) | Jendela sudah tutup — minta OD/HR yang menambahkan, atau minta dibuka lagi. |
 | Menu **Kelola Karyawan** tidak ada di sidebar | Akun Anda bukan SPV/Lead/OD/Director, atau (untuk SPV) jendelanya sudah tutup. |
 | Password sementara terlanjur hilang sebelum diteruskan | Minta OD/HR reset (Bagian 3-C), jangan menebak-nebak password. |
-| Error 401/500 saat submit form | Ini bukan kesalahan Anda — kemungkinan besar konfigurasi environment. Klik tombol **"Cek koneksi service-role"** di kartu Tambah Karyawan (kalau Anda OD/Director) dan laporkan hasilnya (Bagian 11). |
+| Error 401/500 saat submit form | Ini bukan kesalahan Anda — kemungkinan besar konfigurasi environment. Klik tombol **"Cek koneksi service-role"** di kartu Tambah Karyawan (kalau Anda OD/Director) dan laporkan hasilnya (Bagian 10). |
 
 ---
 
@@ -178,7 +177,7 @@ dijalankan tim BizDev, Marketing, dan Finance.
 ### 4-A. Kampanye Akuisisi — menu **Kampanye** (marketing)
 
 Dipakai tim Marketing untuk menjalankan kampanye pencarian lead (bukan campaign kreator — lihat
-peringatan istilah di Bagian 10).
+peringatan istilah di Bagian 9).
 
 1. Buka menu **Kampanye** → **Buat Kampanye**.
 2. Isi data kampanye. Centang **"Langsung aktifkan"** (default aktif) kalau kampanye siap jalan
@@ -273,7 +272,7 @@ tampil di daftar **Kreator Belum di Roster**.
 
 ### 5-E. Campaign MEA GO — menu **Campaign MEA GO**
 
-Sistem campaign/deal untuk kreator (berbeda dari Kampanye Marketing di 4-A — lihat Bagian 10).
+Sistem campaign/deal untuk kreator (berbeda dari Kampanye Marketing di 4-A — lihat Bagian 9).
 Alur lengkapnya:
 
 1. **Buat Campaign** (SPV Creator Management, BizDev, OD, atau Director — AM di Account bisa
@@ -292,7 +291,7 @@ Alur lengkapnya:
    Deliverable**.
 7. Ingest file **"Content Analysis / Video List"** asli dari TikTok di halaman detail campaign
    (pencocokan pakai **Location ID**, bukan kolom `Merchant` atau `Location name` — lihat Bagian
-   10).
+   9).
 8. Jalankan **Validasi** — tiap submission mendapat alasan otomatis (tidak ditemukan / di luar
    periode / merchant tidak sesuai / bukan milik kreator / ditolak TikTok / duplikat / valid).
    Baca satu per satu sebelum menutup batch.
@@ -348,7 +347,7 @@ dashboard karyawan.
 
 Kreator **tidak bisa** mengakses menu karyawan apa pun (Kelola Karyawan, Merchant Deals internal,
 Keuangan, dsb) — kalau ada kreator yang melaporkan bisa melihat menu tersebut, itu bug dan wajib
-dilaporkan segera (Bagian 11).
+dilaporkan segera (Bagian 10).
 
 ---
 
@@ -381,26 +380,7 @@ sendirian tidak bisa** melakukan bridge.
 
 ---
 
-## 9. Menu yang Sudah Pensiun
-
-Menu-menu berikut **sudah tidak ada di sidebar** dan kalau dibuka langsung lewat URL akan
-menampilkan pesan "modul ini sudah pensiun, sudah pindah ke CDPS" beserta tombol kembali ke
-Merchant Deals:
-
-`/account`, `/ecommerce`, `/ads`, `/kol`, `/livestream`, `/board`, `/portal`, `/management`
-
-Yang perlu diketahui semua user soal ini:
-
-- **Data lama tidak hilang.** Tidak ada satu pun data yang dihapus saat modul-modul ini
-  dipensiunkan — hanya pintu masuk (form/halamannya) untuk manusia yang ditutup.
-- Kalau Anda tidak sengaja mendarat di salah satu halaman ini (misalnya lewat bookmark lama),
-  itu bukan error — cukup klik tombol kembali ke **Merchant Deals**.
-- Fungsi yang dulu ada di menu-menu ini sekarang dijalankan di **CDPS** (aplikasi terpisah), atau
-  digantikan oleh **Target OKR** (dulunya menu **Management**).
-
----
-
-## 10. Istilah yang Sering Bikin Salah Paham
+## 9. Istilah yang Sering Bikin Salah Paham
 
 Beberapa kata dipakai dengan arti berbeda tergantung konteksnya. Kalau ragu, cek daftar ini dulu
 sebelum menyimpulkan sesuatu "aneh" atau "salah":
@@ -409,14 +389,13 @@ sebelum menyimpulkan sesuatu "aneh" atau "salah":
 |---|---|---|
 | **Merchant** | Brand/POI yang diajak kerja sama BizDev (mis. di menu Merchant, Merchant Deals). | Kolom **`Merchant`** di file ekspor TikTok — itu artinya platform OTA/delivery (Agoda, GoFood, dll), tidak ada hubungannya. Untuk mencocokkan merchant, selalu pakai **Location ID**, bukan kolom `Merchant` atau `Location name` (satu Location ID bisa muncul dengan beberapa variasi ejaan nama). |
 | **Campaign** | Ada **tiga** hal berbeda yang sama-sama disebut "campaign": (1) **Kampanye** di menu Marketing (cari lead, tidak ada hubungannya dengan kreator), (2) **Campaign MEA GO** di menu Campaign MEA GO (deal & payout kreator — ini yang paling aktif dipakai), (3) "Campaign request" — fitur lama yang praktis tidak pernah dipakai. | Pastikan Anda dan lawan bicara merujuk campaign yang sama sebelum berdiskusi. |
-| **Creator / Kreator** | Ada **dua** master data terpisah dan **tidak saling terhubung**: kreator lama (KOL booking, sudah pensiun) vs **kreator affiliate TikTok MEA GO** (yang aktif, punya akun Portal Kreator). | Kalau mencari data kreator lama untuk keperluan MEA GO, itu tidak akan ketemu — memang beda tabel. |
+| **Creator / Kreator** | Ada **dua** master data terpisah dan **tidak saling terhubung**: kreator lama (KOL booking) vs **kreator affiliate TikTok MEA GO** (yang aktif, punya akun Portal Kreator). | Kalau mencari data kreator lama untuk keperluan MEA GO, itu tidak akan ketemu — memang beda tabel. |
 | **VT** | Sebutan lapangan untuk satu **video/konten** (satu VT = satu baris di ekspor TikTok = satu Post ID). | — |
 | **Order / `ORD-...`** | Kode yang diterbitkan **CDPS**, bukan MSDPS, setelah sebuah deal berhasil di-bridge (Bagian 8). | Kode deal MSDPS sendiri disebut `DEAL-...`, dan kode transaksi Finance disebut `TRX-...` — ketiganya berbeda. |
-| **"Account & Service" / "eksekusi layanan"** | Kalau Anda membaca dokumen lama yang memakai istilah ini, artinya modul-modul yang sudah **pensiun** (Bagian 9). Sekarang MSDPS berhenti di closing + bridge; eksekusi layanan sesungguhnya berjalan di **CDPS**. | Jangan mencari menu "Account & Service" di MSDPS sekarang — sudah tidak ada. |
 
 ---
 
-## 11. Troubleshooting — Apa yang Harus Dilaporkan
+## 10. Troubleshooting — Apa yang Harus Dilaporkan
 
 Sebelum melapor, coba dulu 2 alat bantu bawaan sistem:
 
@@ -439,17 +418,16 @@ Sebelum melapor, coba dulu 2 alat bantu bawaan sistem:
 | 4 | **Identitas & peran Anda saat itu**: nama, divisi, level (Staff/Lead), status OD/Director | Sebagian besar masalah "tombol tidak ada"/"data kosong" ternyata soal hak akses, bukan bug |
 | 5 | **Screenshot layar**, usahakan termasuk sidebar (menunjukkan konteks peran Anda) dan pesan error-nya | Konfirmasi visual, sering menangkap detail yang terlewat di deskripsi teks |
 | 6 | **Error di console browser** (F12 → tab Console) kalau Anda terbiasa, terutama untuk halaman yang "tidak mau muncul" atau kartu kosong | Membantu diagnosa lebih cepat tanpa perlu buka log server |
-| 7 | **Environment**: production (`app.meago.id`) atau staging (`...vercel.app`) | Keduanya memakai database terpisah — jangan sampai salah asumsi |
-| 8 | **Waktu kejadian** (jam:menit) | Untuk mencocokkan ke log server |
+| 7 | **Waktu kejadian** (jam:menit) | Untuk mencocokkan ke log server |
 
 ### Beberapa gejala yang sudah dikenali (kalau ketemu ini, sebutkan saja gejalanya, tidak perlu panik)
 
 | Gejala | Penjelasan singkat |
 |---|---|
-| `Supabase menolak service-role key (401): Invalid API key` saat Tambah Karyawan | Biasanya konfigurasi environment tertukar antara production dan staging — bukan kesalahan input Anda. Laporkan ke tim teknis dengan hasil "Cek koneksi service-role". |
+| `Supabase menolak service-role key (401): Invalid API key` saat Tambah Karyawan | Biasanya konfigurasi environment di server keliru — bukan kesalahan input Anda. Laporkan ke tim teknis dengan hasil "Cek koneksi service-role". |
 | Layar error umum ("Internal server error") tanpa keterangan saat Tambah Karyawan / Buat akun portal kreator | Kemungkinan konfigurasi environment di server. Coba lagi setelah beberapa saat; kalau berulang, laporkan dengan Kode kesalahan dari kartu error. |
 | Divisi yang Anda cari tidak muncul di dropdown | Seharusnya sudah tidak terjadi lagi (daftar divisi disinkronkan dengan database), tapi kalau masih muncul, laporkan nama divisi yang hilang persis. |
 | File yang sudah diupload (mingguan/GMV) "hilang" dan tidak bisa didownload lagi | Sistem memang tidak menyimpan file mentahnya setelah diproses — yang tersimpan adalah hasil olahannya di tabel data. Ini perilaku normal, bukan bug; kalau perlu file aslinya lagi, harus upload ulang dari sumbernya. |
 
 Laporkan ke penanggung jawab teknis/tim yang mengelola MSDPS dengan checklist di atas — semakin
-lengkap 8 poin tersebut, semakin cepat masalahnya bisa ditelusuri tanpa bolak-balik bertanya.
+lengkap 7 poin tersebut, semakin cepat masalahnya bisa ditelusuri tanpa bolak-balik bertanya.
