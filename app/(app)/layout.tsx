@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCreator, getCachedClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
 import { isCampaignStaff } from "@/lib/campaign-access";
 import { LEAD_ONBOARDING_KEY, isWindowOpen, parseWindow } from "@/lib/employee-onboarding";
 import { MobileShell } from "@/components/mobile-shell";
+import { NavLink } from "@/components/nav-link";
 
 export default async function AppLayout({
   children,
@@ -130,46 +130,46 @@ export default async function AppLayout({
       <div className="sub">MEAGO!</div>
 
       {sectionHeading("Umum")}
-        <Link href="/dashboard">Dashboard</Link>
-        {seeFinance && <Link href="/finance">Keuangan</Link>}
-        {mgmt && <Link href="/okr">Target OKR</Link>}
-        {canManage && <Link href="/employees">Kelola Karyawan</Link>}
+        <NavLink href="/dashboard">Dashboard</NavLink>
+        {seeFinance && <NavLink href="/finance">Keuangan</NavLink>}
+        {mgmt && <NavLink href="/okr">Target OKR</NavLink>}
+        {canManage && <NavLink href="/employees">Kelola Karyawan</NavLink>}
 
         {seeCM && sectionHeading("CM Kreator")}
-        {(seeCM || div === "BizDev") && <Link href="/meago/creators">Data Kreator</Link>}
-        {seeCM && <Link href="/meago/workspace">CM Workspace</Link>}
-        {(seeCM || div === "BizDev") && <Link href="/meago/gmv-video">GMV Video Mingguan</Link>}
-        {(seeCM || div === "BizDev") && <Link href="/meago/schedule">Jadwal Live</Link>}
+        {(seeCM || div === "BizDev") && <NavLink href="/meago/creators">Data Kreator</NavLink>}
+        {seeCM && <NavLink href="/meago/workspace">CM Workspace</NavLink>}
+        {(seeCM || div === "BizDev") && <NavLink href="/meago/gmv-video">GMV Video Mingguan</NavLink>}
+        {(seeCM || div === "BizDev") && <NavLink href="/meago/schedule">Jadwal Live</NavLink>}
 
         {seeBD && sectionHeading("BizDev & Admin Ops")}
         {seeLeads && (
-          <Link href="/leads">
+          <NavLink href="/leads">
             Leads &amp; Prospek
             <NotifBadge count={missingDealCount} />
-          </Link>
+          </NavLink>
         )}
-        {seeLeads && <Link href="/leads/dashboard">Dashboard CRM</Link>}
+        {seeLeads && <NavLink href="/leads/dashboard">Dashboard CRM</NavLink>}
         {seeBD && (
-          <Link href="/deals">
+          <NavLink href="/deals">
             Merchant Deals
             <NotifBadge count={missingDealCount} />
             <IncompleteBadge count={incompleteDealCount} />
-          </Link>
+          </NavLink>
         )}
-        {seeBD && <Link href="/bizdev">BizDev Workspace</Link>}
-        {seeBD && <Link href="/bizdev/poi">POI Accommodation &amp; TTD</Link>}
-        {seeBD && <Link href="/bizdev/poi-dining">POI Dining</Link>}
-        {seeBD && <Link href="/bizdev/skor">Papan Skor BD</Link>}
-        {me?.is_director && <Link href="/bizdev/settings">Setting Bizdev &amp; Admin Ops</Link>}
+        {seeBD && <NavLink href="/bizdev">BizDev Workspace</NavLink>}
+        {seeBD && <NavLink href="/bizdev/poi">POI Accommodation &amp; TTD</NavLink>}
+        {seeBD && <NavLink href="/bizdev/poi-dining">POI Dining</NavLink>}
+        {seeBD && <NavLink href="/bizdev/skor">Papan Skor BD</NavLink>}
+        {me?.is_director && <NavLink href="/bizdev/settings">Setting Bizdev &amp; Admin Ops</NavLink>}
 
         {seeCampaign && sectionHeading("Campaign MEA GO")}
-        {seeCampaign && <Link href="/meago/campaigns">Campaign MEA GO</Link>}
+        {seeCampaign && <NavLink href="/meago/campaigns">Campaign MEA GO</NavLink>}
 
         {seeAcq && sectionHeading("Akuisisi Kreator")}
-        {seeAcq && <Link href="/acquisition">Akuisisi Kreator</Link>}
+        {seeAcq && <NavLink href="/acquisition">Akuisisi Kreator</NavLink>}
 
         {seeProj && sectionHeading("Special Project")}
-        {seeProj && <Link href="/projects">Special Project</Link>}
+        {seeProj && <NavLink href="/projects">Special Project</NavLink>}
 
         {/* Grup "Account & Service" PENSIUN 2026-09-12 — /board /account /ecommerce
             /ads /kol /livestream beserta /portal dan /management dinisankan; eksekusinya
@@ -177,8 +177,8 @@ export default async function AppLayout({
             yang dipakai close_deal + bridge, Kampanye (M3) menyuapi Leads (M1) dan ROAS
             Marketing (M2). Keduanya tetap hidup. */}
         {sectionHeading("Merchant & Kampanye")}
-        {seeMerchants && <Link href="/merchants">Merchant</Link>}
-        <Link href="/campaigns">Kampanye</Link>
+        {seeMerchants && <NavLink href="/merchants">Merchant</NavLink>}
+        <NavLink href="/campaigns">Kampanye</NavLink>
 
         <div className="spacer" />
         <div className="me">
