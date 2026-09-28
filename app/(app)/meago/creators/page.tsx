@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
-import { rupiah, tanggal } from "@/lib/format";
+import { tanggal } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
-import { AssignOwnerRow, BudgetCapRow, EditCreatorModal, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
+import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
 import { UploadReportForm, DeleteReportButton } from "./report-forms";
 import { IngestForm } from "../ingest-form";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { MasterCreatorsTable, type MasterCreatorRow } from "./master-creators-table";
 
 type Creator = {
   id: string;
@@ -33,11 +34,6 @@ type Creator = {
   created_at: string | null;
   status_changed_by: string | null;
   status_changed_at: string | null;
-};
-
-const STATUS_KONTRAK_BADGE: Record<string, { cls: string; label: string }> = {
-  kontrak: { cls: "green", label: "Kontrak" },
-  "non kontrak": { cls: "slate", label: "Non Kontrak" },
 };
 
 const BINDING_BADGE: Record<string, { cls: string; label: string }> = {
@@ -146,12 +142,6 @@ function build3MonthAverages(rows: SummaryRow[]): MonthlyMetricAverages {
     liveStream: average("live_streams"),
     validLiveStream: average("valid_live_streams"),
   };
-}
-
-// Format angka aktivitas (bukan rupiah) — boleh 1 desimal (mis. rata-rata "12.5").
-function num1(n: number | null): string {
-  if (n === null) return "—";
-  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 }).format(n);
 }
 
 // creator_reports (portal F.2) — daftar report terbaru utk kartu "Report Kreator".
@@ -336,6 +326,33 @@ export default async function McnCreatorsPage({
     }
   }
 
+  const masterRows: MasterCreatorRow[] = creators.map((c) => {
+    const avg = averagesByCreator.get(c.id) ?? EMPTY_AVERAGES;
+    const binding = c.binding_status ? BINDING_BADGE[c.binding_status] : null;
+    return {
+      id: c.id,
+      code: c.code,
+      name: c.name,
+      username: c.username,
+      cmName: empName.get(c.owner_cpm_id ?? "") ?? null,
+      bindingLabel: c.binding_status ? (binding?.label ?? c.binding_status) : null,
+      bindingCls: binding?.cls ?? "gray",
+      niche: c.niche,
+      jenis_creator: c.jenis_creator,
+      creator_level: c.creator_level,
+      avgPayGmv: avg.avgPayGmv,
+      redeemedGmv: avg.redeemedGmv,
+      commission_share: c.commission_share,
+      totalPost: avg.totalPost,
+      postsWithSales: avg.postsWithSales,
+      liveStream: avg.liveStream,
+      validLiveStream: avg.validLiveStream,
+      live_roster: c.live_roster,
+      status_kontrak: c.status_kontrak,
+      raw: c,
+    };
+  });
+
   return (
     <>
       <h1>Data Kreator Meago</h1>
@@ -354,102 +371,7 @@ export default async function McnCreatorsPage({
 
       <div className="card">
         <h2>Master Kreator ({creators.length})</h2>
-        <div style={{ overflowX: "auto" }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Nama</th>
-                <th>Username</th>
-                <th>CM</th>
-                <th>Status</th>
-                <th>Industry</th>
-                <th>Jenis</th>
-                <th>Level</th>
-                <th className="right">Avg Pay GMV</th>
-                <th className="right">Redeemed GMV</th>
-                <th>Komisi</th>
-                <th className="right">Total post</th>
-                <th className="right">Posts with sales</th>
-                <th className="right">Live stream</th>
-                <th className="right">Valid live stream</th>
-                <th>Roster Live</th>
-                <th>Kontrak</th>
-                {canManageOps && <th>Aksi</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {creators.map((c) => {
-                const avg = averagesByCreator.get(c.id) ?? EMPTY_AVERAGES;
-                const binding = c.binding_status ? BINDING_BADGE[c.binding_status] : null;
-                return (
-                  <tr key={c.id}>
-                    <td>
-                      {c.name}
-                      {c.code && <div className="mono muted" style={{ fontSize: 11 }}>{c.code}</div>}
-                    </td>
-                    <td className="mono">{c.username ?? "—"}</td>
-                    <td>{empName.get(c.owner_cpm_id ?? "") ?? <span className="muted">—</span>}</td>
-                    <td>
-                      {c.binding_status ? (
-                        <span className={`badge ${binding?.cls ?? "gray"}`}>
-                          {binding?.label ?? c.binding_status}
-                        </span>
-                      ) : (
-                        <span className="muted">Unbounded</span>
-                      )}
-                    </td>
-                    <td className="muted">{c.niche ?? "—"}</td>
-                    <td className="muted">{c.jenis_creator ?? "—"}</td>
-                    <td>
-                      {c.creator_level ? (
-                        <span className="badge slate">{c.creator_level}</span>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td className="right">{rupiah(avg.avgPayGmv)}</td>
-                    <td className="right">{rupiah(avg.redeemedGmv)}</td>
-                    <td className="muted">
-                      {c.commission_share !== null ? `${c.commission_share}%` : "—"}
-                    </td>
-                    <td className="right">{num1(avg.totalPost)}</td>
-                    <td className="right">{num1(avg.postsWithSales)}</td>
-                    <td className="right">{num1(avg.liveStream)}</td>
-                    <td className="right">{num1(avg.validLiveStream)}</td>
-                    <td>
-                      {c.live_roster ? (
-                        <span className="badge green">Roster</span>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td>
-                      {c.status_kontrak ? (
-                        <span className={`badge ${STATUS_KONTRAK_BADGE[c.status_kontrak]?.cls ?? "gray"}`}>
-                          {STATUS_KONTRAK_BADGE[c.status_kontrak]?.label ?? c.status_kontrak}
-                        </span>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    {canManageOps && (
-                      <td>
-                        <EditCreatorModal creator={c} cmOptions={cmEmployees} />
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-              {creators.length === 0 && (
-                <tr>
-                  <td colSpan={canManageOps ? 17 : 16} className="muted">
-                    Belum ada kreator terdaftar.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <MasterCreatorsTable rows={masterRows} cmEmployees={cmEmployees} canManageOps={canManageOps} />
       </div>
 
       {canAssignOwner && (

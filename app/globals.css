@@ -32,6 +32,11 @@ a { color: var(--brand); text-decoration: none; }
   color: #cbd5e1; padding: 9px 12px; border-radius: 8px; display: block; font-weight: 500;
 }
 .sidebar a:hover { background: #1e293b; color: #fff; }
+.sidebar a.active {
+  background: var(--brand); color: #fff; font-weight: 700;
+  box-shadow: inset 3px 0 0 #fff;
+}
+.sidebar a.active:hover { background: var(--brand-dark); }
 .sidebar .spacer { flex: 1; }
 .sidebar .me { font-size: 12px; color: #94a3b8; border-top: 1px solid #1e293b; padding-top: 12px; margin-top: 12px; }
 

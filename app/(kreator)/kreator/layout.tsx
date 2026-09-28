@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser, getCreator } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
 import { MobileShell } from "@/components/mobile-shell";
+import { NavLink } from "@/components/nav-link";
 
 // Layout portal kreator — DI LUAR route group (app). Server-side gating: resolve
 // kreator via mcn_creators.auth_user_id = auth.uid(); bukan kreator (mis. karyawan
@@ -24,14 +24,14 @@ export default async function KreatorLayout({
       <div className="brand">MCN MEA</div>
       <div className="sub">Portal Kreator</div>
 
-      <Link href="/kreator/performa">Performa Saya</Link>
-      <Link href="/kreator/campaign">Campaign</Link>
-      <Link href="/kreator/agency-plan">Merchant Deals</Link>
-      <Link href="/kreator/report">Report Saya</Link>
-      <Link href="/kreator/request">Request Brand/Ads</Link>
-      <Link href="/kreator/special-project">Special Project</Link>
-      <Link href="/kreator/komplain">Komplain &amp; Feedback</Link>
-      <Link href="/kreator/profil">Profil</Link>
+      <NavLink href="/kreator/performa">Performa Saya</NavLink>
+      <NavLink href="/kreator/campaign">Campaign</NavLink>
+      <NavLink href="/kreator/agency-plan">Merchant Deals</NavLink>
+      <NavLink href="/kreator/report">Report Saya</NavLink>
+      <NavLink href="/kreator/request">Request Brand/Ads</NavLink>
+      <NavLink href="/kreator/special-project">Special Project</NavLink>
+      <NavLink href="/kreator/komplain">Komplain &amp; Feedback</NavLink>
+      <NavLink href="/kreator/profil">Profil</NavLink>
 
       <div className="spacer" />
       <div className="me">
