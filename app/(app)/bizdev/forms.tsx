@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { createShopLead, type ActionResult } from "@/lib/actions/bizdev";
 import { setPipelineStage } from "@/lib/actions/deals";
 import { progressRequest } from "@/lib/actions/mcn-requests";
+import { PIPELINE_STAGES } from "@/lib/mcn/pipeline-stages";
 
 function Msg({ state }: { state: ActionResult | null }) {
   if (!state) return null;
@@ -36,8 +37,6 @@ export function ShopLeadForm() {
     </form>
   );
 }
-
-export const PIPELINE_STAGES = ["baru", "nego", "kontrak", "berjalan", "selesai"];
 
 export function PipelineStageSelect({ dealId, current }: { dealId: string; current: string }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(

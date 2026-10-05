@@ -3,12 +3,8 @@ import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/ser
 import { rupiah } from "@/lib/format";
 import { projectBadge, todayJakartaYMD } from "@/lib/mcn/project-status";
 import { requestTypeLabel } from "@/lib/mcn/request-types";
-import {
-  ShopLeadForm,
-  PipelineStageSelect,
-  PIPELINE_STAGES,
-  RequestProgressControls,
-} from "./forms";
+import { PIPELINE_STAGES } from "@/lib/mcn/pipeline-stages";
+import { ShopLeadForm, PipelineStageSelect, RequestProgressControls } from "./forms";
 
 type CreatorRequest = {
   id: string;
