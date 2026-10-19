@@ -321,12 +321,12 @@ begin
   return v_creator;
 end $$;
 
--- "Catat Akuisisi (ACQ)": prospek [Bound] → baris acquisitions (lead_source inbound).
--- acquisitions_validate memaksa specialist_id = auth.uid() → actor = pemanggil.
-create or replace function creator_prospect_record_acquisition(
-  p_id uuid, p_binding_date date default null) returns uuid
-  language plpgsql security definer set search_path = public as $$
-declare v_row creator_prospects; v_acq uuid;
+-- "Catat Akuisisi (ACQ)": aplikasi mencatat akuisisi lewat alur yang SUDAH ADA
+-- (recordAcquisition: snapshot komisi, baseline GMV, prospek→binding), lalu
+-- menautkan baris acquisitions itu ke prospek di sini. Satu prospek = satu ACQ.
+create or replace function creator_prospect_link_acquisition(p_id uuid, p_acquisition_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_row creator_prospects;
 begin
   if not (is_od() or is_director() or auth_division() = 'Acquisition') then
     raise exception '[hanya Acquisition yang dapat mencatat akuisisi]' using errcode = 'insufficient_privilege';
@@ -341,25 +341,21 @@ begin
   if v_row.acquisition_id is not null then
     raise exception '[akuisisi prospek ini sudah dicatat]' using errcode = 'check_violation';
   end if;
-
-  insert into acquisitions (mcn_creator_id, lead_source, binding_date, notes)
-  values (v_row.matched_mcn_creator_id, 'inbound',
-          coalesce(p_binding_date, (now() at time zone 'Asia/Jakarta')::date),
-          'Dari prospek ' || v_row.code || coalesce(' · CTA ' || v_row.cta_id, ''))
-  returning id into v_acq;
-
-  update creator_prospects set acquisition_id = v_acq where id = p_id;
-  return v_acq;
+  if not exists (select 1 from acquisitions
+                  where id = p_acquisition_id and mcn_creator_id = v_row.matched_mcn_creator_id) then
+    raise exception '[akuisisi tidak cocok dengan kreator prospek]' using errcode = 'check_violation';
+  end if;
+  update creator_prospects set acquisition_id = p_acquisition_id where id = p_id;
 end $$;
 
 revoke execute on function creator_prospect_can_manage(), creator_prospect_match(text),
   creator_prospect_set_status(uuid, text, text, text), creator_prospect_assign(uuid, uuid),
   creator_prospect_link(uuid, uuid), creator_prospect_create_creator(uuid),
-  creator_prospect_record_acquisition(uuid, date) from public, anon;
+  creator_prospect_link_acquisition(uuid, uuid) from public, anon;
 grant execute on function creator_prospect_can_manage(), creator_prospect_match(text),
   creator_prospect_set_status(uuid, text, text, text), creator_prospect_assign(uuid, uuid),
   creator_prospect_link(uuid, uuid), creator_prospect_create_creator(uuid),
-  creator_prospect_record_acquisition(uuid, date) to authenticated;
+  creator_prospect_link_acquisition(uuid, uuid) to authenticated;
 
 -- ---- 4. Intake: satu kiriman = satu transaksi --------------------------------
 create or replace function meago_intake_apply(p_event jsonb) returns jsonb
