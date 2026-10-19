@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { rupiah, tanggal } from "@/lib/format";
@@ -155,7 +156,8 @@ export default async function AcquisitionPage() {
     <>
       <h1>Akuisisi Kreator</h1>
       <p className="page-sub">
-        Catat closing/binding kreator baru, referral antar-kreator, dan handoff ke tim CM.
+        Catat closing/binding kreator baru, referral antar-kreator, dan handoff ke tim CM.{" "}
+        Pendaftar dari meago.id ada di <Link href="/acquisition/prospek">Prospek Kreator</Link>.
       </p>
 
       {canWrite && (

@@ -167,6 +167,7 @@ export default async function AppLayout({
 
         {seeAcq && sectionHeading("Akuisisi Kreator")}
         {seeAcq && <Link href="/acquisition">Akuisisi Kreator</Link>}
+        {seeAcq && <Link href="/acquisition/prospek">Prospek Kreator</Link>}
 
         {seeProj && sectionHeading("Special Project")}
         {seeProj && <Link href="/projects">Special Project</Link>}
