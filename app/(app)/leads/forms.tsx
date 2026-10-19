@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import {
   createLead,
   claimLead,
+  claimWebsiteLead,
   type ActionResult,
 } from "@/lib/actions/leads";
 import { IntakeFormFields, type BdOption, type BusinessTypeOptions } from "./intake-fields";
@@ -65,6 +66,23 @@ export function NewLeadModal({
         </div>
       )}
     </>
+  );
+}
+
+export function WebsiteClaimButton({ leadId }: { leadId: string }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(claimWebsiteLead, null);
+  return (
+    <form action={action} className="actions-row">
+      <input type="hidden" name="lead_id" value={leadId} />
+      <button className="sm" disabled={pending}>
+        {pending ? "…" : "Ambil Lead"}
+      </button>
+      {state && !state.ok && (
+        <span className="badge red" title={state.message}>
+          {state.message.includes("sudah diambil") ? "sudah diambil" : "gagal"}
+        </span>
+      )}
+    </form>
   );
 }
 

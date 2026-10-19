@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
 import { NewLeadModal } from "./forms";
 import { PoolLeadSection, type PoolLead } from "./pool";
-import { BRAND_CATEGORIES, type BrandCategory } from "@/lib/leads/intake";
+import { BRAND_CATEGORIES, WEBSITE_LEAD_SOURCE, isDealStatus, type BrandCategory } from "@/lib/leads/intake";
 import type { BusinessTypeOptions } from "./intake-fields";
 
 const POOL_LEAD_COLUMNS =
@@ -17,16 +17,26 @@ export default async function LeadsPage() {
   const me = await getEmployee();
   const isBizDev = me?.division === "BizDev";
   const canManage = isBizDev || me?.division === "Marketing" || !!me?.is_director;
+  const canSendPortal = isBizDev || !!me?.is_od || !!me?.is_director;
 
   const supabase = await getCachedClient();
 
-  const [{ data: leads }, { data: emps }, { data: businessTypes }, { data: benefits }, { data: recordedDeals }] =
-    await Promise.all([
+  const [
+    { data: leads },
+    { data: emps },
+    { data: businessTypes },
+    { data: benefits },
+    { data: recordedDeals },
+    { data: webAttr },
+    { data: portalUsers },
+  ] = await Promise.all([
       supabase.from("leads").select(POOL_LEAD_COLUMNS).order("created_at", { ascending: false }),
       supabase.from("employees").select("id, full_name, division, active"),
       supabase.from("lead_business_types").select("brand_category, label").order("label"),
       supabase.from("lead_benefit_options").select("label").order("label"),
       supabase.from("brand_deals").select("lead_id, nominal_harga").not("lead_id", "is", null),
+      supabase.from("lead_web_attribution").select("lead_id, cta_id"),
+      supabase.from("merchant_portal_users").select("lead_id, active"),
     ]);
 
   const bdNameById: Record<string, string> = Object.fromEntries(
@@ -47,10 +57,24 @@ export default async function LeadsPage() {
   }
   const benefitOptions = (benefits ?? []).map((b) => b.label);
 
-  const leadList = (leads as PoolLead[] | null) ?? [];
+  const ctaByLead = new Map((webAttr ?? []).map((a) => [a.lead_id as string, a.cta_id as string | null]));
+  const leadList = ((leads as PoolLead[] | null) ?? []).map((l) =>
+    ctaByLead.has(l.id) ? { ...l, web_cta: ctaByLead.get(l.id) ?? null } : l
+  );
+  const unprocessedWeb = leadList.filter(
+    (l) => l.source === WEBSITE_LEAD_SOURCE && !l.bd_employee_id
+  ).length;
   const countByStatus = (status: string) => leadList.filter((l) => l.crm_status === status).length;
   const recordedLeadIds = new Set(
     (recordedDeals ?? []).map((d) => d.lead_id).filter((id): id is string => !!id)
+  );
+  // Merchant Portal (migrasi 0372): lead closing = Dealing/Renewal + sudah ada
+  // brand_deals. Tombol "Kirim Akses Portal" hanya untuk lead ini.
+  const portalEligibleIds = new Set(
+    leadList.filter((l) => isDealStatus(l.crm_status) && recordedLeadIds.has(l.id)).map((l) => l.id)
+  );
+  const portalLinkedIds = new Set(
+    (portalUsers ?? []).filter((u) => u.active).map((u) => u.lead_id as string)
   );
   // Riwayat nominal transaksi per lead — jadi saran "Nominal Deals" di form
   // "Catat Transaksi", dibatasi ke lead yang bersangkutan saja.
@@ -77,6 +101,10 @@ export default async function LeadsPage() {
         <div className="stat">
           <div className="k">Total Lead</div>
           <div className="v">{leadList.length}</div>
+        </div>
+        <div className="stat">
+          <div className="k">Lead Website baru</div>
+          <div className="v">{unprocessedWeb}</div>
         </div>
         <div className="stat">
           <div className="k">Approaching</div>
@@ -110,6 +138,9 @@ export default async function LeadsPage() {
         nominalHistoryByLead={nominalHistoryByLead}
         isBizDev={isBizDev}
         canManage={canManage}
+        canSendPortal={canSendPortal}
+        portalEligibleIds={portalEligibleIds}
+        portalLinkedIds={portalLinkedIds}
       />
     </>
   );

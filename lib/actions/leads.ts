@@ -335,6 +335,26 @@ export async function claimLead(
   return { ok: true, message: "Lead diambil — prospek [Pending Validation] dibuat." };
 }
 
+// Lead dari form meago.id masuk tanpa BD; "Ambil Lead" mengisi BD = pengklik
+// secara atomik (RPC claim_website_lead, migrasi 0370) — dua BD klik bersamaan,
+// satu menang.
+export async function claimWebsiteLead(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const { supabase, user, me } = await ctx();
+  if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
+
+  const lead_id = String(formData.get("lead_id") || "");
+  if (!lead_id) return { ok: false, message: "Lead tidak valid." };
+
+  const { error } = await supabase.rpc("claim_website_lead", { p_lead_id: lead_id });
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/leads");
+  return { ok: true, message: "Lead website diambil — Anda BD-nya sekarang." };
+}
+
 export async function advanceAttempt(
   _prev: ActionResult | null,
   formData: FormData

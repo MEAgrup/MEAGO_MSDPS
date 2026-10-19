@@ -67,6 +67,11 @@ export const INTAKE_SOURCES = [
   "Referal TikTok GO",
 ] as const;
 
+// Sumber lead otomatis dari form meago.id (Edge Function meago-intake, migrasi
+// 0369/0370). TIDAK dipilih manual di form BD — lead ini masuk tanpa BD dan
+// menunggu "Ambil Lead".
+export const WEBSITE_LEAD_SOURCE = "Website MEAGO";
+
 // 38 provinsi RI (termasuk pemekaran Papua 2022). HARUS sama persis dengan
 // check constraint `leads_wilayah_check` di migrasi 0331.
 export const WILAYAH = [

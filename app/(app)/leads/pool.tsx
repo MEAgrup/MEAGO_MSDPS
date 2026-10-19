@@ -14,13 +14,15 @@ import {
   CRM_STATUSES,
   HASIL_APPROACH,
   RENEWAL_REQUIRES_STATUS,
+  WEBSITE_LEAD_SOURCE,
   WILAYAH,
   isDealStatus,
   type BrandCategory,
   type CrmStatus,
 } from "@/lib/leads/intake";
 import { IntakeFormFields, type BdOption, type BusinessTypeOptions } from "./intake-fields";
-import { ClaimButton } from "./forms";
+import { ClaimButton, WebsiteClaimButton } from "./forms";
+import { PortalAccessButton } from "@/components/portal-access-button";
 import { RegisterDealModal } from "../deals/forms";
 import { exportRowsToExcel } from "@/lib/xlsx-export";
 
@@ -46,7 +48,14 @@ export type PoolLead = {
   tanggal_mulai_kontrak: string | null;
   tanggal_akhir_kontrak: string | null;
   created_at: string;
+  // CTA asal form meago.id (lead_web_attribution, migrasi 0370) — hanya lead website.
+  web_cta?: string | null;
 };
+
+// Lead dari form meago.id yang belum diambil BD mana pun.
+function isUnprocessedWebLead(l: PoolLead): boolean {
+  return l.source === WEBSITE_LEAD_SOURCE && !l.bd_employee_id;
+}
 
 const CRM_STATUS_CLASS: Record<string, string> = {
   Leads: "slate",
@@ -487,6 +496,9 @@ export function PoolLeadSection({
   nominalHistoryByLead,
   isBizDev,
   canManage,
+  canSendPortal = false,
+  portalEligibleIds = new Set<string>(),
+  portalLinkedIds = new Set<string>(),
 }: {
   leads: PoolLead[];
   bdOptions: BdOption[];
@@ -497,12 +509,18 @@ export function PoolLeadSection({
   nominalHistoryByLead?: Record<string, number[]>;
   isBizDev: boolean;
   canManage: boolean;
+  // Kirim Akses Merchant Portal: BizDev/OD/Director, hanya lead closing
+  // (Dealing/Renewal + ada brand_deals). DB tetap menolak selain itu.
+  canSendPortal?: boolean;
+  portalEligibleIds?: Set<string>;
+  portalLinkedIds?: Set<string>;
 }) {
   const [brandQuery, setBrandQuery] = useState("");
   const [jenisFilter, setJenisFilter] = useState("");
   const [wilayahFilter, setWilayahFilter] = useState("");
   const [picQuery, setPicQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [unprocessedOnly, setUnprocessedOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(1);
@@ -526,13 +544,15 @@ export function PoolLeadSection({
       if (jenisFilter && l.business_type !== jenisFilter) return false;
       if (wilayahFilter && l.wilayah !== wilayahFilter) return false;
       if (statusFilter && l.crm_status !== statusFilter) return false;
+      if (unprocessedOnly && !isUnprocessedWebLead(l)) return false;
       if (picQ) {
         const hay = `${l.pic_name_position ?? ""} ${l.pic_phone ?? ""}`.toLowerCase();
         if (!hay.includes(picQ)) return false;
       }
       return true;
     });
-  }, [leads, brandQuery, jenisFilter, wilayahFilter, statusFilter, picQuery]);
+  }, [leads, brandQuery, jenisFilter, wilayahFilter, statusFilter, unprocessedOnly, picQuery]);
+  const unprocessedCount = useMemo(() => leads.filter(isUnprocessedWebLead).length, [leads]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -825,6 +845,19 @@ export function PoolLeadSection({
             ))}
           </select>
         </div>
+        <div>
+          <label>Lead Website</label>
+          <button
+            type="button"
+            className={unprocessedOnly ? "sm" : "sm ghost2"}
+            onClick={() => {
+              setUnprocessedOnly((v) => !v);
+              setPage(1);
+            }}
+          >
+            Belum diproses ({unprocessedCount})
+          </button>
+        </div>
       </div>
 
       {canManage && selected.size > 0 && (
@@ -877,6 +910,17 @@ export function PoolLeadSection({
                   <td className="mono">{l.code ?? "—"}</td>
                   <td>
                     {l.brand_name ?? l.lead_name} {l.stale && <span className="badge amber">stale</span>}
+                    {isUnprocessedWebLead(l) && <span className="badge amber">belum diproses</span>}
+                    {canSendPortal && portalEligibleIds.has(l.id) && (
+                      <div style={{ marginTop: 4 }}>
+                        <PortalAccessButton
+                          kind="merchant"
+                          sourceId={l.id}
+                          label={l.brand_name ?? l.lead_name}
+                          resend={portalLinkedIds.has(l.id)}
+                        />
+                      </div>
+                    )}
                     {isDealStatus(l.crm_status) && (
                       <div className="muted" style={{ fontSize: 11 }}>
                         {l.benefit_dealing ?? "—"} · {rupiah(l.nominal_bayar)}
@@ -894,12 +938,33 @@ export function PoolLeadSection({
                       {l.pic_phone ?? l.phone_normalized ?? "—"}
                     </div>
                   </td>
-                  <td className="muted">{l.source ?? "—"}</td>
+                  <td className="muted">
+                    {l.source === WEBSITE_LEAD_SOURCE ? (
+                      <>
+                        <span className="badge blue">Website MEAGO</span>
+                        {l.web_cta && (
+                          <div className="mono" style={{ fontSize: 11 }} title="CTA asal di meago.id">
+                            {l.web_cta}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      l.source ?? "—"
+                    )}
+                  </td>
                   <td>
                     <span className={`badge ${CRM_STATUS_CLASS[l.crm_status] ?? "gray"}`}>{l.crm_status}</span>
                   </td>
                   {isBizDev && (
-                    <td>{claimable ? <ClaimButton leadId={l.id} /> : <span className="muted">—</span>}</td>
+                    <td>
+                      {isUnprocessedWebLead(l) ? (
+                        <WebsiteClaimButton leadId={l.id} />
+                      ) : claimable && l.source !== WEBSITE_LEAD_SOURCE ? (
+                        <ClaimButton leadId={l.id} />
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
                   )}
                   {canManage && (
                     <td className="right">
