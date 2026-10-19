@@ -54,14 +54,54 @@ export const getEmployee = cache(async () => {
   return data;
 });
 
-export const getCreator = cache(async () => {
+// Closing kreator = binding agency TikTok GO lewat MEAGO! (migrasi 0373). Akses
+// Creator Portal hanya untuk binding_status ini — di RLS (auth_creator_id) DAN di app.
+export const BOUND_CREATORS = "Bound creators";
+
+// Akun yang tertaut ke mcn_creators, apa pun binding-nya — untuk membedakan
+// "kreator yang aksesnya nonaktif" dari "bukan kreator".
+export const getCreatorAccount = cache(async () => {
   const user = await getSessionUser();
   if (!user) return null;
   const supabase = await getCachedClient();
   const { data } = await supabase
     .from("mcn_creators")
-    .select("id, code, name")
+    .select("id, code, name, binding_status")
     .eq("auth_user_id", user.id)
     .maybeSingle();
   return data;
+});
+
+// Kreator dengan akses portal aktif (Bound). Dipakai semua halaman portal.
+export const getCreator = cache(async () => {
+  const account = await getCreatorAccount();
+  if (!account || account.binding_status !== BOUND_CREATORS) return null;
+  return { id: account.id, code: account.code, name: account.name };
+});
+
+// Merchant Portal (migrasi 0372/0374): lead milik akun ini yang aksesnya aktif
+// dan masih closing. Kosong = tidak punya akses.
+export const getMerchantPortal = cache(async () => {
+  const user = await getSessionUser();
+  if (!user) return null;
+  const supabase = await getCachedClient();
+  const { data } = await supabase.rpc("merchant_portal_me");
+  const brands =
+    (data as
+      | { lead_id: string; lead_code: string | null; brand_name: string; brand_category: string | null; wilayah: string | null }[]
+      | null) ?? [];
+  return brands.length ? brands : null;
+});
+
+// Akun merchant yang pernah dibuat (aktif atau dicabut) — untuk pesan "akses nonaktif".
+export const hasMerchantAccount = cache(async () => {
+  const user = await getSessionUser();
+  if (!user) return false;
+  const supabase = await getCachedClient();
+  const { data } = await supabase
+    .from("merchant_portal_users")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .limit(1);
+  return (data ?? []).length > 0;
 });

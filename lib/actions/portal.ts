@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, BOUND_CREATORS } from "@/lib/supabase/server";
 import {
   createAdminClient,
   hasAdminEnv,
@@ -39,6 +39,7 @@ export async function createPortalRequest(
     .from("mcn_creators")
     .select("id")
     .eq("auth_user_id", user.id)
+    .eq("binding_status", BOUND_CREATORS)
     .maybeSingle();
   if (!creator) return { ok: false, message: "Akun ini bukan kreator portal." };
 
@@ -111,6 +112,7 @@ export async function createComplaint(
     .from("mcn_creators")
     .select("id")
     .eq("auth_user_id", user.id)
+    .eq("binding_status", BOUND_CREATORS)
     .maybeSingle();
   if (!creator) return { ok: false, message: "Akun ini bukan kreator portal." };
 
@@ -154,6 +156,7 @@ export async function updateBankAccount(_prev: ActionResult | null, formData: Fo
       .from("mcn_creators")
       .select("id")
       .eq("auth_user_id", user.id)
+      .eq("binding_status", BOUND_CREATORS)
       .maybeSingle();
     if (!creator) return { ok: false, message: "Akun ini bukan kreator portal." };
 

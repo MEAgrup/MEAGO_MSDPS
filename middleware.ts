@@ -54,8 +54,11 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthRoute = path === "/login";
+  // /aktivasi: link sekali pakai dari "Kirim Akses Portal" — dibuka SEBELUM akun
+  // punya password, jadi harus bisa diakses tanpa sesi (token divalidasi di server).
+  const isPublicRoute = path === "/aktivasi";
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
@@ -78,7 +81,16 @@ export async function middleware(request: NextRequest) {
       .select("id")
       .eq("auth_user_id", user.id)
       .maybeSingle();
-    url.pathname = creator ? "/kreator/performa" : "/dashboard";
+    if (creator) {
+      url.pathname = "/kreator/performa";
+      return NextResponse.redirect(url);
+    }
+    const { data: merchant } = await supabase
+      .from("merchant_portal_users")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .limit(1);
+    url.pathname = merchant && merchant.length > 0 ? "/merchant" : "/dashboard";
     return NextResponse.redirect(url);
   }
 

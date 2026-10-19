@@ -24,7 +24,7 @@ export default function LoginPage() {
     }
 
     // Route pasca-login by identitas: employee → app karyawan; kreator → portal;
-    // bukan keduanya → sign-out + error (tidak ada akun tanpa identitas).
+    // merchant → Merchant Portal; bukan ketiganya → sign-out + error.
     const { data: emp } = await supabase
       .from("employees")
       .select("id")
@@ -47,8 +47,19 @@ export default function LoginPage() {
       return;
     }
 
+    const { data: merchant } = await supabase
+      .from("merchant_portal_users")
+      .select("id")
+      .eq("auth_user_id", data.user.id)
+      .limit(1);
+    if (merchant && merchant.length > 0) {
+      router.push("/merchant");
+      router.refresh();
+      return;
+    }
+
     await supabase.auth.signOut();
-    setErr("Akun ini tidak terhubung ke karyawan maupun kreator. Hubungi admin.");
+    setErr("Akun ini tidak terhubung ke karyawan, kreator, maupun merchant. Hubungi admin.");
     setLoading(false);
   }
 
