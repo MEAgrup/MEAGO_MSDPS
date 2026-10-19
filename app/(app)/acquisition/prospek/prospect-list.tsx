@@ -37,6 +37,13 @@ export type Prospect = {
   created_at: string;
 };
 
+export type RegisteredCreator = {
+  mcn_creator_id: string;
+  creator_code: string | null;
+  creator_name: string;
+  binding_status: string | null;
+};
+
 export type LinkedCreator = {
   code: string | null;
   name: string;
@@ -79,6 +86,7 @@ function waLink(phone: string | null): string | null {
 export function ProspectList({
   prospects,
   creators,
+  registered,
   empName,
   acqOptions,
   myId,
@@ -87,6 +95,7 @@ export function ProspectList({
 }: {
   prospects: Prospect[];
   creators: Record<string, LinkedCreator>;
+  registered: Record<string, RegisteredCreator>;
   empName: Record<string, string>;
   acqOptions: { id: string; full_name: string }[];
   myId: string;
@@ -179,12 +188,14 @@ export function ProspectList({
                     <div className="mono" style={{ fontSize: 11 }}>
                       @{p.tiktok_username}
                     </div>
-                    {p.matched_mcn_creator_id && (
-                      <span className="badge indigo" title="Username cocok dengan Data Kreator yang sudah ada">
-                        data lama ditautkan
+                    {registered[p.id] && (
+                      <span
+                        className="badge indigo"
+                        title={`Username sudah ada di Data Kreator: ${registered[p.id].creator_code ?? "—"} · ${registered[p.id].creator_name}`}
+                      >
+                        sudah terdaftar
                       </span>
-                    )}{" "}
-                    {p.existing_bound && <span className="badge green">existing bound</span>}
+                    )}
                   </td>
                   <td>
                     {wa ? (
@@ -233,6 +244,7 @@ export function ProspectList({
         <ProspectDetail
           p={detail}
           creator={detail.matched_mcn_creator_id ? creators[detail.matched_mcn_creator_id] ?? null : null}
+          registeredAs={registered[detail.id] ?? null}
           empName={empName}
           acqOptions={acqOptions}
           myId={myId}
@@ -248,6 +260,7 @@ export function ProspectList({
 function ProspectDetail({
   p,
   creator,
+  registeredAs,
   empName,
   acqOptions,
   myId,
@@ -257,6 +270,7 @@ function ProspectDetail({
 }: {
   p: Prospect;
   creator: LinkedCreator | null;
+  registeredAs: RegisteredCreator | null;
   empName: Record<string, string>;
   acqOptions: { id: string; full_name: string }[];
   myId: string;
@@ -330,6 +344,14 @@ function ProspectDetail({
           {utm.length > 0 && row("UTM", utm.map(([k, v]) => `${k}=${String(v)}`).join(" · "))}
           {row("Masuk", tanggal(p.created_at))}
           {row("PIC", (p.owner_id && empName[p.owner_id]) ?? "—")}
+          {registeredAs &&
+            row(
+              "Sudah terdaftar",
+              <>
+                <span className="badge indigo">sudah terdaftar</span> {registeredAs.creator_code ?? "—"} ·{" "}
+                {registeredAs.creator_name} · {registeredAs.binding_status ?? "belum binding"}
+              </>
+            )}
           {row(
             "Data Kreator",
             creator ? (
@@ -419,12 +441,13 @@ function ProspectDetail({
               <h4 style={{ margin: "0 0 8px" }}>Data Kreator</h4>
               <Msg state={creatorState} />
               <p className="hint">
-                Username belum ada di Data Kreator. Buat data kreator dari prospek ini (status awal
-                prospek) — binding_status diisi dari data binding TikTok GO.
+                {registeredAs
+                  ? "Username ini sudah terdaftar di Data Kreator. Tautkan prospek ke data tersebut bila memang orang yang sama."
+                  : "Username belum ada di Data Kreator. Buat data kreator dari prospek ini (status awal prospek) — binding_status diisi dari data binding TikTok GO."}
               </p>
               <input type="hidden" name="id" value={p.id} />
               <button type="submit" className="ghost2" disabled={creatorPending}>
-                {creatorPending ? "…" : "Buat Data Kreator"}
+                {creatorPending ? "…" : registeredAs ? "Tautkan ke Data Kreator" : "Buat Data Kreator"}
               </button>
             </form>
           )}

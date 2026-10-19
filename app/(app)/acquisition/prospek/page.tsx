@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { ProspectList, type Prospect, type LinkedCreator } from "./prospect-list";
+import { ProspectList, type Prospect, type LinkedCreator, type RegisteredCreator } from "./prospect-list";
 
 // Prospek Kreator (migrasi 0371): pendaftar meago.id & sumber lain SEBELUM
 // binding. Bukan akun — akses portal hanya untuk yang [Bound] (migrasi 0372).
@@ -18,7 +18,7 @@ export default async function ProspekKreatorPage() {
   const canAssignAny = mgmt || (div === "Acquisition" && me?.rank === "lead");
 
   const supabase = await getCachedClient();
-  const [{ data: rows }, { data: emps }] = await Promise.all([
+  const [{ data: rows }, { data: emps }, { data: regRaw }] = await Promise.all([
     supabase
       .from("creator_prospects")
       .select(
@@ -28,7 +28,12 @@ export default async function ProspekKreatorPage() {
       )
       .order("created_at", { ascending: false }),
     supabase.from("employees").select("id, full_name, division, active"),
+    // Label "sudah terdaftar" (migrasi 0375): username sudah ada di Data Kreator.
+    supabase.rpc("creator_prospect_registered"),
   ]);
+  const registered: Record<string, RegisteredCreator> = Object.fromEntries(
+    ((regRaw as (RegisteredCreator & { prospect_id: string })[] | null) ?? []).map((r) => [r.prospect_id, r])
+  );
 
   const prospects = (rows as Prospect[] | null) ?? [];
   const matchedIds = [...new Set(prospects.map((p) => p.matched_mcn_creator_id).filter((v): v is string => !!v))];
@@ -75,6 +80,7 @@ export default async function ProspekKreatorPage() {
       <ProspectList
         prospects={prospects}
         creators={creators}
+        registered={registered}
         empName={empName}
         acqOptions={acqOptions}
         myId={me?.id ?? ""}

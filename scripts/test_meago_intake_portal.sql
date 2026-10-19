@@ -62,8 +62,8 @@ begin
   v_res := meago_intake_apply(jsonb_build_object('site','meago.id','wp_ref','qa-flow-k2','type','kreator',
     'contact', jsonb_build_object('nama','QA Lama','whatsapp_raw','081200002222'),
     'fields', jsonb_build_object('tiktok_username','QA_LAMA_BOUND','consent',true)));
-  insert into _t(step, ok, detail) values ('username lama Bound → tertaut, [Bound], existing_bound',
-    (select status = '[Bound]' and existing_bound and matched_mcn_creator_id is not null
+  insert into _t(step, ok, detail) values ('username sudah terdaftar → tetap [Baru], TIDAK ditautkan, ada label (0375)',
+    (select status = '[Baru]' and not existing_bound and matched_mcn_creator_id is null
        from creator_prospects where wp_ref = 'qa-flow-k2') and (v_res->>'linked_existing')::boolean, v_res::text);
 
   -- 4. test:true → tidak menulis
@@ -77,6 +77,10 @@ begin
   -- ---- alur kreator sebagai Acquisition -------------------------------------
   perform set_config('request.jwt.claims', json_build_object('sub', u_acq, 'role', 'authenticated')::text, true);
   set local role authenticated;
+
+  insert into _t(step, ok, detail) values ('Acquisition melihat label "sudah terdaftar" hanya untuk username lama',
+    exists (select 1 from creator_prospect_registered() r join creator_prospects p on p.id = r.prospect_id where p.wp_ref = 'qa-flow-k2')
+    and not exists (select 1 from creator_prospect_registered() where prospect_id = v_pid), null);
 
   perform creator_prospect_set_status(v_pid, '[Dihubungi]');
   perform creator_prospect_set_status(v_pid, '[Proses Binding]');
