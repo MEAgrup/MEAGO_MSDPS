@@ -456,7 +456,7 @@ begin
         nullif(btrim(v_fields->>'binding_lain'), ''), (v_fields->>'usia_18')::boolean,
         'Website', v_cta, v_attr, v_wp_ref,
         case when v_binding = 'Bound creators' then '[Bound]' else '[Baru]' end,
-        v_creator, v_binding = 'Bound creators')
+        v_creator, coalesce(v_binding = 'Bound creators', false))
       returning code into v_code;
     end if;
 
@@ -524,9 +524,9 @@ begin
     values (v_lead_id, v_cta, nullif(btrim(v_attr->>'source_url'), ''),
       nullif(btrim(v_attr->>'referrer'), ''), v_utm, v_wp_ref, v_wp_ref)
     on conflict (lead_id) do update
-      set cta_id      = coalesce(excluded.cta_id, a.cta_id),
-          source_url  = coalesce(excluded.source_url, a.source_url),
-          referrer    = coalesce(excluded.referrer, a.referrer),
+      set cta_id      = coalesce(a.cta_id, excluded.cta_id),         -- CTA asal (first-touch)
+          source_url  = coalesce(a.source_url, excluded.source_url),
+          referrer    = coalesce(a.referrer, excluded.referrer),
           utm         = a.utm || excluded.utm,
           last_wp_ref = excluded.last_wp_ref,
           submissions = a.submissions + 1,
