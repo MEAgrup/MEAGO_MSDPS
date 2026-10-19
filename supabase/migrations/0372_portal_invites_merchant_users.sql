@@ -72,26 +72,26 @@ create index if not exists merchant_portal_users_auth_idx on merchant_portal_use
 comment on table merchant_portal_users is
   'Akun Merchant Portal ↔ lead merchant yang closing (Dealing/Renewal + brand_deals). active=false = akses dicabut. Ditulis hanya lewat RPC portal_*. Migrasi 0372.';
 
-drop trigger if exists trg_portal_invites_audit on portal_invites;
-create trigger trg_portal_invites_audit after insert or update on portal_invites
+create or replace trigger trg_portal_invites_audit after insert or update on portal_invites
   for each row execute function capture_audit('portal_invite');
 
-drop trigger if exists trg_merchant_portal_users_audit on merchant_portal_users;
-create trigger trg_merchant_portal_users_audit after insert or update on merchant_portal_users
+create or replace trigger trg_merchant_portal_users_audit after insert or update on merchant_portal_users
   for each row execute function capture_audit('merchant_portal_user');
 
 alter table portal_invites enable row level security;
 alter table merchant_portal_users enable row level security;
 
-drop policy if exists portal_invites_select on portal_invites;
-create policy portal_invites_select on portal_invites for select to authenticated
-  using (is_od() or is_director()
-         or (kind = 'creator'  and auth_division() = 'Acquisition')
-         or (kind = 'merchant' and auth_division() = 'BizDev'));
+do $$ begin
+  create policy portal_invites_select on portal_invites for select to authenticated
+    using (is_od() or is_director()
+           or (kind = 'creator'  and auth_division() = 'Acquisition')
+           or (kind = 'merchant' and auth_division() = 'BizDev'));
+exception when duplicate_object then null; end $$;
 
-drop policy if exists merchant_portal_users_select on merchant_portal_users;
-create policy merchant_portal_users_select on merchant_portal_users for select to authenticated
-  using (is_od() or is_director() or auth_division() = 'BizDev' or auth_user_id = auth.uid());
+do $$ begin
+  create policy merchant_portal_users_select on merchant_portal_users for select to authenticated
+    using (is_od() or is_director() or auth_division() = 'BizDev' or auth_user_id = auth.uid());
+exception when duplicate_object then null; end $$;
 -- Tidak ada policy tulis: hanya RPC security definer di bawah.
 
 -- ---- 2. Syarat closing ------------------------------------------------------
@@ -273,8 +273,7 @@ begin
   return new;
 end $$;
 
-drop trigger if exists trg_mcn_creators_portal_revoke on mcn_creators;
-create trigger trg_mcn_creators_portal_revoke after update of binding_status on mcn_creators
+create or replace trigger trg_mcn_creators_portal_revoke after update of binding_status on mcn_creators
   for each row execute function portal_revoke_on_binding_change();
 
 create or replace function portal_revoke_on_lead_rejected() returns trigger
@@ -291,8 +290,7 @@ begin
   return new;
 end $$;
 
-drop trigger if exists trg_leads_portal_revoke on leads;
-create trigger trg_leads_portal_revoke after update of crm_status on leads
+create or replace trigger trg_leads_portal_revoke after update of crm_status on leads
   for each row execute function portal_revoke_on_lead_rejected();
 
 create or replace function portal_set_merchant_user_active(p_id uuid, p_active boolean) returns void

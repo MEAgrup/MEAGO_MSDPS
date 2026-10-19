@@ -134,9 +134,10 @@ comment on table lead_web_attribution is
 
 alter table lead_web_attribution enable row level security;
 
-drop policy if exists lead_web_attribution_select on lead_web_attribution;
-create policy lead_web_attribution_select on lead_web_attribution for select to authenticated
-  using (is_od() or is_director() or auth_division() in ('BizDev','Marketing'));
+do $$ begin
+  create policy lead_web_attribution_select on lead_web_attribution for select to authenticated
+    using (is_od() or is_director() or auth_division() in ('BizDev','Marketing'));
+exception when duplicate_object then null; end $$;
 
 -- ---- 3. "Ambil Lead" untuk lead tanpa BD -------------------------------------
 create or replace function claim_website_lead(p_lead_id uuid) returns uuid

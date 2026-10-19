@@ -55,10 +55,11 @@ comment on table web_intake_events is
 
 alter table web_intake_events enable row level security;
 
-drop policy if exists web_intake_events_select on web_intake_events;
-create policy web_intake_events_select on web_intake_events for select to authenticated
-  using (is_od() or is_director()
-         or (is_lead() and auth_division() in ('Acquisition','BizDev')));
+do $$ begin
+  create policy web_intake_events_select on web_intake_events for select to authenticated
+    using (is_od() or is_director()
+           or (is_lead() and auth_division() in ('Acquisition','BizDev')));
+exception when duplicate_object then null; end $$;
 
 -- ---- 2. Prospek kreator -----------------------------------------------------
 create table if not exists creator_prospects (
@@ -175,16 +176,13 @@ end $$;
 revoke execute on function creator_prospects_validate() from public, anon, authenticated;
 
 -- Urutan trigger (alfabetis): creator_prospects_validate → trg_..._status → trg_..._audit.
-drop trigger if exists creator_prospects_validate on creator_prospects;
-create trigger creator_prospects_validate before insert or update on creator_prospects
+create or replace trigger creator_prospects_validate before insert or update on creator_prospects
   for each row execute function creator_prospects_validate();
 
-drop trigger if exists trg_creator_prospects_status on creator_prospects;
-create trigger trg_creator_prospects_status before update on creator_prospects
+create or replace trigger trg_creator_prospects_status before update on creator_prospects
   for each row execute function enforce_status_transition('creator_prospect');
 
-drop trigger if exists trg_creator_prospects_audit on creator_prospects;
-create trigger trg_creator_prospects_audit after insert or update on creator_prospects
+create or replace trigger trg_creator_prospects_audit after insert or update on creator_prospects
   for each row execute function capture_audit('creator_prospect');
 
 insert into status_transitions (entity, from_status, to_status, allowed_tokens, note) values
@@ -207,10 +205,11 @@ on conflict do nothing;
 
 alter table creator_prospects enable row level security;
 
-drop policy if exists creator_prospects_select on creator_prospects;
-create policy creator_prospects_select on creator_prospects for select to authenticated
-  using (is_od() or is_director() or auth_division() in ('Acquisition','CreatorManagement'));
--- Tidak ada policy INSERT/UPDATE/DELETE: tulis hanya lewat RPC di bawah & intake.
+do $$ begin
+  create policy creator_prospects_select on creator_prospects for select to authenticated
+    using (is_od() or is_director() or auth_division() in ('Acquisition','CreatorManagement'));
+exception when duplicate_object then null; end $$;
+-- Tidak ada policy tulis apa pun: tulis hanya lewat RPC di bawah & intake.
 
 -- ---- 3. RPC Acquisition -----------------------------------------------------
 create or replace function creator_prospect_can_manage() returns boolean
