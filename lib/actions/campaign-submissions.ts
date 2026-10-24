@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, BOUND_CREATORS } from "@/lib/supabase/server";
 import { createAdminClient, hasAdminEnv, adminKeyWarning, ADMIN_ENV_MESSAGE } from "@/lib/supabase/admin";
 
 export type ActionResult = { ok: boolean; message: string };
@@ -12,7 +12,7 @@ async function creatorCtx() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { supabase, user: null, creator: null as { id: string } | null };
-  const { data: creator } = await supabase.from("mcn_creators").select("id").eq("auth_user_id", user.id).maybeSingle();
+  const { data: creator } = await supabase.from("mcn_creators").select("id").eq("auth_user_id", user.id).eq("binding_status", BOUND_CREATORS).maybeSingle();
   return { supabase, user, creator };
 }
 

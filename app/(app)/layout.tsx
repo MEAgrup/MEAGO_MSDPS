@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getSessionUser, getEmployee, getCreator, getCachedClient } from "@/lib/supabase/server";
+import {
+  getSessionUser,
+  getEmployee,
+  getCreatorAccount,
+  getCachedClient,
+  hasMerchantAccount,
+} from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
 import { isCampaignStaff } from "@/lib/campaign-access";
 import { LEAD_ONBOARDING_KEY, isWindowOpen, parseWindow } from "@/lib/employee-onboarding";
@@ -17,10 +23,12 @@ export default async function AppLayout({
   const me = await getEmployee();
 
   // Cross-blocking identitas: sesi yang BUKAN karyawan tidak boleh masuk route (app).
-  // Kreator → portal; akun tanpa identitas apa pun → sign-out + login.
+  // Kreator → portal; merchant → Merchant Portal; akun tanpa identitas apa pun
+  // → sign-out + login. (Portal masing-masing yang menilai aksesnya aktif.)
   if (!me) {
-    const creator = await getCreator();
+    const creator = await getCreatorAccount();
     if (creator) redirect("/kreator/performa");
+    if (await hasMerchantAccount()) redirect("/merchant");
     const supabase = await getCachedClient();
     await supabase.auth.signOut();
     redirect("/login");
@@ -167,6 +175,7 @@ export default async function AppLayout({
 
         {seeAcq && sectionHeading("Akuisisi Kreator")}
         {seeAcq && <Link href="/acquisition">Akuisisi Kreator</Link>}
+        {seeAcq && <Link href="/acquisition/prospek">Prospek Kreator</Link>}
 
         {seeProj && sectionHeading("Special Project")}
         {seeProj && <Link href="/projects">Special Project</Link>}

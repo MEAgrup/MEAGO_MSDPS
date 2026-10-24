@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, BOUND_CREATORS } from "@/lib/supabase/server";
 
 export type ActionResult = { ok: boolean; message: string };
 
@@ -23,7 +23,7 @@ export async function registerCampaignParticipation(_prev: ActionResult | null, 
   const { supabase, user } = await ctx();
   if (!user) return { ok: false, message: "Tidak terautentikasi." };
 
-  const { data: creator } = await supabase.from("mcn_creators").select("id").eq("auth_user_id", user.id).maybeSingle();
+  const { data: creator } = await supabase.from("mcn_creators").select("id").eq("auth_user_id", user.id).eq("binding_status", BOUND_CREATORS).maybeSingle();
   if (!creator) return { ok: false, message: "Akun ini bukan akun kreator." };
 
   const deal_id = String(formData.get("deal_id") || "").trim();

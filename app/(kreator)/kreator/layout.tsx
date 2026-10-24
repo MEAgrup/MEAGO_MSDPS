@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getSessionUser, getCreator } from "@/lib/supabase/server";
+import { getSessionUser, getCreator, getCreatorAccount } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
 import { MobileShell } from "@/components/mobile-shell";
+import { PortalInactive } from "@/components/portal-inactive";
 
 // Layout portal kreator — DI LUAR route group (app). Server-side gating: resolve
 // kreator via mcn_creators.auth_user_id = auth.uid(); bukan kreator (mis. karyawan
-// yang nyasar ke /kreator) → /dashboard; tanpa sesi → /login.
+// yang nyasar ke /kreator) → /dashboard; tanpa sesi → /login. Akses hanya untuk
+// kreator Bound (migrasi 0373): binding lepas → halaman "akses nonaktif".
 export default async function KreatorLayout({
   children,
 }: {
@@ -17,7 +19,10 @@ export default async function KreatorLayout({
 
   const creator = await getCreator();
 
-  if (!creator) redirect("/dashboard");
+  if (!creator) {
+    if (await getCreatorAccount()) return <PortalInactive portal="Creator Portal" />;
+    redirect("/dashboard");
+  }
 
   const sidebar = (
     <>
