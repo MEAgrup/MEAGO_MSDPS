@@ -11,6 +11,7 @@ import { signOut } from "@/lib/actions/auth";
 import { isCampaignStaff } from "@/lib/campaign-access";
 import { LEAD_ONBOARDING_KEY, isWindowOpen, parseWindow } from "@/lib/employee-onboarding";
 import { MobileShell } from "@/components/mobile-shell";
+import { UsageTracker } from "@/components/usage-tracker";
 
 export default async function AppLayout({
   children,
@@ -142,6 +143,7 @@ export default async function AppLayout({
         {seeFinance && <Link href="/finance">Keuangan</Link>}
         {mgmt && <Link href="/okr">Target OKR</Link>}
         {canManage && <Link href="/employees">Kelola Karyawan</Link>}
+        {(mgmt || isLead) && <Link href="/employees/aktivitas">Aktivitas Karyawan</Link>}
 
         {seeCM && sectionHeading("CM Kreator")}
         {(seeCM || div === "BizDev") && <Link href="/meago/creators">Data Kreator</Link>}
@@ -214,6 +216,7 @@ export default async function AppLayout({
 
   return (
     <MobileShell brand="MSDPS" sidebar={sidebar}>
+      <UsageTracker />
       {children}
     </MobileShell>
   );
