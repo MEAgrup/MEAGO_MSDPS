@@ -48,7 +48,7 @@ try {
   console.error("Gagal transpile lib/bridge/payload.ts:", e.stdout?.toString() || e.message);
   process.exit(1);
 }
-const { buildBridgePayload, bridgeIdempotencyKey, PAYLOAD_VERSI } = require(join(outDir, "payload.js"));
+const { buildBridgePayload, bridgeIdempotencyKey, PAYLOAD_VERSI, paidPercent, paymentSummaryText } = require(join(outDir, "payload.js"));
 
 const fixture = JSON.parse(readFileSync(join(ROOT, "docs/fixtures/bridge_order_v1.json"), "utf8"));
 
@@ -157,6 +157,51 @@ throws("kategori_poi null -> throw", () => buildBridgePayload({ ...sourceRow, de
 throws("bd null -> throw (bukan default 'BD tidak diketahui')", () => buildBridgePayload({ ...sourceRow, bd: null }));
 throws("transaction.code null -> throw", () => buildBridgePayload({ ...sourceRow, transaction: { ...sourceRow.transaction, code: null } }));
 throws("lines kosong -> throw", () => buildBridgePayload({ ...sourceRow, lines: [] }));
+
+// ===== 7. Info pembayaran (bridge otomatis, migrasi 0377) ====================
+// Deal boleh diteruskan sejak DP — persentase ditambahkan ke `catatan` tiap
+// baris (string bebas yang SUDAH ada di kontrak v1; nol field baru).
+eq("paidPercent DP 30%", paidPercent({ amount_verified: 4500000, total_agreed_value: 15000000 }), 30);
+eq("paidPercent lunas", paidPercent({ amount_verified: "15000000", total_agreed_value: "15000000.00" }), 100);
+eq("paidPercent 99,96% dibulatkan KE BAWAH (tidak tampil 100%)", paidPercent({ amount_verified: 9996, total_agreed_value: 10000 }), 99.9);
+eq("paidPercent sepertiga", paidPercent({ amount_verified: 1, total_agreed_value: 3 }), 33.3);
+eq("paidPercent total 0 -> null", paidPercent({ amount_verified: 0, total_agreed_value: 0 }), null);
+eq(
+  "paymentSummaryText DP",
+  paymentSummaryText({ amount_verified: 4500000, total_agreed_value: 15000000 }),
+  "[Pembayaran klien saat diteruskan: DP 30% — Rp 4.500.000 dari Rp 15.000.000]"
+);
+eq(
+  "paymentSummaryText DP desimal pakai koma",
+  paymentSummaryText({ amount_verified: 1, total_agreed_value: 3 }),
+  "[Pembayaran klien saat diteruskan: DP 33,3% — Rp 1 dari Rp 3]"
+);
+eq(
+  "paymentSummaryText lunas",
+  paymentSummaryText({ amount_verified: 15000000, total_agreed_value: 15000000 }),
+  "[Pembayaran klien: LUNAS 100% — Rp 15.000.000]"
+);
+
+const withDp = buildBridgePayload({ ...sourceRow, paymentInfo: { amount_verified: 4500000, total_agreed_value: 15000000 } });
+const dpNote = "[Pembayaran klien saat diteruskan: DP 30% — Rp 4.500.000 dari Rp 15.000.000]";
+check(
+  "paymentInfo: SETIAP baris catatan memuat info DP",
+  withDp.lines.every((l) => typeof l.catatan === "string" && l.catatan.endsWith(dpNote)),
+  JSON.stringify(withDp.lines.map((l) => l.catatan))
+);
+eq("paymentInfo: catatan asli tetap di depan", withDp.lines[0].catatan, `${fixture.lines[0].catatan} ${dpNote}`);
+const noCatatan = buildBridgePayload({
+  ...sourceRow,
+  lines: [{ ...sourceRow.lines[0], catatan: null }],
+  paymentInfo: { amount_verified: 4500000, total_agreed_value: 15000000 },
+});
+eq("paymentInfo: catatan null -> berisi info DP saja", noCatatan.lines[0].catatan, dpNote);
+eq(
+  "paymentInfo: kunci payload IDENTIK dengan fixture v1 (nol field baru)",
+  JSON.stringify(Object.keys(withDp).sort()) + JSON.stringify(Object.keys(withDp.attestation).sort()) + JSON.stringify(Object.keys(withDp.lines[0]).sort()),
+  JSON.stringify(Object.keys(fixture).sort()) + JSON.stringify(Object.keys(fixture.attestation).sort()) + JSON.stringify(Object.keys(fixture.lines[0]).sort())
+);
+eq("tanpa paymentInfo: catatan tidak berubah", buildBridgePayload(sourceRow).lines[0].catatan, fixture.lines[0].catatan);
 
 rmSync(outDir, { recursive: true, force: true });
 

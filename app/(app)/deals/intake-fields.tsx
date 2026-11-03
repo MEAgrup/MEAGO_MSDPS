@@ -5,6 +5,7 @@ import { LeadPicker, type PoolLead } from "../leads/pool";
 import type { BdOption } from "../leads/intake-fields";
 import { BRAND_CATEGORIES, normalizePhone62, type BrandCategory } from "@/lib/leads/intake";
 import { OPS_NAMES, BENTUK_KERJASAMA, type BentukKerjasama } from "@/lib/deals/intake";
+import { CdpsPlanFields } from "./cdps-plan-fields";
 
 export type DealIntakeDefaults = {
   lead_id?: string;
@@ -24,6 +25,7 @@ export type DealIntakeDefaults = {
   konten_needed?: number | "";
   total_jam_live?: number | "";
   brief_link?: string;
+  payment_intent?: string;
 };
 
 // Kolom form "Daftarkan Transaksi" (tab Merchant Deals), dipakai bersama oleh
@@ -41,6 +43,8 @@ export function DealIntakeFields({
   benefitOptions,
   nominalHistoryByLead,
   defaults,
+  withCdpsPlan,
+  hasFinanceTransaction,
 }: {
   idPrefix: string;
   dealingLeads: PoolLead[];
@@ -48,6 +52,12 @@ export function DealIntakeFields({
   benefitOptions: string[];
   nominalHistoryByLead?: Record<string, number[]>;
   defaults?: DealIntakeDefaults;
+  // Migrasi 0377: form "Daftarkan Transaksi" ikut memilih layanan CDPS (atau
+  // "Tidak perlu CDPS") untuk deal Berbayar. Form edit tidak — rencana CDPS
+  // deal yang sudah ada diatur lewat tombol "Layanan CDPS" di barisnya.
+  withCdpsPlan?: boolean;
+  // Deal sudah punya transaksi Finance ⇒ pilihan cara bayar tidak relevan lagi.
+  hasFinanceTransaction?: boolean;
 }) {
   const [leadId, setLeadId] = useState(defaults?.lead_id ?? "");
   const [bdId, setBdId] = useState(defaults?.bd_id ?? "");
@@ -211,7 +221,7 @@ export function DealIntakeFields({
         </div>
       </div>
 
-      {kategori === "Dining" && (
+      {(kategori === "Dining" || bentuk === "Berbayar") && (
         <div className="row">
           <div>
             <label>Tanggal Awal Kerjasama *</label>
@@ -263,6 +273,21 @@ export function DealIntakeFields({
       )}
       {bentuk !== "Free/Barter" && leadId && nominalOptions.length === 0 && (
         <p className="hint">Belum ada nominal tercatat untuk {selectedLeadLabel || "POI/Merchant ini"} — isi manual.</p>
+      )}
+
+      {bentuk === "Berbayar" && !hasFinanceTransaction && (
+        <>
+          <label>Cara Bayar Klien *</label>
+          <select name="payment_intent" defaultValue={defaults?.payment_intent ?? "Lunas"} required>
+            <option value="Lunas">Lunas</option>
+            <option value="Bayar Sebagian">Bayar Sebagian (DP)</option>
+            <option value="Termin">Termin</option>
+            <option value="Bayar di Belakang">Bayar di Belakang</option>
+          </select>
+          <p className="hint">
+            Transaksi Finance dibuat otomatis saat deal disimpan — Finance tinggal memverifikasi pembayaran.
+          </p>
+        </>
       )}
 
       <label>Benefit Diberikan *</label>
@@ -317,6 +342,8 @@ export function DealIntakeFields({
 
       <label>Link Brief / Brief</label>
       <textarea name="brief_link" rows={3} defaultValue={defaults?.brief_link ?? ""} />
+
+      {withCdpsPlan && bentuk === "Berbayar" && <CdpsPlanFields />}
     </>
   );
 }

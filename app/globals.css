@@ -122,6 +122,12 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .bridge-price-ref-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .bridge-price-ref-table td:first-child { font-weight: 600; white-space: nowrap; }
 
+/* Bridge otomatis (migrasi 0377) — editor "Layanan CDPS". */
+.cdps-plan { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 12px; margin: 6px 0 14px; }
+.cdps-plan legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
+.cdps-plan .checkbox-inline { display: flex; align-items: center; gap: 6px; font-weight: 500; margin-bottom: 10px; }
+.cdps-plan .checkbox-inline input { width: auto; margin: 0; }
+
 .badge.blue { background: #dbeafe; color: #1d4ed8; }
 .badge.red { background: #fee2e2; color: #b91c1c; }
 .badge.slate { background: #e2e8f0; color: #334155; }

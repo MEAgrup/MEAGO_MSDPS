@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { isBrandCategory, isDealStatus, normalizePhone62 } from "@/lib/leads/intake";
 import { isBentukKerjasama, isOpsName } from "@/lib/deals/intake";
 import { parseIntTolerant, parseRupiah } from "@/lib/mcn/parsers";
+import { readCdpsPlan, type CdpsPlan } from "@/lib/bridge/plan";
+import { upsertCdpsPlan, tryEnqueueNow, describeEnqueue } from "@/lib/bridge/server";
 
 export type ActionResult = { ok: boolean; message: string };
 
@@ -74,6 +76,8 @@ const DEAL_FORM_KEYS = [
   "brief_link",
   "tanggal_mulai_kontrak",
   "tanggal_akhir_kontrak",
+  // Migrasi 0377: cara bayar untuk transaksi Finance yang kini dibuat otomatis.
+  "payment_intent",
 ] as const;
 
 export type DealFormSnapshot = Partial<Record<(typeof DEAL_FORM_KEYS)[number], string>>;
@@ -163,6 +167,15 @@ async function readDealFields(
   if (kategori_poi === "Dining" && (!tglMulaiRaw || !tglAkhirRaw)) {
     return { error: "[tanggal awal & akhir kerjasama wajib diisi untuk kategori Dining]" };
   }
+  // Bridge otomatis (migrasi 0377): deal Berbayar diteruskan ke CDPS tanpa
+  // BD di depan layar — payload kontrak v1 mewajibkan tanggal kontrak, jadi
+  // diwajibkan di sini (semua kategori), bukan baru ketahuan gagal saat kirim.
+  if (bentuk_kerjasama === "Berbayar" && (!tglMulaiRaw || !tglAkhirRaw)) {
+    return { error: "[tanggal awal & akhir kerjasama wajib diisi untuk deal Berbayar]" };
+  }
+  if (tglMulaiRaw && tglAkhirRaw && tglAkhirRaw < tglMulaiRaw) {
+    return { error: "[tanggal akhir kerjasama tidak boleh sebelum tanggal awal]" };
+  }
 
   const { data: lead } = await supabase
     .from("leads")
@@ -220,8 +233,8 @@ async function readDealFields(
       kategori_poi,
       pic_name,
       pic_whatsapp,
-      tanggal_mulai_kontrak: kategori_poi === "Dining" ? tglMulaiRaw : null,
-      tanggal_akhir_kontrak: kategori_poi === "Dining" ? tglAkhirRaw : null,
+      tanggal_mulai_kontrak: tglMulaiRaw || null,
+      tanggal_akhir_kontrak: tglAkhirRaw || null,
       bentuk_kerjasama,
       nominal_harga,
       benefit,
@@ -249,6 +262,16 @@ export async function registerDealTransaction(
   const parsed = await readDealFields(supabase, formData);
   if ("error" in parsed) return { ok: false, message: parsed.error };
 
+  // Migrasi 0377: deal Berbayar WAJIB memilih layanan CDPS atau "Tidak perlu
+  // CDPS" sejak didaftarkan — supaya begitu Finance memverifikasi, deal bisa
+  // diteruskan otomatis tanpa BD kembali menekan tombol.
+  let cdpsPlan: CdpsPlan | null = null;
+  if (parsed.fields.bentuk_kerjasama === "Berbayar") {
+    const planParsed = readCdpsPlan(formData);
+    if ("error" in planParsed) return { ok: false, message: planParsed.error };
+    cdpsPlan = planParsed.plan;
+  }
+
   const sourced_by_role = me.division === "CreatorManagement" && !(me.is_od || me.is_director) ? "cm" : "bd";
 
   const { data: deal, error } = await supabase
@@ -258,9 +281,23 @@ export async function registerDealTransaction(
     .single();
   if (error) return { ok: false, message: `Gagal menyimpan transaksi: ${error.message}` };
 
+  // Langkah lanjutan best-effort: deal sudah tersimpan, jadi kegagalan di
+  // bawah hanya jadi catatan di pesan (BD bisa melengkapinya dari baris deal
+  // di /deals), bukan menggagalkan pendaftaran.
+  let notes = "";
+  if (cdpsPlan) {
+    const { error: planErr } = await upsertCdpsPlan(supabase, deal.id, cdpsPlan);
+    if (planErr) notes += ` Layanan CDPS gagal disimpan (${planErr}) — atur ulang lewat tombol "Layanan CDPS".`;
+  }
+  if (parsed.fields.bentuk_kerjasama === "Berbayar") {
+    notes += await ensurePoiFinance(supabase, deal.id, readPaymentIntent(formData));
+    if (cdpsPlan && !cdpsPlan.tidak_perlu) notes += describeEnqueue(await tryEnqueueNow(deal.id));
+  }
+
   revalidatePath("/deals");
   revalidatePath("/leads");
-  return { ok: true, message: `Transaksi deal ${deal.code} — ${parsed.brand_name} tersimpan.` };
+  revalidatePath("/finance");
+  return { ok: true, message: `Transaksi deal ${deal.code} — ${parsed.brand_name} tersimpan.${notes}` };
 }
 
 export type ImportDealRow = {
@@ -394,6 +431,37 @@ export async function importMasterDealBulk(_prev: ActionResult | null, formData:
   };
 }
 
+const PAYMENT_INTENTS = ["Lunas", "Bayar Sebagian", "Termin", "Bayar di Belakang"] as const;
+
+function readPaymentIntent(formData: FormData): string {
+  const v = String(formData.get("payment_intent") ?? "").trim();
+  return (PAYMENT_INTENTS as readonly string[]).includes(v) ? v : "Lunas";
+}
+
+// ensurePoiFinance (migrasi 0377) — transaksi Finance dibuat OTOMATIS untuk
+// deal Berbayar (dulu tombol "Buat Transaksi Finance"). create_poi_finance()
+// sendiri menolak dobel; onlyIfMissing mencegah pesan error itu muncul di
+// jalur edit, di mana deal yang sudah punya transaksi adalah kondisi normal.
+// Tidak pernah melempar — kegagalan dikembalikan sebagai catatan pesan, dan
+// tombol "Buat Transaksi Finance" di /deals tetap ada sebagai jalan cadangan.
+async function ensurePoiFinance(
+  supabase: SupabaseClientLike,
+  dealId: string,
+  paymentIntent: string,
+  opts: { onlyIfMissing?: boolean } = {}
+): Promise<string> {
+  if (opts.onlyIfMissing) {
+    const { data } = await supabase.from("brand_deals").select("transaction_id").eq("id", dealId).maybeSingle();
+    if (!data || data.transaction_id) return "";
+  }
+  const { data, error } = await supabase.rpc("create_poi_finance", {
+    p_deal_id: dealId,
+    p_payment_intent: paymentIntent,
+  });
+  if (error) return ` Transaksi Finance belum terbuat (${error.message}) — klik "Buat Transaksi Finance" di baris deal.`;
+  return ` Transaksi Finance ${data as string} otomatis dibuat (${paymentIntent}) — menunggu verifikasi Finance.`;
+}
+
 // createPoiFinance (B0, bridge MSDPS→CDPS Fase 1) — menyambungkan
 // create_poi_finance() (SQL, sudah ada di staging+production sejak
 // 0352_reconcile_function_drift.sql, direbut oleh apa pun sampai sekarang)
@@ -490,9 +558,14 @@ export async function updateDealTransaction(
     .eq("id", deal_id);
   if (error) return { ok: false, message: `Gagal menyimpan perubahan: ${error.message}` };
 
+  const notes =
+    parsed.fields.bentuk_kerjasama === "Berbayar"
+      ? await ensurePoiFinance(supabase, deal_id, readPaymentIntent(formData), { onlyIfMissing: true })
+      : "";
+
   revalidatePath("/deals");
   revalidatePath("/leads");
-  return { ok: true, message: "Transaksi deal diperbarui." };
+  return { ok: true, message: `Transaksi deal diperbarui.${notes}` };
 }
 
 // deleteDealTransaction — hapus satu transaksi deal (Director), atau ajukan
@@ -622,6 +695,7 @@ export async function approveDealChangeRequest(
   if (req.status !== "pending") return { ok: false, message: "Permintaan ini sudah ditinjau." };
   if (!req.deal_id) return { ok: false, message: "Deal terkait sudah tidak ada." };
 
+  let approvalNotes = "";
   if (req.action === "update") {
     const parsed = await readDealFields(supabase, formDataFromSnapshot(req.payload));
     if ("error" in parsed) return { ok: false, message: `Permintaan tidak lagi valid: ${parsed.error}` };
@@ -631,6 +705,14 @@ export async function approveDealChangeRequest(
       .update({ brand_name: parsed.brand_name, ...parsed.fields })
       .eq("id", req.deal_id);
     if (error) return { ok: false, message: `Gagal menerapkan perubahan: ${error.message}` };
+    if (parsed.fields.bentuk_kerjasama === "Berbayar") {
+      approvalNotes = await ensurePoiFinance(
+        supabase,
+        req.deal_id,
+        readPaymentIntent(formDataFromSnapshot(req.payload)),
+        { onlyIfMissing: true }
+      );
+    }
   } else {
     const { error } = await supabase.from("brand_deals").delete().eq("id", req.deal_id);
     if (error) return { ok: false, message: `Gagal menghapus transaksi: ${error.message}` };
@@ -662,7 +744,7 @@ export async function approveDealChangeRequest(
     ok: true,
     message:
       req.action === "update"
-        ? `Perubahan ${req.deal_brand_name} disetujui & diterapkan.`
+        ? `Perubahan ${req.deal_brand_name} disetujui & diterapkan.${approvalNotes}`
         : `Penghapusan ${req.deal_brand_name} disetujui & diterapkan.`,
   };
 }
