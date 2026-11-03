@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { tryEnqueueForTransaction, describeEnqueue } from "@/lib/bridge/server";
 
 export type ActionResult = { ok: boolean; message: string };
 
@@ -29,9 +30,19 @@ export async function verifyPayment(
   });
   if (error) return { ok: false, message: `Verifikasi gagal: ${error.message}` };
 
+  // Bridge otomatis (migrasi 0377): pembayaran terverifikasi (DP pun cukup) ⇒
+  // deal Berbayar yang punya rencana layanan CDPS langsung diantre. Best-effort
+  // — gagal di sini TIDAK menggagalkan verifikasi Finance; sweep cron
+  // (app/api/internal/bridge/deliver) tetap mengambilnya.
+  let bridgeNote = "";
+  for (const out of await tryEnqueueForTransaction(p_transaction_id)) {
+    if (out.status === "enqueued" || out.status === "incomplete") bridgeNote += describeEnqueue(out);
+  }
+
   revalidatePath("/finance");
   revalidatePath("/merchants");
-  return { ok: true, message: `Pembayaran diverifikasi. Status transaksi: ${data}.` };
+  revalidatePath("/deals");
+  return { ok: true, message: `Pembayaran diverifikasi. Status transaksi: ${data}.${bridgeNote}` };
 }
 
 // Disbursement payout kreator (M5 out-leg): Finance transfer manual mingguan,

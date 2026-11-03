@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/server";
-import { DealsBoard, type Deal, type DealChangeRequest } from "./table";
+import { DealsBoard, type Deal, type DealChangeRequest, type CdpsPlanInfo, type PaymentInfo } from "./table";
+import { paidPercent } from "@/lib/bridge/payload";
 import type { PoolLead } from "../leads/pool";
 
 const DEAL_COLUMNS =
@@ -42,7 +43,15 @@ export default async function DealsPage() {
 
   const supabase = await getCachedClient();
 
-  const [{ data: dealsRaw }, { data: dealingLeadsRaw }, { data: emps }, { data: benefits }, { data: changeReqRaw }, { data: outboxRaw }] =
+  const [
+    { data: dealsRaw },
+    { data: dealingLeadsRaw },
+    { data: emps },
+    { data: benefits },
+    { data: changeReqRaw },
+    { data: outboxRaw },
+    { data: plansRaw },
+  ] =
     await Promise.all([
       supabase.from("brand_deals").select(DEAL_COLUMNS).order("created_at", { ascending: false }),
       supabase
@@ -62,6 +71,8 @@ export default async function DealsPage() {
       // Bridge MSDPS→CDPS Fase 1 (B4) — status pengiriman per deal, satu baris
       // per deal (cdps_outbox_deal_id_uniq, migrasi 0360).
       supabase.from("cdps_outbox").select("deal_id, status, ord_code, last_error"),
+      // Bridge otomatis (migrasi 0377) — rencana layanan CDPS per deal.
+      supabase.from("deal_cdps_plans").select("deal_id, tidak_perlu, lines, last_error"),
     ]);
 
   const deals = (dealsRaw as Deal[] | null) ?? [];
@@ -74,10 +85,25 @@ export default async function DealsPage() {
   const trxIds = [...new Set(deals.map((d) => d.transaction_id).filter((id): id is string => !!id))];
   const { data: trxRaw } =
     trxIds.length > 0
-      ? await supabase.from("transactions").select("id, released_to_account_at").in("id", trxIds)
-      : { data: [] as { id: string; released_to_account_at: string | null }[] };
+      ? await supabase
+          .from("transactions")
+          .select("id, released_to_account_at, amount_verified, total_agreed_value")
+          .in("id", trxIds)
+      : { data: [] };
+  type TrxRow = { id: string; released_to_account_at: string | null; amount_verified: number | null; total_agreed_value: number };
   const verifiedByTrxId: Record<string, boolean> = {};
-  for (const t of trxRaw ?? []) verifiedByTrxId[t.id as string] = !!(t as { released_to_account_at: string | null }).released_to_account_at;
+  const paymentByTrxId: Record<string, PaymentInfo> = {};
+  for (const t of (trxRaw as TrxRow[] | null) ?? []) {
+    verifiedByTrxId[t.id] = !!t.released_to_account_at;
+    paymentByTrxId[t.id] = {
+      paid_percent: paidPercent({ amount_verified: t.amount_verified ?? 0, total_agreed_value: t.total_agreed_value }),
+    };
+  }
+
+  const cdpsPlanByDeal: Record<string, CdpsPlanInfo> = {};
+  for (const p of (plansRaw as ({ deal_id: string } & CdpsPlanInfo)[] | null) ?? []) {
+    cdpsPlanByDeal[p.deal_id] = { tidak_perlu: p.tidak_perlu, lines: p.lines ?? [], last_error: p.last_error };
+  }
 
   const bridgeByDeal: Record<string, { status: string; ord_code: string | null; last_error: string | null }> = {};
   for (const o of (outboxRaw as { deal_id: string | null; status: string; ord_code: string | null; last_error: string | null }[] | null) ?? []) {
@@ -127,6 +153,8 @@ export default async function DealsPage() {
         canImport={canImport}
         verifiedByTrxId={verifiedByTrxId}
         bridgeByDeal={bridgeByDeal}
+        paymentByTrxId={paymentByTrxId}
+        cdpsPlanByDeal={cdpsPlanByDeal}
       />
     </>
   );

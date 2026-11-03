@@ -71,6 +71,7 @@ export function RegisterDealModal({
                   bdOptions={bdOptions}
                   benefitOptions={benefitOptions}
                   nominalHistoryByLead={nominalHistoryByLead}
+                  withCdpsPlan
                   defaults={
                     fixedLead
                       ? {

@@ -12,7 +12,8 @@ import {
   createPoiFinance,
   type ActionResult,
 } from "@/lib/actions/deals";
-import { addBridgeLines } from "@/lib/actions/bridge";
+import { saveCdpsPlan } from "@/lib/actions/bridge";
+import { CdpsPlanFields, type CdpsPlanValue } from "./cdps-plan-fields";
 import { DealIntakeFields } from "./intake-fields";
 import { DealsToolbar } from "./forms";
 import type { BdOption } from "../leads/intake-fields";
@@ -145,11 +146,11 @@ function DeleteDealButton({
   );
 }
 
-// CreatePoiFinanceButton (B0, bridge MSDPS→CDPS Fase 1) — sambungan UI ke
-// create_poi_finance() (SQL, sudah ada di staging+production, nol pemanggil
-// sampai sekarang). Hanya tampil untuk deal Berbayar yang belum punya
-// transaction_id — begitu ada, Finance yang mengambil alih lewat /finance
-// (verify_payment()), dan barisnya membuka gerbang bridge (D4+D13).
+// CreatePoiFinanceButton — JALAN CADANGAN sejak migrasi 0377. Transaksi
+// Finance kini dibuat otomatis saat deal Berbayar didaftarkan/dilengkapi
+// (ensurePoiFinance, lib/actions/deals.ts); tombol ini hanya tampil bila itu
+// gagal atau untuk deal lama yang belum punya transaction_id. Sesudahnya
+// Finance mengambil alih lewat /finance (verify_payment()).
 function CreatePoiFinanceButton({ dealId, label }: { dealId: string; label: string }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(createPoiFinance, null);
   return (
@@ -179,76 +180,19 @@ function CreatePoiFinanceButton({ dealId, label }: { dealId: string; label: stri
   );
 }
 
-// Bridge MSDPS→CDPS Fase 1 (B4) — "Teruskan ke CDPS" + status pengiriman.
-// Satu order per deal seumur Fase 1 (idempotency_key terkunci ke
-// payload_versi=1) — begitu bridgeInfo ada, tombol diganti badge status,
-// bukan dibiarkan bisa dipencet lagi.
-const BRIDGE_JENIS = ["Account", "Ads", "Creative", "Store Operation", "KOL-Non-Roster", "Live Stream"] as const;
-type BridgeJenis = (typeof BRIDGE_JENIS)[number];
-type BridgeLineDraft = {
-  jenis: BridgeJenis;
-  qty: string;
-  catatan: string;
-  alasan_non_roster: string;
-  nilai_cross_charge: string;
-};
-const emptyBridgeLine = (): BridgeLineDraft => ({
-  jenis: "Account",
-  qty: "1",
-  catatan: "",
-  alasan_non_roster: "",
-  nilai_cross_charge: "",
-});
+// Bridge MSDPS→CDPS otomatis (migrasi 0377) — kolom "Layanan CDPS" per deal.
+// Tidak ada lagi tombol "Teruskan ke CDPS": BD hanya mengatur RENCANA
+// (layanan atau "Tidak perlu CDPS"), lalu begitu Finance memverifikasi
+// pembayaran (DP pun cukup) deal diantre otomatis. Satu order per deal
+// seumur Fase 1 — begitu bridgeInfo ada, rencana terkunci dan yang tampil
+// hanya status pengiriman.
+export type CdpsPlanInfo = CdpsPlanValue & { last_error: string | null };
+export type PaymentInfo = { paid_percent: number | null };
 
-// Referensi harga resmi paket MEAGO (dokumen "Merchant Existing TikTok GO
-// Package — Sept"), murni untuk BANTU BD/CM mengetik `nilai_cross_charge`
-// per baris di atas — TIDAK mengisi apa pun otomatis. Alokasi ke satu/lebih
-// baris jenis (Account/Ads/Creative/Store Operation/KOL-Non-Roster/Live Stream,
-// D2 dibalik 2026-09-12 — lihat docs/BUILD_PLAN.md baris Bridge) tetap
-// keputusan manusia: satu fee paket sering membundel Live + Content, jadi
-// tidak ada pemecahan mekanis yang aman ditebak di sini.
-const MEAGO_PACKAGE_REFERENCE: { nama: string; tiers: string }[] = [
-  { nama: "1. Starter Pack", tiers: "Rp 8.000.000 (2 bln, sharing commission 8%)" },
-  { nama: "2. Content Package", tiers: "Reguler Rp 15.000.000 · Premium Rp 35.000.000 · Premium+ Rp 75.000.000" },
-  { nama: "3. Content + Sharing Commission", tiers: "Reguler Rp 12.000.000 (share 10%) · Premium Rp 25.000.000 (8%) · Premium+ Rp 60.000.000 (8%)" },
-  { nama: "4. Content 1 Bulan (Basic)", tiers: "Rp 25.000.000" },
-  { nama: "5. Content Package (varian lain)", tiers: "Reguler Rp 37.500.000 · Premium Rp 90.000.000" },
-  { nama: "6. Live Non-Exclusive", tiers: "Reguler Rp 6.000.000 · Premium Rp 20.000.000 · Premium+ Rp 36.000.000" },
-  { nama: "7. Live Exclusive", tiers: "Reguler Rp 12.000.000 · Premium Rp 36.000.000 · Premium+ Rp 60.000.000" },
-  { nama: "8. Live on Brand Account", tiers: "Reguler Rp 17.000.000 · Premium Rp 34.500.000 · Premium+ Rp 52.000.000" },
-  { nama: "9. Live Brand + Sharing Commission", tiers: "Reguler Rp 12.000.000 · Premium Rp 18.000.000 · Premium+ Rp 36.000.000" },
-  { nama: "10. Live Brand + Creator", tiers: "Reguler Rp 17.280.000 · Premium Rp 51.840.000 · Premium+ Rp 86.400.000" },
-  { nama: "11. Bundling Content + Live Non-Exclusive", tiers: "Reguler Rp 14.000.000 · Premium Rp 37.500.000 · Premium+ Rp 80.000.000" },
-  { nama: "12. Bundling Content + Live on Brand Account", tiers: "Reguler Rp 46.500.000 · Premium Rp 97.500.000 · Premium+ Rp 181.000.000" },
-  { nama: "13. Bundling Super Brand Day / Premium / Premium+", tiers: "SBD Rp 85.000.000 · Premium Rp 145.000.000 · Premium+ Rp 240.000.000" },
-  { nama: "14. Bundling Platinum", tiers: "Rp 300.000.000 (1 tahun)" },
-  { nama: "15. Bundling Super Brand Day (varian)", tiers: "Rp 300.000.000 (1 bulan)" },
-  { nama: "16. MEAGO Growth Program", tiers: "Varian A: 3 bln Rp 19.000.000 / 6 bln Rp 10.000.000 · Varian B: 3 bln Rp 30.000.000 / 6 bln Rp 15.000.000" },
-];
-
-function MeagoPriceReference() {
-  return (
-    <details className="bridge-price-ref">
-      <summary>Lihat harga resmi paket MEAGO (referensi cross-charge)</summary>
-      <p className="hint">
-        Bukan pengisi otomatis — cek nilai deal ini terhadap harga resmi di
-        bawah, lalu ketik alokasinya sendiri di kolom &quot;Nilai cross-charge&quot;
-        per baris. Fee sering membundel Live (tidak pernah dibridge ke CDPS) +
-        Content, jadi porsi yang masuk cross-charge tiap baris jenis tetap
-        keputusan BD/CM.
-      </p>
-      <table className="bridge-price-ref-table">
-        <tbody>
-          {MEAGO_PACKAGE_REFERENCE.map((p) => (
-            <tr key={p.nama}>
-              <td>{p.nama}</td>
-              <td>{p.tiers}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </details>
-  );
+function paidLabel(p?: PaymentInfo): string | null {
+  if (!p || p.paid_percent === null) return null;
+  if (p.paid_percent >= 100) return "Lunas";
+  return `DP ${p.paid_percent.toLocaleString("id-ID")}%`;
 }
 
 function BridgeStatusBadge({ info }: { info: { status: string; ord_code: string | null; last_error: string | null } }) {
@@ -274,60 +218,82 @@ function BridgeStatusBadge({ info }: { info: { status: string; ord_code: string 
     );
   }
   return (
-    <span className="badge indigo" title="Menunggu delivery job berikutnya">
+    <span className="badge indigo" title="Menunggu siklus pengiriman berikutnya (≤ 10 menit)">
       Menunggu kirim
     </span>
   );
 }
 
-function BridgeLinesModal({
+function CdpsPlanCell({
   deal,
   verified,
+  payment,
+  plan,
   bridgeInfo,
 }: {
   deal: Deal;
   verified: boolean;
+  payment?: PaymentInfo;
+  plan?: CdpsPlanInfo;
   bridgeInfo?: { status: string; ord_code: string | null; last_error: string | null };
 }) {
   const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<BridgeLineDraft[]>([emptyBridgeLine()]);
-  const [state, action, pending] = useActionState<ActionResult | null, FormData>(addBridgeLines, null);
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(saveCdpsPlan, null);
 
   useEffect(() => {
     if (state?.ok) setOpen(false);
   }, [state]);
 
-  if (bridgeInfo) return <BridgeStatusBadge info={bridgeInfo} />;
+  const paid = paidLabel(payment);
 
-  const blockedReason =
-    deal.bentuk_kerjasama !== "Berbayar"
-      ? "[deal free/barter tidak dikerjakan CDPS]"
-      : !deal.transaction_id
-        ? "Belum ada transaksi Finance untuk deal ini"
-        : !verified
-          ? "Pembayaran belum terverifikasi Finance"
-          : null;
+  // Sudah diantre/terkirim — terkunci, tampilkan status + info bayar saat itu.
+  if (bridgeInfo) {
+    return (
+      <span className="actions-row" style={{ alignItems: "center" }}>
+        <BridgeStatusBadge info={bridgeInfo} />
+        {paid && <span className="badge gray">{paid}</span>}
+      </span>
+    );
+  }
 
-  function updateRow(i: number, patch: Partial<BridgeLineDraft>) {
-    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  let badge: { cls: string; text: string; title: string };
+  if (!plan) {
+    badge = { cls: "amber", text: "Layanan CDPS belum diatur", title: "Pilih layanan CDPS atau tandai Tidak perlu CDPS" };
+  } else if (plan.tidak_perlu) {
+    badge = { cls: "gray", text: "Tidak perlu CDPS", title: "Deal ini tidak diteruskan ke CDPS" };
+  } else if (plan.last_error) {
+    badge = { cls: "red", text: "Perlu dilengkapi", title: plan.last_error };
+  } else if (!verified) {
+    badge = {
+      cls: "indigo",
+      text: "Menunggu verifikasi Finance",
+      title: "Otomatis diteruskan ke CDPS begitu Finance memverifikasi pembayaran (DP pun cukup)",
+    };
+  } else {
+    badge = { cls: "indigo", text: "Antre otomatis", title: "Diteruskan ke CDPS di siklus berikutnya (≤ 10 menit)" };
   }
 
   return (
     <>
-      <button
-        type="button"
-        className="sm ghost2"
-        disabled={!!blockedReason}
-        title={blockedReason ?? "Pilih layanan yang dikerjakan MEA Agency lewat CDPS"}
-        onClick={() => setOpen(true)}
-      >
-        Teruskan ke CDPS
-      </button>
+      <span className="actions-row" style={{ alignItems: "center" }}>
+        <span className={`badge ${badge.cls}`} title={badge.title}>
+          {badge.text}
+        </span>
+        {verified && paid && plan && !plan.tidak_perlu && <span className="badge gray">{paid}</span>}
+        <button
+          type="button"
+          className={plan ? "sm ghost2" : "sm"}
+          onClick={() => setOpen(true)}
+          title="Atur layanan yang dikerjakan MEA Agency lewat CDPS"
+        >
+          Layanan CDPS
+        </button>
+      </span>
       {open && (
         <div className="modal-backdrop" onClick={() => setOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h3>Teruskan ke CDPS{deal.code ? ` · ${deal.code}` : ""}</h3>
+              <h3>Layanan CDPS{deal.code ? ` · ${deal.code}` : ""}</h3>
               <button type="button" className="sm ghost2" onClick={() => setOpen(false)}>
                 ✕
               </button>
@@ -335,72 +301,21 @@ function BridgeLinesModal({
             <form action={action}>
               <div className="modal-body">
                 {state && !state.ok && <div className="err">{state.message}</div>}
-                <p className="hint">
-                  Layanan yang dipilih dikirim ke MEA Agency (CDPS) sebagai satu order — tidak bisa
-                  ditambah lagi setelah terkirim.
-                </p>
+                {plan?.last_error && <div className="err">{plan.last_error}</div>}
+                {verified && paid && (
+                  <p className="hint">
+                    Pembayaran klien sudah terverifikasi Finance: <b>{paid}</b>. Menyimpan layanan di bawah akan
+                    langsung mengantre deal ini ke CDPS.
+                  </p>
+                )}
                 <input type="hidden" name="deal_id" value={deal.id} />
-                <input type="hidden" name="lines_json" value={JSON.stringify(rows)} />
-                <MeagoPriceReference />
-                {rows.map((r, i) => (
-                  <div key={i} className="bridge-line-row">
-                    <select
-                      value={r.jenis}
-                      onChange={(e) => updateRow(i, { jenis: e.target.value as BridgeJenis })}
-                    >
-                      {BRIDGE_JENIS.map((j) => (
-                        <option key={j} value={j}>
-                          {j}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="qty"
-                      value={r.qty}
-                      onChange={(e) => updateRow(i, { qty: e.target.value })}
-                      style={{ width: 70 }}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Catatan"
-                      value={r.catatan}
-                      onChange={(e) => updateRow(i, { catatan: e.target.value })}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Nilai cross-charge (Rp)"
-                      value={r.nilai_cross_charge}
-                      onChange={(e) => updateRow(i, { nilai_cross_charge: e.target.value })}
-                    />
-                    {r.jenis === "KOL-Non-Roster" && (
-                      <input
-                        type="text"
-                        placeholder="Alasan non-roster (wajib)"
-                        value={r.alasan_non_roster}
-                        onChange={(e) => updateRow(i, { alasan_non_roster: e.target.value })}
-                      />
-                    )}
-                    <button
-                      type="button"
-                      className="sm dangerbtn"
-                      disabled={rows.length === 1}
-                      onClick={() => setRows((rs) => rs.filter((_, idx) => idx !== i))}
-                    >
-                      Hapus
-                    </button>
-                  </div>
-                ))}
-                <button type="button" className="sm ghost2" onClick={() => setRows((rs) => [...rs, emptyBridgeLine()])}>
-                  + Tambah Layanan
-                </button>
+                <CdpsPlanFields initial={plan ?? null} />
               </div>
               <div className="modal-foot">
                 <button type="button" onClick={() => setOpen(false)}>
                   Batal
                 </button>
-                <button disabled={pending}>{pending ? "Mengirim…" : "Teruskan ke CDPS"}</button>
+                <button disabled={pending}>{pending ? "Menyimpan…" : "Simpan"}</button>
               </div>
             </form>
           </div>
@@ -528,6 +443,7 @@ function EditDealModal({
                   bdOptions={bdOptions}
                   benefitOptions={benefitOptions}
                   nominalHistoryByLead={nominalHistoryByLead}
+                  hasFinanceTransaction={!!deal.transaction_id}
                   defaults={{
                     lead_id: deal.lead_id ?? "",
                     bd_id: deal.bd_id ?? "",
@@ -910,6 +826,8 @@ export function DealsBoard({
   canImport = false,
   verifiedByTrxId = {},
   bridgeByDeal = {},
+  paymentByTrxId = {},
+  cdpsPlanByDeal = {},
 }: {
   deals: Deal[];
   dealingLeads: PoolLead[];
@@ -926,6 +844,10 @@ export function DealsBoard({
   // Bridge MSDPS→CDPS Fase 1 (B4).
   verifiedByTrxId?: Record<string, boolean>;
   bridgeByDeal?: Record<string, { status: string; ord_code: string | null; last_error: string | null }>;
+  // Bridge otomatis (migrasi 0377): persentase pembayaran terverifikasi per
+  // transaksi + rencana layanan CDPS per deal.
+  paymentByTrxId?: Record<string, PaymentInfo>;
+  cdpsPlanByDeal?: Record<string, CdpsPlanInfo>;
 }) {
   const [query, setQuery] = useState("");
   const [bdFilter, setBdFilter] = useState("");
@@ -1280,10 +1202,12 @@ export function DealsBoard({
                       {d.bentuk_kerjasama === "Berbayar" && !d.transaction_id && (
                         <CreatePoiFinanceButton dealId={d.id} label={d.brand_name} />
                       )}
-                      {d.bentuk_kerjasama === "Berbayar" && d.transaction_id && (
-                        <BridgeLinesModal
+                      {d.bentuk_kerjasama === "Berbayar" && (
+                        <CdpsPlanCell
                           deal={d}
-                          verified={!!verifiedByTrxId[d.transaction_id]}
+                          verified={!!(d.transaction_id && verifiedByTrxId[d.transaction_id])}
+                          payment={d.transaction_id ? paymentByTrxId[d.transaction_id] : undefined}
+                          plan={cdpsPlanByDeal[d.id]}
                           bridgeInfo={bridgeByDeal[d.id]}
                         />
                       )}

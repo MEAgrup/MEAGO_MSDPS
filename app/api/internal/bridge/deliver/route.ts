@@ -18,6 +18,7 @@
 import { createAdminClient, hasAdminEnv, ADMIN_ENV_MESSAGE } from "@/lib/supabase/admin";
 import { deliverSecretOk } from "@/lib/bridge/deliver-auth";
 import { runDeliverySweep } from "@/lib/bridge/deliver";
+import { runEnqueueSweep } from "@/lib/bridge/enqueue";
 
 // Deployment production CDPS `apps/api`, verified & repeatedly documented in
 // AgencyAPP/docs/DECISIONS.md (e.g. the 2026-07-31 C-03 entry, the 2026-08-31
@@ -31,22 +32,38 @@ async function runTick(): Promise<Response> {
     return Response.json({ error: "admin env missing" }, { status: 500 });
   }
 
+  const admin = createAdminClient();
+
+  // Migrasi 0377 — langkah 1: antre otomatis deal yang pembayarannya sudah
+  // terverifikasi Finance (DP pun cukup) dan punya rencana layanan CDPS.
+  // Tidak butuh CDPS_BRIDGE_INGEST_SECRET (tidak menyentuh CDPS), jadi tetap
+  // jalan walau secret outbound belum diset. Gagal di sini tidak boleh
+  // menghentikan delivery baris yang sudah antre.
+  let enqueue: Awaited<ReturnType<typeof runEnqueueSweep>> | { error: string };
+  try {
+    enqueue = await runEnqueueSweep(admin);
+  } catch (e) {
+    console.error("[bridge/deliver] enqueue sweep:", (e as Error).message);
+    enqueue = { error: (e as Error).message };
+  }
+
+  // Langkah 2 — delivery.
   // OUTBOUND secret (sent TO CDPS) unset ⇒ silent + log, NOT a data failure —
   // don't burn attempts/backoff on a config problem. Different from
   // deliverSecretOk() below (the INBOUND gate, who may trigger this tick).
   const ingestSecret = process.env.CDPS_BRIDGE_INGEST_SECRET;
   if (!ingestSecret) {
     console.warn("[bridge/deliver] CDPS_BRIDGE_INGEST_SECRET belum diset — tick dilewati.");
-    return Response.json({ skipped: true, reason: "CDPS_BRIDGE_INGEST_SECRET unset" });
+    return Response.json({ enqueue, skipped: true, reason: "CDPS_BRIDGE_INGEST_SECRET unset" });
   }
 
   try {
     const result = await runDeliverySweep({
-      admin: createAdminClient(),
+      admin,
       ingestSecret,
       cdpsBaseUrl: CDPS_BASE_URL,
     });
-    return Response.json(result);
+    return Response.json({ enqueue, ...result });
   } catch (e) {
     console.error("[bridge/deliver]", (e as Error).message);
     return Response.json({ error: (e as Error).message }, { status: 500 });

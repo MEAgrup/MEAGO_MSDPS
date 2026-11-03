@@ -59,6 +59,17 @@ export interface BridgeSourceRow {
   financeVerifier: BridgeFinanceVerifierRow | null;
   merchant: BridgeMerchantRow;
   lines: BridgeLineRow[];
+  // Bridge otomatis (migrasi 0377): deal boleh diteruskan sejak DP. Kalau
+  // diisi, ringkasan pembayaran ("DP 30% — Rp 4.500.000 dari Rp 15.000.000")
+  // ditambahkan ke `catatan` SETIAP baris — field string bebas yang sudah ada
+  // di kontrak v1, jadi tidak ada field baru yang bisa ditolak validator CDPS.
+  // Tidak diisi ⇒ output identik dengan sebelumnya (fixture v1 tetap cocok).
+  paymentInfo?: BridgePaymentInfo | null;
+}
+
+export interface BridgePaymentInfo {
+  amount_verified: number | string;
+  total_agreed_value: number | string;
 }
 
 export interface BridgeOrderPayloadV1 {
@@ -99,6 +110,35 @@ function moneyString(v: number | string | null | undefined): string | null {
   return n.toFixed(2);
 }
 
+/** "Rp 15.000.000" — integer rupiah, titik ribuan, tanpa desimal (teks untuk manusia, bukan nilai mesin). */
+function rupiahText(n: number): string {
+  const s = Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `Rp ${s}`;
+}
+
+/**
+ * Persentase pembayaran terverifikasi, dibulatkan ke bawah ke 1 desimal —
+ * ke bawah supaya 99,96% tidak pernah tampil "100%" padahal belum lunas.
+ */
+export function paidPercent(info: BridgePaymentInfo): number | null {
+  const paid = Number(info.amount_verified);
+  const total = Number(info.total_agreed_value);
+  if (!Number.isFinite(paid) || !Number.isFinite(total) || total <= 0) return null;
+  if (paid >= total) return 100;
+  return Math.floor((paid / total) * 1000) / 10;
+}
+
+/** Teks ringkasan pembayaran untuk catatan baris bridge. */
+export function paymentSummaryText(info: BridgePaymentInfo): string | null {
+  const pct = paidPercent(info);
+  if (pct === null) return null;
+  const paid = Number(info.amount_verified);
+  const total = Number(info.total_agreed_value);
+  const pctText = pct.toLocaleString("id-ID", { maximumFractionDigits: 1 });
+  if (pct >= 100) return `[Pembayaran klien: LUNAS 100% — ${rupiahText(total)}]`;
+  return `[Pembayaran klien saat diteruskan: DP ${pctText}% — ${rupiahText(paid)} dari ${rupiahText(total)}]`;
+}
+
 /**
  * Builds the v1 bridge payload. Throws (never silently defaults) when a
  * mandatory contract field is missing on the source row — a deal that passed
@@ -106,7 +146,8 @@ function moneyString(v: number | string | null | undefined): string | null {
  * the DB and this builder have drifted, not that the deal is merely incomplete.
  */
 export function buildBridgePayload(row: BridgeSourceRow): BridgeOrderPayloadV1 {
-  const { deal, bd, transaction, financeVerifier, merchant, lines } = row;
+  const { deal, bd, transaction, financeVerifier, merchant, lines, paymentInfo } = row;
+  const paymentNote = paymentInfo ? paymentSummaryText(paymentInfo) : null;
 
   if (!deal.kategori_poi) throw new Error("deal.kategori_poi kosong — payload bridge butuh kategori POI");
   if (!deal.pic_name || !deal.pic_whatsapp) throw new Error("deal.pic_name/pic_whatsapp kosong");
@@ -147,7 +188,7 @@ export function buildBridgePayload(row: BridgeSourceRow): BridgeOrderPayloadV1 {
     lines: lines.map((l) => ({
       jenis: l.jenis,
       qty: l.qty,
-      catatan: l.catatan,
+      catatan: paymentNote ? (l.catatan ? `${l.catatan} ${paymentNote}` : paymentNote) : l.catatan,
       alasan_non_roster: l.alasan_non_roster,
       nilai_cross_charge: moneyString(l.nilai_cross_charge),
     })),
