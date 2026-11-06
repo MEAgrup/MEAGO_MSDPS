@@ -25,10 +25,6 @@ export function periodText(periods: string[]): string {
   return a.slice(0, 4) === b.slice(0, 4) ? `${monthLabelLong(a).split(" ")[0]}–${monthLabelLong(b)}` : `${monthLabelLong(a)}–${monthLabelLong(b)}`;
 }
 
-function initials(brand: string): string {
-  return brand.trim().toUpperCase();
-}
-
 const UpDown = ({ v, text }: { v: number; text?: string }) => <span className={v >= 0 ? "up" : "down"}>{text ?? delta(v)}</span>;
 
 export function MerchantReport(p: ReportProps) {
@@ -71,9 +67,7 @@ export function MerchantReport(p: ReportProps) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={p.logoUrl} alt={`Logo ${brand}`} />
             </div>
-          ) : (
-            <div className="logo">{initials(brand)}</div>
-          )}
+          ) : null}
           <div>
             <div className="kicker">Performance &amp; Digital Growth Report · MSDPS</div>
             <h1>
@@ -702,16 +696,10 @@ function LayerRow({ label, v, move }: { label: string; v: { n: number; gmv: numb
 
 export function MeagoMark() {
   return (
-    <div className="meago" title="Disiapkan oleh MEAGO!">
-      <svg viewBox="0 0 150 54" width="150" height="54" role="img" aria-label="MEAGO! Official TikTok GO Partner">
-        <rect x="0" y="0" width="150" height="54" rx="10" fill="var(--meago)" />
-        <text x="75" y="31" textAnchor="middle" fontFamily="system-ui,sans-serif" fontWeight={900} fontSize={24} fill="#fff">
-          MEAGO!
-        </text>
-        <text x="75" y="46" textAnchor="middle" fontFamily="system-ui,sans-serif" fontSize={9} fill="#fff" opacity={0.9}>
-          Official TikTok GO Partner
-        </text>
-      </svg>
+    <div className="meago" title="Disiapkan oleh MEAGO! — Official TikTok GO Partner">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="meago-logo" src="/brand/meago-logo.png" alt="MEAGO! Official TikTok GO Partner" width={150} height={119} />
+      <div className="mr-hint">Official TikTok GO Partner</div>
       <div className="mr-hint">Disiapkan oleh tim BD MEAGO!</div>
     </div>
   );
