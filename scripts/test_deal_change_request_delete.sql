@@ -1,5 +1,5 @@
 -- =============================================================================
--- WAJIB TEST — accept "Ajukan Hapus" transaksi deal (deal_change_requests, 0349/0378)
+-- WAJIB TEST — accept "Ajukan Hapus" transaksi deal (deal_change_requests, 0349/0380)
 -- =============================================================================
 -- Kenapa ada: laporan BD Lead 2 Nov 2026 — Director meng-accept pengajuan hapus
 -- dan gagal dengan `violates check constraint "deal_change_requests_review_shape"`.
@@ -16,7 +16,7 @@
 --   3. Director menghapus langsung (single & massal, deleteDealTransaction[sBulk])
 --      deal yang masih punya permintaan menggantung → permintaannya tetap
 --      'pending' dengan deal_id NULL dan bisa ditolak.
--- Tanpa migrasi 0378 skrip ini berhenti dengan ERROR check constraint di atas.
+-- Tanpa migrasi 0380 skrip ini berhenti dengan ERROR check constraint di atas.
 --
 -- Pakai:
 --   bash scripts/pg_test_reset.sh

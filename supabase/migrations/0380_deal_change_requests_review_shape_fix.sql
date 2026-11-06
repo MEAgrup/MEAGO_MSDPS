@@ -1,5 +1,5 @@
 -- =============================================================================
--- MSDPS · Merchant Deals · Migration 0378 — fix accept "Ajukan Hapus" (0349)
+-- MSDPS · Merchant Deals · Migration 0380 — fix accept "Ajukan Hapus" (0349)
 -- =============================================================================
 -- Bug (laporan BD Lead 2026-11-02): Director meng-accept pengajuan hapus
 -- transaksi deal → gagal dengan
