@@ -7,6 +7,23 @@ dari sisi MSDPS. Ringkasan status implementasi tetap di `docs/BUILD_PLAN.md`.
 
 ---
 
+## 2026-11-06 — Upload mingguan CM dipusatkan di /meago/gmv-video
+
+**Sumber:** laporan Rizal (CM Lead); ACC Yohan 2026-11-06.
+
+- Kartu **Upload Creator Analysis Mingguan** (`IngestForm` → `runIngest`) dipindah
+  ke `/meago/gmv-video`; dihapus dari CM Workspace & Data Kreator. Ingest & tabelnya
+  tidak berubah — hanya lokasi. Gate halaman sama dengan Data Kreator.
+- **Upload GMV Video Mingguan** menerima export TikTok GO terkini
+  "Content Analysis › Video List" (parser `content-analysis.ts` dipakai ulang; window
+  wajib W1–W5) **atau** Template Baku MSDPS (format lama Filter+Data: Creator ID /
+  Video ID / Video GMV). Tiga metode — Unggah File, Tempel dari Excel (+ periode form),
+  Unduh Template — semuanya lewat `parseVideoGmvAny`; tidak ada jalur ingest kedua.
+- Export Content Analysis tidak punya likes/comments/shares absolut → disimpan 0
+  (default kolom), tidak ditebak dari rate.
+
+---
+
 ## 2026-11-06 — Baseline & Target GMV diisi BD di MSDPS (MEMBALIK Bridge D7)
 
 **Sumber:** email Tim OD 2026-10-30; ACC eksplisit owner (Yohan) 2026-11-06.

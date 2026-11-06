@@ -12,7 +12,6 @@ import {
   type GrowthRow,
 } from "@/lib/mcn/weeks";
 import {
-  IngestForm,
   CreateRequestForm,
   ApproveRequestButton,
   RequestProgressControls,
@@ -312,15 +311,6 @@ export default async function McnWorkspacePage({
             Ke bulan berjalan ({curYM})
           </Link>
         )}
-      </div>
-
-      <div className="card">
-        <h2>Upload Data Mingguan</h2>
-        <p className="section-sub">
-          Window W1-W5 dicek otomatis dari kolom tanggal file. Data mentah tidak disimpan — hanya
-          3 agregat hasil olah.
-        </p>
-        <IngestForm />
       </div>
 
       <div className="card">

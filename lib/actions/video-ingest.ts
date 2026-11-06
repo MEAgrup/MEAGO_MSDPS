@@ -4,13 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fileHashFull, buildBatchId, readWorkbookSheets } from "@/lib/mcn/file-read";
-import {
-  parseVideoGmvWorkbook,
-  isVideoGmvWorkbook,
-  type VideoGmvRow,
-  type WorkbookSheet,
-} from "@/lib/mcn/video-ingest";
-import { validateW1W5Period } from "@/lib/mcn/weeks";
+import { parseVideoGmvAny, pastedTextToSheets, type WorkbookSheet } from "@/lib/mcn/video-ingest";
 
 export type ActionResult = { ok: boolean; message: string };
 
@@ -279,13 +273,8 @@ export async function runVideoGmvIngest(
   const { supabase, user } = await ctx();
   if (!user) return { ok: false, message: "Tidak terautentikasi." };
 
-  // 1. File → sheets + hash.
-  const fileEntry = formData.get("file");
-  if (!fileEntry || typeof fileEntry === "string") {
-    return { ok: false, message: "File upload tidak ditemukan." };
-  }
-  const file = fileEntry;
-  if (file.size === 0) return { ok: false, message: "File kosong." };
+  // 1. Sumber: file unggahan ATAU teks tempelan Excel (+ periode form) → sheets + hash.
+  // Keduanya lewat parser yang sama (parseVideoGmvAny) — tidak ada jalur ingest kedua.
   // source_type = LABEL batch (membedakan jalur video dari jalur summary di
   // upload_batches). platform = kolom master kreator, TETAP 'tiktok' — jangan
   // disamakan dengan source_type, kalau tidak lookup kreator tak akan pernah cocok
@@ -297,25 +286,32 @@ export async function runVideoGmvIngest(
   let sheets: WorkbookSheet[];
   let hash8: string;
   let hashFull: string;
-  try {
-    const buf = Buffer.from(await file.arrayBuffer());
-    hashFull = fileHashFull(buf);
+  const pasted = String(formData.get("paste") ?? "");
+  const fileEntry = formData.get("file");
+  const hasFile = !!fileEntry && typeof fileEntry !== "string" && fileEntry.size > 0;
+  if (pasted.trim() !== "") {
+    const ps = String(formData.get("period_start") ?? "");
+    const pe = String(formData.get("period_end") ?? "");
+    const built = pastedTextToSheets(pasted, ps, pe);
+    if (!built.ok) return { ok: false, message: built.error };
+    sheets = built.sheets;
+    hashFull = fileHashFull(Buffer.from(`${ps}|${pe}|${pasted}`, "utf-8"));
     hash8 = hashFull.slice(0, 8);
-    sheets = await readWorkbookSheets(file);
-  } catch (e) {
-    return { ok: false, message: `Gagal membaca file: ${e instanceof Error ? e.message : String(e)}` };
+  } else if (hasFile) {
+    try {
+      const buf = Buffer.from(await fileEntry.arrayBuffer());
+      hashFull = fileHashFull(buf);
+      hash8 = hashFull.slice(0, 8);
+      sheets = await readWorkbookSheets(fileEntry);
+    } catch (e) {
+      return { ok: false, message: `Gagal membaca file: ${e instanceof Error ? e.message : String(e)}` };
+    }
+  } else {
+    return { ok: false, message: "Pilih file untuk diunggah atau tempelkan data dari Excel." };
   }
 
-  // Router format: jika bukan video GMV → tolak.
-  if (!isVideoGmvWorkbook(sheets)) {
-    return {
-      ok: false,
-      message: `File bukan format "GMV Video Weekly Tracking" yang diharapkan. Cek kolom: Creator ID, Video ID, Video GMV.`,
-    };
-  }
-
-  // 2. Parse workbook. Gagal → pesan error (belum ada batch row).
-  const parsed = parseVideoGmvWorkbook(sheets);
+  // 2. Parse (router format: export TikTok GO Content Analysis / Template Baku MSDPS).
+  const parsed = parseVideoGmvAny(sheets);
   if (!parsed.ok) return { ok: false, message: parsed.error };
   const { periodStart, periodEnd, rows, skipped } = parsed;
 

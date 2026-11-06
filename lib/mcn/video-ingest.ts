@@ -3,7 +3,8 @@
 // Strict header validation — format tak dikenali atau kolom kurang → null, bukan guessing.
 // Pure function: no DB, no React, testable & reusable across layers.
 
-import { formatYMD, isValidCalendarDate, validateW1W5Period } from "./weeks";
+import { formatYMD, isValidCalendarDate, parseYMD, validateW1W5Period } from "./weeks";
+import { parseContentAnalysisWorkbook, isContentAnalysisWorkbook } from "./content-analysis";
 
 // ---- parsePlainNumber ----
 // "306336120.270811", "0.000000", "1,234.56" (EN-style thousands) → number.
@@ -250,4 +251,130 @@ export function isVideoGmvWorkbook(sheets: WorkbookSheet[]): boolean {
     const header = (s.cells[0] ?? []).map(normalizeHeaderKey);
     return header.includes("creator id") && header.includes("video id") && header.includes("video gmv");
   });
+}
+
+// ---- Router format GMV Video Mingguan -------------------------------------------------
+// Tiga cara input di /meago/gmv-video (Unggah, Tempel, Template baku) berakhir di sini —
+// TIDAK ada parser/ingest kedua. Format yang diterima:
+//   1. Format baku MSDPS (= template unduhan) = format lama "Video Performance"
+//      (Creator ID / Video ID / Video GMV) — parseVideoGmvWorkbook di atas.
+//   2. Export TikTok GO terkini "Content Analysis › Video List" (Post ID / Sales value) —
+//      parser content-analysis.ts DIPAKAI ULANG, lalu dipetakan ke VideoGmvRow.
+//      Export ini tidak punya likes/comments/shares absolut (hanya rate) -> null, TIDAK
+//      ditebak dari rate. Window wajib W1–W5 karena tabel ini data mingguan.
+export function parseVideoGmvAny(sheets: WorkbookSheet[]): ParseVideoGmvResult {
+  if (isVideoGmvWorkbook(sheets)) return parseVideoGmvWorkbook(sheets);
+  if (isContentAnalysisWorkbook(sheets)) {
+    const ca = parseContentAnalysisWorkbook(sheets);
+    if (!ca.ok) return { ok: false, error: ca.error };
+    const w1w5 = validateW1W5Period(ca.windowStart, ca.windowEnd);
+    if (!w1w5.ok) return { ok: false, error: w1w5.message };
+    return {
+      ok: true,
+      periodStart: ca.windowStart,
+      periodEnd: ca.windowEnd,
+      rows: ca.rows.map((r) => ({
+        username: r.creatorUsername,
+        name: r.creatorName ?? r.creatorUsername,
+        videoId: r.postId,
+        videoTitle: r.postTitle,
+        views: r.videoViews,
+        likes: null,
+        comments: null,
+        shares: null,
+        salesValue: r.salesValue,
+        orders: r.orders,
+        conversionRate: null,
+      })),
+      skipped: ca.skipped,
+    };
+  }
+  return {
+    ok: false,
+    error:
+      "Format file tidak dikenali. Gunakan export TikTok GO \"Content Analysis › Video List\" " +
+      "(kolom Post ID, Location ID, Creator ID) atau Template Baku MSDPS " +
+      "(kolom Creator ID, Video ID, Video GMV — unduh lewat tombol \"Unduh Template\").",
+  };
+}
+
+// ---- Template Baku MSDPS -----------------------------------------------------------
+// Header diambil dari DATA_FIELD_MAP (kapitalisasi tampilan) supaya template & parser
+// tidak pernah menyimpang.
+export const VIDEO_GMV_TEMPLATE_HEADERS = [
+  "Creator ID",
+  "Creator Name",
+  "Video ID",
+  "Video Title",
+  "Video Views",
+  "Video Likes",
+  "Video Comments",
+  "Video Shares",
+  "Video GMV",
+  "Video Orders",
+  "Conversion Rate (%)",
+] as const;
+
+// Isi workbook template (pure — penulisan file .xlsx dilakukan komponen client).
+export function buildVideoGmvTemplateSheets(): { name: string; cells: (string | number)[][] }[] {
+  return [
+    {
+      name: "Filter",
+      cells: [
+        ["Start date", "End date"],
+        ["20261101", "20261107"],
+      ],
+    },
+    {
+      name: "Data",
+      cells: [
+        [...VIDEO_GMV_TEMPLATE_HEADERS],
+        ["username_kreator", "Nama Kreator", "7430000000000000001", "Judul video", 1200, 80, 5, 3, 1500000, 4, 0.33],
+      ],
+    },
+    {
+      name: "Panduan",
+      cells: [
+        ["Panduan Template Baku GMV Video Mingguan (MSDPS)"],
+        [""],
+        ["Sheet Filter: isi Start date & End date format YYYYMMDD, harus tepat satu window W1–W5 (1–7, 8–14, 15–21, 22–28, 29–akhir bulan)."],
+        ["Sheet Data: satu baris per video. Wajib: Creator ID (username TikTok) dan Video ID. Video GMV = angka polos tanpa Rp/titik ribuan."],
+        ["Kolom lain boleh dikosongkan. Jangan ubah nama kolom maupun nama sheet."],
+        ["Hapus baris contoh sebelum diunggah."],
+      ],
+    },
+  ];
+}
+
+// ---- Tempel dari Excel -------------------------------------------------------------
+// Teks salinan Excel (TSV, baris pertama = header) + periode dari form -> sheet
+// Filter + Data, supaya diproses parseVideoGmvAny yang sama dengan jalur unggah.
+export function pastedTextToSheets(
+  text: string,
+  periodStart: string,
+  periodEnd: string
+): { ok: true; sheets: WorkbookSheet[] } | { ok: false; error: string } {
+  const lines = text
+    .replace(/\r/g, "")
+    .split("\n")
+    .filter((l) => l.trim() !== "");
+  if (lines.length < 2) {
+    return { ok: false, error: "Tempelkan data dari Excel termasuk baris header (minimal header + 1 baris)." };
+  }
+  const toCompact = (ymd: string): string | null => {
+    const p = parseYMD(ymd.trim());
+    return p ? formatYMD(p.y, p.m, p.d).replace(/-/g, "") : null;
+  };
+  const start = toCompact(periodStart);
+  const end = toCompact(periodEnd);
+  if (!start || !end) {
+    return { ok: false, error: "Isi Periode Mulai dan Periode Selesai (tanggal) untuk data yang ditempel." };
+  }
+  return {
+    ok: true,
+    sheets: [
+      { name: "Filter", cells: [["Start date", "End date"], [start, end]] },
+      { name: "Data", cells: lines.map((l) => l.split("\t")) },
+    ],
+  };
 }
