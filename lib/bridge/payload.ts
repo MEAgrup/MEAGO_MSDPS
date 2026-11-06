@@ -67,8 +67,9 @@ export interface BridgeSourceRow {
   paymentInfo?: BridgePaymentInfo | null;
   // Migrasi 0379 (membalik D7): Baseline & Target GMV diisi BD di MSDPS.
   // Pola sama dengan paymentInfo — tidak diisi ⇒ output identik v1 (fixture
-  // tetap cocok). Yang mengisinya hanya enqueue.ts, dan hanya bila flag
-  // BRIDGE_KIRIM_MERCHANT_TARGET=1 (sesudah validator CDPS menerima kunci ini).
+  // tetap cocok). Diisi ⇒ merchant.gmv_baseline/target_gmv/link_toko/kategori
+  // (kontrak CDPS). Yang mengisinya hanya enqueue.ts, bila flag
+  // BRIDGE_KIRIM_MERCHANT_TARGET=1.
   merchantTarget?: BridgeMerchantTargetRow | null;
 }
 
@@ -97,6 +98,14 @@ export interface BridgeOrderPayloadV1 {
     pic_whatsapp: string | null;
     tanggal_mulai_kontrak: string;
     tanggal_akhir_kontrak: string;
+    // OPSIONAL, aditif (payload_versi tetap 1) — dibaca CDPS parsePayloadV1
+    // (kontrak BRIDGE_MSDPS_CONTRACT.md). Hanya ada bila flag
+    // BRIDGE_KIRIM_MERCHANT_TARGET=1. Uang = string desimal seperti
+    // attestation.nilai. Lihat docs/DECISIONS.md 2026-11-06.
+    gmv_baseline?: string | null;
+    target_gmv?: string | null;
+    link_toko?: string | null;
+    kategori?: string | null;
   };
   attestation: {
     external_trx_ref: string;
@@ -112,15 +121,6 @@ export interface BridgeOrderPayloadV1 {
     alasan_non_roster: string | null;
     nilai_cross_charge: string | null;
   }>;
-  // OPSIONAL, aditif (bukan kontrak v1 asli — payload_versi tetap 1). Hanya
-  // ada bila deal punya target_gmv DAN flag pengiriman aktif. Uang = string
-  // desimal seperti attestation.nilai. Lihat docs/DECISIONS.md 2026-11-06.
-  merchant_target?: {
-    gmv_baseline: string | null;
-    target_gmv: string;
-    link_akun: string | null;
-    kategori: string | null;
-  };
 }
 
 /** Integer-rupiah decimal string, never a float, never localized. "15000000.00", not "15.000.000". */
@@ -185,8 +185,6 @@ export function buildBridgePayload(row: BridgeSourceRow): BridgeOrderPayloadV1 {
   // PERNAH kolom TikTok export "Merchant" (OTA/delivery platform, otaPlatformsRaw).
   const externalId = deal.shop_id && deal.shop_id.trim() !== "" ? deal.shop_id : merchant.id;
 
-  const targetGmv = merchantTarget ? moneyString(merchantTarget.merchant_target_gmv) : null;
-
   return {
     payload_versi: PAYLOAD_VERSI,
     deal_code: deal.code,
@@ -200,6 +198,17 @@ export function buildBridgePayload(row: BridgeSourceRow): BridgeOrderPayloadV1 {
       pic_whatsapp: deal.pic_whatsapp,
       tanggal_mulai_kontrak: deal.tanggal_mulai_kontrak,
       tanggal_akhir_kontrak: deal.tanggal_akhir_kontrak,
+      // Data baseline dari BD (0379) — DI DALAM `merchant`, nama kunci sesuai
+      // kontrak CDPS (link_akun_merchant → link_toko). Tanpa merchantTarget ⇒
+      // tidak ada kunci baru (identik fixture v1).
+      ...(merchantTarget
+        ? {
+            gmv_baseline: moneyString(merchantTarget.merchant_gmv_baseline),
+            target_gmv: moneyString(merchantTarget.merchant_target_gmv),
+            link_toko: merchantTarget.link_akun_merchant?.trim() || null,
+            kategori: merchantTarget.kategori_merchant?.trim() || null,
+          }
+        : {}),
     },
     attestation: {
       external_trx_ref: transaction.code,
@@ -215,17 +224,6 @@ export function buildBridgePayload(row: BridgeSourceRow): BridgeOrderPayloadV1 {
       alasan_non_roster: l.alasan_non_roster,
       nilai_cross_charge: moneyString(l.nilai_cross_charge),
     })),
-    // Deal tanpa target_gmv (sebelum 0379) ⇒ blok tidak dikirim sama sekali.
-    ...(merchantTarget && targetGmv
-      ? {
-          merchant_target: {
-            gmv_baseline: moneyString(merchantTarget.merchant_gmv_baseline),
-            target_gmv: targetGmv,
-            link_akun: merchantTarget.link_akun_merchant?.trim() || null,
-            kategori: merchantTarget.kategori_merchant?.trim() || null,
-          },
-        }
-      : {}),
   };
 }
 

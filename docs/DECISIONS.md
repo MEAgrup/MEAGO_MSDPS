@@ -102,29 +102,28 @@ Detail yang diputuskan saat implementasi:
 - **"Kategori" ≠ `kategori_poi`** — `kategori_poi` (TTD/Accomodation/Dining)
   tetap seperti semula; `kategori_merchant` adalah kategori bisnis merchant.
 
-**Bentuk data untuk CDPS Bridge** (pola sama dengan info DP 0377 — aditif,
-`payload_versi` tetap 1, tanpa input ⇒ output identik fixture v1):
+**Bentuk data untuk CDPS Bridge** — DIKOREKSI 2026-11-06 (laporan Yulianti/CMA:
+angka BD tidak muncul di CDPS). Versi awal PR #61 mengirim blok top-level
+`merchant_target` dengan `link_akun`, padahal CDPS (AgencyAPP #563,
+`parsePayloadV1` + `docs/BRIDGE_MSDPS_CONTRACT.md`) membaca **4 field opsional di
+dalam `merchant`**. Bentuk yang berlaku (aditif, `payload_versi` tetap 1):
 
 ```json
-"merchant_target": {
+"merchant": {
+  "...": "field v1 seperti biasa",
   "gmv_baseline": "12500000.00",   // string desimal seperti attestation.nilai, atau null
-  "target_gmv":   "50000000.00",
-  "link_akun":    "https://…",     // atau null
-  "kategori":     "F&B"            // atau null
+  "target_gmv":   "50000000.00",   // atau null (deal lama)
+  "link_toko":    "https://…",     // ← brand_deals.link_akun_merchant, atau null
+  "kategori":     "F&B"            // ← brand_deals.kategori_merchant, atau null
 }
 ```
 
-- Kunci top-level **opsional**; tidak dikirim untuk deal tanpa target (deal lama).
-- Hanya dikirim bila env **`BRIDGE_KIRIM_MERCHANT_TARGET=1`**. Default **mati**:
-  validator payload CDPS tidak bisa diverifikasi dari repo ini, dan payload yang
-  ditolak berakhir `dead` sesudah 5 percobaan. Urutan aktivasi:
-  1. CDPS menerima `merchant_target` opsional di validator bridge + menampilkannya
-     ke Head/AM (prefill isian D7 saat accept, Head tetap bisa koreksi);
-  2. kontrak `docs/BRIDGE_MSDPS_CONTRACT.md` di kedua repo diberi catatan kunci ini;
-  3. set env di Vercel MSDPS, uji di staging dulu.
-- Order yang sudah terkirim sebelum flag menyala **tidak** dikirim ulang
-  (satu order per deal, payload immutable) — untuk deal itu Head tetap mengisi
-  di CDPS seperti D7.
+- Blok top-level `merchant_target` **tidak pernah dikirim** lagi.
+- Hanya diisi bila env **`BRIDGE_KIRIM_MERCHANT_TARGET=1`**. Default **mati** ⇒
+  `merchant` identik fixture v1. Aktivasi: set env di Vercel MSDPS, uji staging dulu.
+- Order yang sudah terkirim sebelum flag menyala / sebelum koreksi ini **tidak**
+  dikirim ulang (satu order per deal, payload immutable) — untuk deal itu Head
+  tetap mengisi di CDPS seperti D7.
 
 **Belum dikerjakan (sengaja, di luar diff ini):** `create_poi_finance()` masih
 membuat baris `merchants` baru dengan `gmv_baseline = 0, target_gmv = 0`; bisa
