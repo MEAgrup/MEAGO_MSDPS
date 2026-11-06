@@ -46,7 +46,7 @@ try {
   console.error("Gagal transpile lib/bridge/enqueue.ts:", e.stdout?.toString() || e.message);
   process.exit(1);
 }
-const { runEnqueueSweep, enqueueDealIfReady } = require(join(outDir, "enqueue.js"));
+const { runEnqueueSweep, enqueueDealIfReady, merchantTargetEnabled } = require(join(outDir, "enqueue.js"));
 
 // ---- Admin client palsu ------------------------------------------------------
 function makeFakeAdmin(initial, rpcImpl) {
@@ -141,6 +141,11 @@ const baseDeal = {
   tanggal_akhir_kontrak: "2027-02-10",
   bd_id: "emp-bd",
   bentuk_kerjasama: "Berbayar",
+  // Migrasi 0378 — diisi BD; hanya dikirim bila BRIDGE_KIRIM_MERCHANT_TARGET=1.
+  merchant_gmv_baseline: 10000000,
+  merchant_target_gmv: 40000000,
+  link_akun_merchant: "https://shop.tiktok.com/kedai-uji",
+  kategori_merchant: "F&B",
 };
 
 function fixture() {
@@ -208,6 +213,7 @@ function fixture() {
   eq("payload nilai_cross_charge baris 2", call?.args.p_payload.lines[1].nilai_cross_charge, "500000.00");
   eq("payload diverifikasi_oleh_external = Finance, bukan BD", call?.args.p_payload.attestation.diverifikasi_oleh_external, "Finance MSDPS — Rina Finance");
   eq("payload bd_identitas", call?.args.p_payload.bd_identitas, "Andi BD");
+  eq("flag 0378 mati (default): payload TANPA merchant_target", call?.args.p_payload.merchant_target, undefined);
 
   // ===== 3. Sweep berikutnya: tidak mengantre ulang, alert D3 tidak dobel ====
   const before = f.rpcCalls.length;
@@ -244,6 +250,27 @@ function fixture() {
   check(
     "RPC error D1: last_error memuat pesan DB",
     /pembayaran belum terverifikasi/.test(f.state.deal_cdps_plans.find((p) => p.deal_id === "D1").last_error ?? "")
+  );
+}
+
+// ===== 6. Flag 0378 hidup → merchant_target ikut payload =====================
+{
+  eq("merchantTargetEnabled: default mati", merchantTargetEnabled({}), false);
+  eq("merchantTargetEnabled: '1' hidup", merchantTargetEnabled({ BRIDGE_KIRIM_MERCHANT_TARGET: "1" }), true);
+  const fx = fixture();
+  fx.transactions[0].released_to_account_at = "2026-11-03T03:00:00Z";
+  fx.transactions[0].amount_verified = 15000000;
+  const f = makeFakeAdmin(fx, (fn, args) => defaultRpc(fn, args, f.state));
+  process.env.BRIDGE_KIRIM_MERCHANT_TARGET = "1";
+  try {
+    await enqueueDealIfReady(f.admin, "D1");
+  } finally {
+    delete process.env.BRIDGE_KIRIM_MERCHANT_TARGET;
+  }
+  eq(
+    "flag hidup: merchant_target dari kolom brand_deals",
+    f.rpcCalls.find((c) => c.args.p_deal_id === "D1")?.args.p_payload.merchant_target,
+    { gmv_baseline: "10000000.00", target_gmv: "40000000.00", link_akun: "https://shop.tiktok.com/kedai-uji", kategori: "F&B" }
   );
 }
 

@@ -26,6 +26,10 @@ export type DealIntakeDefaults = {
   total_jam_live?: number | "";
   brief_link?: string;
   payment_intent?: string;
+  merchant_gmv_baseline?: number | "";
+  merchant_target_gmv?: number | "";
+  link_akun_merchant?: string;
+  kategori_merchant?: string;
 };
 
 // Kolom form "Daftarkan Transaksi" (tab Merchant Deals), dipakai bersama oleh
@@ -289,6 +293,47 @@ export function DealIntakeFields({
           </p>
         </>
       )}
+
+      {/* Migrasi 0378 (email Tim OD 2026-10-30): Baseline & Target diisi BD,
+          diteruskan ke Head/AM di CDPS lewat Bridge. */}
+      <div className="row">
+        <div>
+          <label>GMV Baseline</label>
+          <input name="merchant_gmv_baseline" type="number" min="0" step="1" defaultValue={defaults?.merchant_gmv_baseline ?? ""} />
+        </div>
+        <div>
+          <label>Target GMV{withCdpsPlan ? " *" : ""}</label>
+          <input
+            name="merchant_target_gmv"
+            type="number"
+            min="1"
+            step="1"
+            defaultValue={defaults?.merchant_target_gmv ?? ""}
+            required={withCdpsPlan}
+          />
+        </div>
+      </div>
+      <div className="row">
+        <div>
+          <label>Link Akun Merchant</label>
+          <input
+            name="link_akun_merchant"
+            type="url"
+            placeholder="https://…"
+            defaultValue={defaults?.link_akun_merchant ?? ""}
+          />
+        </div>
+        <div>
+          <label>Kategori Merchant</label>
+          <input
+            name="kategori_merchant"
+            maxLength={100}
+            placeholder="mis. F&B, Fashion"
+            defaultValue={defaults?.kategori_merchant ?? ""}
+          />
+        </div>
+      </div>
+      <p className="hint">GMV Baseline &amp; Target GMV diteruskan ke Head/AM di CDPS bersama deal ini.</p>
 
       <label>Benefit Diberikan *</label>
       <input name="benefit" list={benefitDatalistId} defaultValue={defaults?.benefit ?? ""} required />

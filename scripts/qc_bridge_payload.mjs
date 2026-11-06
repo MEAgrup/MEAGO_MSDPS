@@ -203,6 +203,48 @@ eq(
 );
 eq("tanpa paymentInfo: catatan tidak berubah", buildBridgePayload(sourceRow).lines[0].catatan, fixture.lines[0].catatan);
 
+// ===== 8. merchant_target (migrasi 0378, membalik D7) ========================
+// Opsional & aditif: tanpa merchantTarget ⇒ kunci top-level identik fixture v1.
+const fixtureKeys = JSON.stringify(Object.keys(fixture).sort());
+eq("tanpa merchantTarget: kunci top-level identik fixture v1", JSON.stringify(Object.keys(buildBridgePayload(sourceRow)).sort()), fixtureKeys);
+eq(
+  "merchantTarget null: kunci top-level identik fixture v1",
+  JSON.stringify(Object.keys(buildBridgePayload({ ...sourceRow, merchantTarget: null })).sort()),
+  fixtureKeys
+);
+eq(
+  "merchantTarget tanpa target_gmv (deal lama): blok tidak dikirim",
+  buildBridgePayload({
+    ...sourceRow,
+    merchantTarget: { merchant_gmv_baseline: 1000000, merchant_target_gmv: null, link_akun_merchant: null, kategori_merchant: null },
+  }).merchant_target,
+  undefined
+);
+const withTarget = buildBridgePayload({
+  ...sourceRow,
+  merchantTarget: {
+    merchant_gmv_baseline: "12500000",
+    merchant_target_gmv: 50000000,
+    link_akun_merchant: "  https://shop.tiktok.com/x  ",
+    kategori_merchant: "",
+  },
+});
+eq(
+  "merchant_target: bentuk lengkap, uang string desimal",
+  JSON.stringify(withTarget.merchant_target),
+  JSON.stringify({ gmv_baseline: "12500000.00", target_gmv: "50000000.00", link_akun: "https://shop.tiktok.com/x", kategori: null })
+);
+eq(
+  "merchant_target: baseline null tetap null",
+  buildBridgePayload({
+    ...sourceRow,
+    merchantTarget: { merchant_gmv_baseline: null, merchant_target_gmv: 1, link_akun_merchant: null, kategori_merchant: "F&B" },
+  }).merchant_target.gmv_baseline,
+  null
+);
+eq("merchant_target: payload_versi tetap 1", withTarget.payload_versi, 1);
+eq("merchant_target: lines tidak tersentuh", JSON.stringify(withTarget.lines), JSON.stringify(buildBridgePayload(sourceRow).lines));
+
 rmSync(outDir, { recursive: true, force: true });
 
 console.log(`\nQC bridge payload: ${pass} lolos, ${fail} gagal`);
