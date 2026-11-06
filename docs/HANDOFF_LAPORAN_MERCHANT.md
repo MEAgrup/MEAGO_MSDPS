@@ -1,6 +1,6 @@
 # MSDPS — Laporan Performa Merchant otomatis (model "Analisa Sushi Yay")
 
-## Status build (2026-11-06) — kode SELESAI, migrasi BELUM di-apply ke staging/production
+## Status build (2026-11-06) — kode SELESAI, 0378 DI-APPLY KE STAGING (belum production)
 
 Dibangun dari rencana di bawah (disetujui Yohan 2026-11-04). Ringkasan apa yang ada:
 
@@ -46,12 +46,21 @@ Dibangun dari rencana di bawah (disetujui Yohan 2026-11-04). Ringkasan apa yang 
   `metrics.ts` di 17 kolom.
 - `npx tsc --noEmit` bersih.
 
+- **File mentah asli** (`DATA_RAW_DINING_GAB_2026_sushi_yay_only.xlsx`, dikirim Yohan 2026-11-06):
+  `node scripts/qc_merchant_report.mjs <file>` → **2180/2180 lolos** — paritas penuh dengan `compute_metrics.py` +
+  SEMUA angka acuan §6 (GMV Agu/Sep, order, views, new/aktif post, outlet 57/66 & 67/74, creator 98/537 & 172/615,
+  0-order/>50 9/11 & 7/19, layer outlet 16/28/30, creator Layer 1 = 17). Parse seluruh workbook: JAN–APR ditolak
+  (format lama), "mei juli 2026" ditolak (33.392 sel ID dibulatkan Excel), Agus & SEPT masuk (dari kolom `month`).
+- **Temuan data**: sheet SEPT memuat 162 baris outlet **"Yay! Grill"** (Gatsu Bandung, Cipondoh) dan angka sample yang
+  disetujui (74 outlet Sep) MENGHITUNGNYA. Karena itu filter kata kunci outlet dijadikan **opsional, default kosong**
+  (export TikTok sudah per akun merchant); nama brand lead hanya dipakai membuang awalan "Brand - " dari nama outlet.
+- **Staging** (`vgjzvdpxrdoefoncuazw`): 0378 di-apply 2026-11-06; `scripts/test_merchant_report.sql` dijalankan dengan
+  hak bawaan Supabase (tanpa grant tambahan) → **61/61 lolos**, transaksi dibatalkan.
+
 ### BELUM (perlu orang / akses)
-1. **File mentah `DATA_RAW_DINING_GAB_2026_sushi_yay_only.xlsx` tidak tersedia di sesi build** → angka acuan §6 belum
-   dicocokkan dengan data nyata. Jalankan: `node scripts/qc_merchant_report.mjs /path/DATA_RAW_DINING_GAB_2026_sushi_yay_only.xlsx`
-   (mengecek paritas Python + semua angka §6).
-2. Apply `0378` ke staging (`npm run db:migrate:staging`), jalankan `scripts/test_merchant_report.sql` di staging, lalu
-   verifikasi §8 lewat UI (upload file, generate Agu–Sep, edit insight, logo, cetak PDF, akun merchant uji).
+1. Uji UI §8 dengan data asli. Staging hanya punya 1 lead (tidak ada Sushi Yay) dan **preview Vercel feature branch
+   memakai Supabase PRODUCTION** (`docs/STAGING.md` §3) — jangan upload lewat preview PR.
+2. Apply 0378 ke production + merge PR, lalu upload file ke lead induk Sushi Yay (default LEAD-202609-0018).
 3. Item §7 (logo MEAGO!, logo merchant, konfirmasi lead induk, akun merchant uji) masih menunggu Yohan.
 
 ---

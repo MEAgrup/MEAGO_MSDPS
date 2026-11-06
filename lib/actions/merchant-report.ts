@@ -80,7 +80,20 @@ export async function runMerchantReportIngest(_prev: ActionResult | null, formDa
     await admin.storage.from(UPLOAD_BUCKET).remove([path]);
   }
 
-  const parsed = parseVideoListWorkbook(sheets, { brandKeyword: keyword || null, monthOverride: monthOverride || null, today: todayJakarta() });
+  // Nama brand lead dipakai HANYA untuk membuang awalan "Brand - " dari nama outlet.
+  // Penyaringan baris hanya bila staf mengisi kata kunci (file multi-merchant).
+  const { data: leadRows } = await supabase.rpc("merchant_report_leads", { p_only_with_data: false });
+  const brandName = ((leadRows ?? []) as { lead_id: string; brand_name: string }[]).find((l) => l.lead_id === leadId)?.brand_name ?? null;
+  const filterKeywords = keyword
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
+  const parsed = parseVideoListWorkbook(sheets, {
+    brandKeyword: brandName,
+    filterKeywords,
+    monthOverride: monthOverride || null,
+    today: todayJakarta(),
+  });
   const lines = parsed.sheets.map((s) => `${s.ok ? "✓" : "✗"} ${s.sheet}: ${s.message}`);
   if (parsed.batches.length === 0) {
     return { ok: false, message: ["Tidak ada bulan yang bisa diproses.", ...lines].join("\n") };

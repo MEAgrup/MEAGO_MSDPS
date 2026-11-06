@@ -74,7 +74,7 @@ const row = (o) => H.map((h) => (h in o ? o[h] : {
   "Creator level": "Lv.1", "Sales value": "1000", Orders: "2", "Redemption amount": "800", "Redeemed orders": "2",
   "Video views": "100",
 }[h]));
-const parse = (sheets, opts = {}) => parseVideoListWorkbook(sheets, { brandKeyword: "Sushi Yay", today: TODAY, ...opts });
+const parse = (sheets, opts = {}) => parseVideoListWorkbook(sheets, { brandKeyword: "Sushi Yay", filterKeywords: ["Sushi Yay"], today: TODAY, ...opts });
 
 {
   const r = parse([{ name: "Agus 2026", rows: [H, row({}), row({ "Sales value": "500", Orders: "1", "Video views": "50" }),
@@ -89,7 +89,12 @@ const parse = (sheets, opts = {}) => parseVideoListWorkbook(sheets, { brandKeywo
   eq("agregasi: order dijumlahkan", v.orders, 3);
   eq("agregasi: views dijumlahkan", v.video_views, 150);
   eq("agregasi: fragmented key dihitung", b.stats.fragmentedKeys, 1);
-  eq("filter brand: 1 baris disaring", b.stats.droppedByBrand, 1);
+  eq("filter kata kunci: 1 baris disaring", b.stats.droppedByBrand, 1);
+  const nf = parse([{ name: "Agus 2026", rows: [H, row({}), row({ "Post ID": "7600000000000000003", "Location name": "Yay! Grill - X" })] }], { filterKeywords: null });
+  eq("tanpa filter (default): outlet sub-brand ikut", nf.batches[0].rows.length, 2);
+  eq("tanpa filter: nama sub-brand tidak dipotong", nf.batches[0].rows[1].location_name_display, "Yay! Grill - X");
+  const mk = parse([{ name: "Agus 2026", rows: [H, row({}), row({ "Post ID": "7600000000000000003", "Location name": "Yay! Grill - X" }), row({ "Post ID": "7600000000000000004", "Location name": "Lain - Z" })] }], { filterKeywords: ["Sushi Yay", "Yay Grill"] });
+  eq("multi kata kunci: 2 baris lolos, 1 disaring", `${mk.batches[0].rows.length}/${mk.batches[0].stats.droppedByBrand}`, "2/1");
   eq("outlet display tersimpan", v.location_name_display, "A");
   eq("post date ISO", v.post_date, "2026-08-05");
 }

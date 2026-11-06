@@ -49,7 +49,7 @@ export function MerchantUploadForm({ leads, recentMonths }: { leads: LeadOption[
       data.set("lead_id", lead.lead_id);
       data.set("upload_path", url.path);
       data.set("file_name", file.name);
-      data.set("keyword", keyword || lead.brand_name);
+      data.set("keyword", keyword);
       data.set("month_override", String(fd.get("month_override") || ""));
       const res = await runMerchantReportIngest(null, data);
       setStep(null);
@@ -70,7 +70,6 @@ export function MerchantUploadForm({ leads, recentMonths }: { leads: LeadOption[
         onChange={(e) => {
           setQuery(e.target.value);
           const l = leads.find((x) => label(x) === e.target.value);
-          if (l) setKeyword(l.brand_name);
         }}
         placeholder="Ketik nama brand atau kode LEAD-…"
         required
@@ -84,11 +83,12 @@ export function MerchantUploadForm({ leads, recentMonths }: { leads: LeadOption[
         <p className="hint">Sudah ada data: {[...lead.months].sort().join(", ")}. Upload bulan yang sama akan MENGGANTI data bulan itu.</p>
       )}
 
-      <label>Kata kunci outlet brand</label>
-      <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="mis. Sushi Yay" />
+      <label>Saring outlet (opsional)</label>
+      <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="kosongkan = semua outlet di file" />
       <p className="hint">
-        Baris yang Location name-nya tidak memuat kata kunci ini disaring (untuk file multi-brand). Awalan &quot;Brand - &quot; juga dibuang dari nama
-        outlet. Kosongkan untuk memakai nama brand lead.
+        Isi HANYA bila file berisi beberapa merchant: baris yang Location name-nya tidak memuat salah satu kata kunci (pisahkan koma, mis.
+        &quot;Sushi Yay, Yay! Grill&quot;) disaring. Kosong = semua outlet dipakai — termasuk sub-brand seperti &quot;Yay! Grill&quot;, sama dengan
+        sample yang disetujui. Awalan &quot;Brand - &quot; dari nama outlet dibuang otomatis memakai nama brand lead.
       </p>
 
       <label>File export (XLSX/CSV) *</label>

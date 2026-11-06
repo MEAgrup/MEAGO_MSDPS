@@ -67,8 +67,19 @@ export type MonthBatch = {
 export type SheetReport = { sheet: string; ok: boolean; message: string };
 
 export type ParseOptions = {
-  /** Kata kunci brand (biasanya leads.brand_name). Kosong = tanpa filter. */
+  /**
+   * Nama brand (leads.brand_name) — HANYA untuk membuang awalan "Brand - " dari
+   * nama outlet. Tidak menyaring baris.
+   */
   brandKeyword?: string | null;
+  /**
+   * Kata kunci penyaring outlet (opsional, untuk file multi-merchant). Baris
+   * dipertahankan bila Location name memuat SALAH SATU kata kunci. Kosong = semua
+   * baris dipakai — default, karena export TikTok GO sudah per akun merchant dan
+   * satu akun bisa punya sub-brand (Sushi Yay + "Yay! Grill" di sample yang
+   * disetujui: 74 outlet Sep termasuk 2 outlet Yay! Grill).
+   */
+  filterKeywords?: string[] | null;
   /** "YYYY-MM" — dipakai HANYA bila bulan tidak bisa ditentukan dari file. */
   monthOverride?: string | null;
   /** "YYYY-MM-DD" hari ini (Asia/Jakarta). Bulan yang belum selesai ditolak. */
@@ -227,6 +238,7 @@ type Acc = SnapshotRow & { _validRows: number; _hasValid: boolean };
 export function parseVideoListWorkbook(sheets: RawSheet[], opts: ParseOptions): ParseResult {
   const reports: SheetReport[] = [];
   const brandKey = normKey(opts.brandKeyword);
+  const filterKeys = (opts.filterKeywords ?? []).map(normKey).filter(Boolean);
   const todayMonth = opts.today.slice(0, 7);
   const override = opts.monthOverride && /^20\d{2}-(0[1-9]|1[0-2])$/.test(opts.monthOverride) ? opts.monthOverride : null;
 
@@ -372,7 +384,7 @@ export function parseVideoListWorkbook(sheets: RawSheet[], opts: ParseOptions): 
       }
       pm.raw++;
       const locName = str(g(r, "location name")).trim();
-      if (brandKey && !normKey(locName).includes(brandKey)) {
+      if (filterKeys.length && !filterKeys.some((k) => normKey(locName).includes(k))) {
         pm.dropped++;
         continue;
       }
@@ -453,7 +465,7 @@ export function parseVideoListWorkbook(sheets: RawSheet[], opts: ParseOptions): 
       });
       const validRowsAgg = rows.filter((x) => x.status_valid);
       if (validRowsAgg.length === 0) {
-        const why = pm.dropped === pm.raw ? ` (semua ${pm.raw} baris tersaring kata kunci brand "${opts.brandKeyword}")` : "";
+        const why = pm.dropped === pm.raw ? ` (semua ${pm.raw} baris tersaring kata kunci "${(opts.filterKeywords ?? []).join(", ")}")` : "";
         reports.push({ sheet: label, ok: false, message: `tidak ada baris "Valid posts" untuk bulan ${period}${why}.` });
         continue;
       }
@@ -493,7 +505,7 @@ export function parseVideoListWorkbook(sheets: RawSheet[], opts: ParseOptions): 
           `${pm.valid} baris valid → ${validRowsAgg.length} post×outlet` +
           (pm.frag.size ? ` (${pm.frag.size} dijumlahkan dari baris pecahan)` : "") +
           (pm.invalid ? `, ${pm.invalid} baris tidak valid` : "") +
-          (pm.dropped ? `, ${pm.dropped} baris brand lain disaring` : "") +
+          (pm.dropped ? `, ${pm.dropped} baris outlet di luar kata kunci disaring` : "") +
           ".",
       });
     }
