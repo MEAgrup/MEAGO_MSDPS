@@ -1,8 +1,7 @@
 "use client";
 
-// IngestForm — dipakai bersama oleh /meago/workspace dan /meago/creators (card "Upload Data
-// Mingguan"). Jangan duplikasi: kedua halaman import dari sini (workspace/forms.tsx
-// re-export komponen ini supaya import lama tetap jalan).
+// IngestForm — card "Upload Creator Analysis Mingguan", kini hanya di /meago/gmv-video
+// (dipindah dari CM Workspace & Data Kreator, 2026-11-06). Jangan duplikasi ke halaman lain.
 
 import { useActionState } from "react";
 import { runIngest, type ActionResult } from "@/lib/actions/mcn-ingest";

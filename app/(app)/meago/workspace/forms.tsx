@@ -12,11 +12,6 @@ import { PORTAL_REQUEST_TYPES, REQUEST_TYPE_LABELS, NOMINAL_TYPES } from "@/lib/
 // Jenis lama form CM (tetap valid — lihat komentar 0311 di lib/mcn/request-types.ts).
 const LEGACY_REQUEST_TYPES = ["sample", "ads", "hsl"] as const;
 
-// IngestForm sekarang komponen bersama (dipakai juga di /meago/creators) — lihat
-// app/(app)/meago/ingest-form.tsx. Re-export di sini supaya import existing
-// (`import { IngestForm } from "./forms"`) tetap jalan tanpa perlu ubah page.tsx.
-export { IngestForm } from "../ingest-form";
-
 type CreatorOpt = { id: string; name: string; code: string | null };
 
 function Msg({ state }: { state: ActionResult | null }) {

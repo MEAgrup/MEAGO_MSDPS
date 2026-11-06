@@ -584,6 +584,7 @@ export async function runIngest(
 
   revalidatePath("/meago/workspace");
   revalidatePath("/meago/creators");
+  revalidatePath("/meago/gmv-video");
 
   const skippedPreview = parsed.skipped
     .slice(0, 10)
@@ -877,6 +878,7 @@ async function runCreatorAnalysisIngest(
 
   revalidatePath("/meago/workspace");
   revalidatePath("/meago/creators");
+  revalidatePath("/meago/gmv-video");
 
   const autoMsg = autoCreated.length
     ? ` Auto-created: ${autoCreated.slice(0, 10).join(", ")}${autoCreated.length > 10 ? ` (+${autoCreated.length - 10})` : ""}.`

@@ -13,7 +13,7 @@ Modul MCN mengelola kreator affiliate TikTok end-to-end lintas 3 tim: **Creator 
 ### Halaman (routes)
 | Route | Tim | Isi |
 |---|---|---|
-| `/meago/creators` | CM + mgmt | Tabel master kreator (15 kolom), Upload Data Mingguan, Assign CM/CPM |
+| `/meago/creators` | CM + mgmt | Tabel master kreator (15 kolom), Assign CM/CPM (Upload Data Mingguan pindah ke `/meago/gmv-video`) |
 | `/meago/workspace` | CM + mgmt | Growth W1–W5, Detail Mingguan, alert, request kreator, approval Director |
 | `/meago/schedule` | CM + mgmt | Jadwal live per minggu, slot lock-done |
 | `/acquisition` | Acquisition + mgmt | **Daftarkan Kreator Baru (Prospek)**, Prospek Terdaftar, binding, referral, handoff |

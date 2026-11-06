@@ -1,6 +1,8 @@
-// /meago/gmv-video — GMV Video Weekly Tracking. Upload file GMV per-video mingguan
-// (jalur terpisah dari "Upload Data Mingguan" di /meago/creators yang mengisi
-// creator_period_summary) + riwayat mingguan per kreator dari creator_video_gmv.
+// /meago/gmv-video — pusat upload data mingguan CM:
+//   (1) "Upload Creator Analysis Mingguan" — IngestForm (runIngest → creator_period_summary),
+//       dipindah ke sini dari CM Workspace & Data Kreator (ACC Yohan 2026-11-06);
+//   (2) "Upload GMV Video Mingguan" — per-video → creator_video_gmv,
+// + riwayat mingguan per kreator dari creator_video_gmv.
 //
 // Riwayat TIDAK ditimpa antar minggu: satu baris per (kreator, video, period_start),
 // jadi minggu lama tetap utuh saat minggu baru diunggah. Tabel di bawah menampilkan
@@ -11,6 +13,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser, getEmployee, getCachedClient } from "@/lib/supabase/server";
 import { rupiah, num } from "@/lib/format";
 import { VideoGmvForm } from "./upload-form";
+import { IngestForm } from "../ingest-form";
 
 type Creator = { id: string; code: string | null; name: string; username: string | null; owner_cpm_id: string | null };
 
@@ -119,11 +122,23 @@ export default async function GmvVideoPage() {
       </p>
 
       <div className="card">
-        <h2>Upload GMV Video Mingguan</h2>
+        <h2>1. Upload Creator Analysis Mingguan</h2>
         <p className="section-sub">
-          File XLSX/CSV export video TikTok. Window periode dicek otomatis dari file
-          (W1–W5, tidak boleh lintas bulan). Header kolom divalidasi ketat — bila format
-          export berubah, upload ditolak dengan menyebut nama kolom yang bermasalah.
+          File: export TikTok <strong>Creator Analysis</strong> (1 baris = 1 kreator per
+          minggu). Mengisi performa mingguan kreator untuk Growth W1–W5 di CM Workspace dan
+          rata-rata di Data Kreator. Window periode dicek otomatis dari kolom tanggal file.
+        </p>
+        <IngestForm />
+      </div>
+
+      <div className="card">
+        <h2>2. Upload GMV Video Mingguan</h2>
+        <p className="section-sub">
+          File: export TikTok GO <strong>Content Analysis › Video List</strong>
+          (ContentAnalysis_VideoList_*.xlsx) atau <strong>Template Baku MSDPS</strong> (1 baris
+          = 1 video). Mengisi tabel riwayat di bawah. Periode harus tepat satu window W1–W5
+          (tidak boleh lintas bulan). Jika export TikTok berubah format, pakai Template Baku
+          lewat Unggah atau Tempel dari Excel.
         </p>
         <VideoGmvForm />
       </div>

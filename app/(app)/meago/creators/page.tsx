@@ -4,7 +4,6 @@ import { tanggal } from "@/lib/format";
 import { formatYMD } from "@/lib/mcn/weeks";
 import { AssignOwnerRow, BudgetCapRow, PortalAccountRow, ProfileRow, RosterToggleRow } from "./forms";
 import { UploadReportForm, DeleteReportButton } from "./report-forms";
-import { IngestForm } from "../ingest-form";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { MasterCreatorsTable, type MasterCreatorRow } from "./master-creators-table";
 
@@ -360,14 +359,6 @@ export default async function McnCreatorsPage({
         Master kreator affiliate TikTok — terpisah dari master KOL (M9). Kolom GMV & aktivitas
         adalah rata-rata bulanan 3 bulan kalender terakhir (bulan berjalan + 2 sebelumnya).
       </p>
-
-      <div className="card">
-        <h2>Upload Data Mingguan</h2>
-        <p className="section-sub">
-          File XLSX Creator Analysis. Window periode dicek otomatis dari kolom tanggal file.
-        </p>
-        <IngestForm />
-      </div>
 
       <div className="card">
         <h2>Master Kreator ({creators.length})</h2>
