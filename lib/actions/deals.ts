@@ -78,7 +78,7 @@ const DEAL_FORM_KEYS = [
   "tanggal_akhir_kontrak",
   // Migrasi 0377: cara bayar untuk transaksi Finance yang kini dibuat otomatis.
   "payment_intent",
-  // Migrasi 0378: Baseline & Target GMV diisi BD (membalik Bridge D7).
+  // Migrasi 0379: Baseline & Target GMV diisi BD (membalik Bridge D7).
   "merchant_gmv_baseline",
   "merchant_target_gmv",
   "link_akun_merchant",
@@ -269,7 +269,7 @@ export async function registerDealTransaction(
   if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
   if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang mendaftarkan transaksi deal." };
 
-  // Target GMV wajib hanya untuk deal BARU (0378) — edit/approval deal lama tidak.
+  // Target GMV wajib hanya untuk deal BARU (0379) — edit/approval deal lama tidak.
   const parsed = await readDealFields(supabase, formData, { requireTarget: true });
   if ("error" in parsed) return { ok: false, message: parsed.error };
 

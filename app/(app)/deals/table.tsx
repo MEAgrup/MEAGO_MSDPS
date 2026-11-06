@@ -46,7 +46,7 @@ export type Deal = {
   konten_needed: number | null;
   total_jam_live: number | null;
   brief_link: string | null;
-  // Migrasi 0378 — Baseline & Target GMV diisi BD.
+  // Migrasi 0379 — Baseline & Target GMV diisi BD.
   merchant_gmv_baseline: number | null;
   merchant_target_gmv: number | null;
   link_akun_merchant: string | null;

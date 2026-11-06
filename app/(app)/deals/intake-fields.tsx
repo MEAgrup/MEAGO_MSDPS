@@ -294,7 +294,7 @@ export function DealIntakeFields({
         </>
       )}
 
-      {/* Migrasi 0378 (email Tim OD 2026-10-30): Baseline & Target diisi BD,
+      {/* Migrasi 0379 (email Tim OD 2026-10-30): Baseline & Target diisi BD,
           diteruskan ke Head/AM di CDPS lewat Bridge. */}
       <div className="row">
         <div>

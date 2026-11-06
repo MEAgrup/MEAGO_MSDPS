@@ -141,7 +141,7 @@ const baseDeal = {
   tanggal_akhir_kontrak: "2027-02-10",
   bd_id: "emp-bd",
   bentuk_kerjasama: "Berbayar",
-  // Migrasi 0378 — diisi BD; hanya dikirim bila BRIDGE_KIRIM_MERCHANT_TARGET=1.
+  // Migrasi 0379 — diisi BD; hanya dikirim bila BRIDGE_KIRIM_MERCHANT_TARGET=1.
   merchant_gmv_baseline: 10000000,
   merchant_target_gmv: 40000000,
   link_akun_merchant: "https://shop.tiktok.com/kedai-uji",
@@ -213,7 +213,7 @@ function fixture() {
   eq("payload nilai_cross_charge baris 2", call?.args.p_payload.lines[1].nilai_cross_charge, "500000.00");
   eq("payload diverifikasi_oleh_external = Finance, bukan BD", call?.args.p_payload.attestation.diverifikasi_oleh_external, "Finance MSDPS — Rina Finance");
   eq("payload bd_identitas", call?.args.p_payload.bd_identitas, "Andi BD");
-  eq("flag 0378 mati (default): payload TANPA merchant_target", call?.args.p_payload.merchant_target, undefined);
+  eq("flag 0379 mati (default): payload TANPA merchant_target", call?.args.p_payload.merchant_target, undefined);
 
   // ===== 3. Sweep berikutnya: tidak mengantre ulang, alert D3 tidak dobel ====
   const before = f.rpcCalls.length;
@@ -253,7 +253,7 @@ function fixture() {
   );
 }
 
-// ===== 6. Flag 0378 hidup → merchant_target ikut payload =====================
+// ===== 6. Flag 0379 hidup → merchant_target ikut payload =====================
 {
   eq("merchantTargetEnabled: default mati", merchantTargetEnabled({}), false);
   eq("merchantTargetEnabled: '1' hidup", merchantTargetEnabled({ BRIDGE_KIRIM_MERCHANT_TARGET: "1" }), true);

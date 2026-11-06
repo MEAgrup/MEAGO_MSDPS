@@ -203,7 +203,7 @@ eq(
 );
 eq("tanpa paymentInfo: catatan tidak berubah", buildBridgePayload(sourceRow).lines[0].catatan, fixture.lines[0].catatan);
 
-// ===== 8. merchant_target (migrasi 0378, membalik D7) ========================
+// ===== 8. merchant_target (migrasi 0379, membalik D7) ========================
 // Opsional & aditif: tanpa merchantTarget ⇒ kunci top-level identik fixture v1.
 const fixtureKeys = JSON.stringify(Object.keys(fixture).sort());
 eq("tanpa merchantTarget: kunci top-level identik fixture v1", JSON.stringify(Object.keys(buildBridgePayload(sourceRow)).sort()), fixtureKeys);

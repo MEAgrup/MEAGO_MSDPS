@@ -17,7 +17,7 @@ CDPS saat menerima (accept) order Bridge**.
 **Keputusan baru:** diisi **BD di MSDPS**, di form "Daftarkan Transaksi"
 (tab Merchant Deals), lalu dibaca Head/AM di CDPS:
 
-| Isian | Kolom `brand_deals` (migr. 0378) | Wajib? |
+| Isian | Kolom `brand_deals` (migr. 0379) | Wajib? |
 |---|---|---|
 | GMV Baseline | `merchant_gmv_baseline` (numeric ≥ 0) | opsional |
 | Target GMV | `merchant_target_gmv` (numeric > 0) | **wajib untuk deal baru** |
@@ -27,7 +27,7 @@ CDPS saat menerima (accept) order Bridge**.
 Detail yang diputuskan saat implementasi:
 
 - **Wajib hanya untuk deal baru** — ditegakkan di `registerDealTransaction`,
-  bukan `NOT NULL`, karena deal sebelum 0378 dan hasil Import Bulking tidak
+  bukan `NOT NULL`, karena deal sebelum 0379 dan hasil Import Bulking tidak
   punya nilainya. Edit / approval Director tidak mewajibkan.
 - **Prefix `merchant_`** — `brand_deals.target_gmv` sudah ada sejak 0342 dan
   milik campaign MEA GO (target campaign kreator). Makna berbeda, tidak dicampur.

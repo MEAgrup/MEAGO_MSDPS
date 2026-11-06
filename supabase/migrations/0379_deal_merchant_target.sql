@@ -1,5 +1,5 @@
 -- =============================================================================
--- MSDPS · Merchant Deals · migrasi 0378 — Baseline & Target GMV diisi BD
+-- MSDPS · Merchant Deals · migrasi 0379 — Baseline & Target GMV diisi BD
 -- =============================================================================
 -- Email Tim OD 2026-10-30, ACC owner (Yohan) 2026-11-06: form "Daftarkan
 -- Transaksi" (Merchant Deals) menambah empat isian —
@@ -37,10 +37,10 @@ alter table brand_deals
     check (kategori_merchant is null or (btrim(kategori_merchant) <> '' and length(kategori_merchant) <= 100));
 
 comment on column brand_deals.merchant_gmv_baseline is
-  'GMV Baseline merchant saat deal (rupiah, opsional) — diisi BD di form Daftarkan Transaksi (0378, membalik Bridge D7). Diteruskan ke CDPS di payload bridge (merchant_target).';
+  'GMV Baseline merchant saat deal (rupiah, opsional) — diisi BD di form Daftarkan Transaksi (0379, membalik Bridge D7). Diteruskan ke CDPS di payload bridge (merchant_target).';
 comment on column brand_deals.merchant_target_gmv is
-  'Target GMV merchant (rupiah) — wajib di form Daftarkan Transaksi sejak 0378; NULL hanya untuk deal sebelum 0378 / hasil Import Bulking.';
+  'Target GMV merchant (rupiah) — wajib di form Daftarkan Transaksi sejak 0379; NULL hanya untuk deal sebelum 0379 / hasil Import Bulking.';
 comment on column brand_deals.link_akun_merchant is
-  'Link akun/toko merchant (http/https, opsional) — 0378.';
+  'Link akun/toko merchant (http/https, opsional) — 0379.';
 comment on column brand_deals.kategori_merchant is
-  'Kategori bisnis merchant (teks bebas, opsional, mis. F&B / Fashion) — 0378. BUKAN kategori_poi (TTD/Accomodation/Dining).';
+  'Kategori bisnis merchant (teks bebas, opsional, mis. F&B / Fashion) — 0379. BUKAN kategori_poi (TTD/Accomodation/Dining).';

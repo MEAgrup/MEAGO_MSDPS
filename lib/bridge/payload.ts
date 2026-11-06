@@ -65,7 +65,7 @@ export interface BridgeSourceRow {
   // di kontrak v1, jadi tidak ada field baru yang bisa ditolak validator CDPS.
   // Tidak diisi ⇒ output identik dengan sebelumnya (fixture v1 tetap cocok).
   paymentInfo?: BridgePaymentInfo | null;
-  // Migrasi 0378 (membalik D7): Baseline & Target GMV diisi BD di MSDPS.
+  // Migrasi 0379 (membalik D7): Baseline & Target GMV diisi BD di MSDPS.
   // Pola sama dengan paymentInfo — tidak diisi ⇒ output identik v1 (fixture
   // tetap cocok). Yang mengisinya hanya enqueue.ts, dan hanya bila flag
   // BRIDGE_KIRIM_MERCHANT_TARGET=1 (sesudah validator CDPS menerima kunci ini).
@@ -73,7 +73,7 @@ export interface BridgeSourceRow {
 }
 
 export interface BridgeMerchantTargetRow {
-  merchant_gmv_baseline: number | string | null; // brand_deals (0378) — BUKAN brand_deals.target_gmv (campaign, 0342)
+  merchant_gmv_baseline: number | string | null; // brand_deals (0379) — BUKAN brand_deals.target_gmv (campaign, 0342)
   merchant_target_gmv: number | string | null;
   link_akun_merchant: string | null;
   kategori_merchant: string | null;
@@ -215,7 +215,7 @@ export function buildBridgePayload(row: BridgeSourceRow): BridgeOrderPayloadV1 {
       alasan_non_roster: l.alasan_non_roster,
       nilai_cross_charge: moneyString(l.nilai_cross_charge),
     })),
-    // Deal tanpa target_gmv (sebelum 0378) ⇒ blok tidak dikirim sama sekali.
+    // Deal tanpa target_gmv (sebelum 0379) ⇒ blok tidak dikirim sama sekali.
     ...(merchantTarget && targetGmv
       ? {
           merchant_target: {

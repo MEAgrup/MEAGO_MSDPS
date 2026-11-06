@@ -21,9 +21,9 @@ export function isBentukKerjasama(value: string): value is BentukKerjasama {
   return (BENTUK_KERJASAMA as readonly string[]).includes(value);
 }
 
-// ---- Baseline & Target GMV (migrasi 0378, email Tim OD 2026-10-30) ---------
+// ---- Baseline & Target GMV (migrasi 0379, email Tim OD 2026-10-30) ---------
 // Murni (tanpa Supabase) supaya bisa diuji: scripts/qc_deal_merchant_target.mjs.
-// CHECK brand_deals (0378) tetap otoritas akhir.
+// CHECK brand_deals (0379) tetap otoritas akhir.
 
 export type MerchantTargetFields = {
   merchant_gmv_baseline: number | null;
@@ -35,7 +35,7 @@ export type MerchantTargetFields = {
 /**
  * Baca 4 isian merchant target. `requireTarget` = true untuk deal BARU
  * (Daftarkan Transaksi) — Target GMV wajib. Edit/approval deal lama tidak
- * mewajibkannya (deal sebelum 0378 & hasil Import Bulking belum punya nilai).
+ * mewajibkannya (deal sebelum 0379 & hasil Import Bulking belum punya nilai).
  */
 export function readMerchantTarget(
   get: (key: string) => string,

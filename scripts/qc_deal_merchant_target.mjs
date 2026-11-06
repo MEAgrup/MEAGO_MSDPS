@@ -1,5 +1,5 @@
 // QC readMerchantTarget() (lib/deals/intake.ts) — isian Baseline & Target GMV
-// form "Daftarkan Transaksi" (migrasi 0378, membalik Bridge D7).
+// form "Daftarkan Transaksi" (migrasi 0379, membalik Bridge D7).
 //
 // Pakai: node scripts/qc_deal_merchant_target.mjs
 
@@ -77,7 +77,7 @@ eq("kategori > 100 karakter ditolak", readMerchantTarget(form({ merchant_target_
   error: "[kategori merchant maksimal 100 karakter]",
 });
 
-// Edit / approval deal lama (sebelum 0378): semua boleh kosong.
+// Edit / approval deal lama (sebelum 0379): semua boleh kosong.
 eq("edit: semua kosong -> semua null", readMerchantTarget(form({}), EDIT), {
   fields: { merchant_gmv_baseline: null, merchant_target_gmv: null, link_akun_merchant: null, kategori_merchant: null },
 });

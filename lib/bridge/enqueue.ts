@@ -45,7 +45,7 @@ const DEAL_COLUMNS =
   "tanggal_akhir_kontrak, bd_id, bentuk_kerjasama, transaction_id, " +
   "merchant_gmv_baseline, merchant_target_gmv, link_akun_merchant, kategori_merchant";
 
-// Migrasi 0378: blok `merchant_target` (Baseline/Target GMV dari BD) baru
+// Migrasi 0379: blok `merchant_target` (Baseline/Target GMV dari BD) baru
 // dikirim sesudah validator CDPS terbukti menerima kunci tambahan — validator
 // itu tidak bisa diverifikasi dari repo ini, dan penolakan = order 'dead'.
 // Default MATI ⇒ payload persis v1 seperti sebelumnya.
