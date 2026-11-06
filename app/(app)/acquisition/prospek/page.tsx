@@ -52,6 +52,11 @@ export default async function ProspekKreatorPage() {
     .filter((e) => e.division === "Acquisition" && e.active !== false)
     .map((e) => ({ id: e.id as string, full_name: e.full_name as string }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  // Opsi PIC CM untuk form akuisisi (0382).
+  const cmOptions = (emps ?? [])
+    .filter((e) => e.division === "CreatorManagement" && e.active !== false)
+    .map((e) => ({ id: e.id as string, full_name: e.full_name as string }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   const count = (s: string) => prospects.filter((p) => p.status === s).length;
 
@@ -83,6 +88,7 @@ export default async function ProspekKreatorPage() {
         registered={registered}
         empName={empName}
         acqOptions={acqOptions}
+        cmOptions={cmOptions}
         myId={me?.id ?? ""}
         canWrite={canWrite}
         canAssignAny={canAssignAny}

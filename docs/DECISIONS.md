@@ -7,6 +7,57 @@ dari sisi MSDPS. Ringkasan status implementasi tetap di `docs/BUILD_PLAN.md`.
 
 ---
 
+## 2026-11-06 — Akuisisi: dashboard performa, field binding, PIC CM ditetapkan Akuisisi (0382)
+
+**Sumber:** laporan Siti (tim Akuisisi); ACC owner (Yohan) 2026-11-06.
+
+**Sebelum dikerjakan dicek yang sudah ada** supaya tidak dobel:
+
+| Diminta | Kondisi sebelumnya | Keputusan |
+|---|---|---|
+| Dashboard performa akuisisi | Belum ada (hanya daftar di `/acquisition` + OKR "kreator binding / kuartal") | Halaman baru `/acquisition/dashboard` |
+| UID, WA, GMV Potential, Tgl Binding Akhir | Tidak ada di skema resmi (versi staging-only dibuang 0351) | Kolom baru di `acquisitions` (0382), nullable |
+| Jenis Kontrak | **Sudah ada**: `mcn_creators.status_kontrak` ('kontrak' / 'non kontrak', 0316) | **Dipakai ulang**, diisi dari form binding |
+| PIC CM | **Sudah ada**: `mcn_creators.owner_cpm_id` (handoff & scope CM) | **Dipakai ulang**, diisi dari form binding |
+| Assignment PIC CM | Hanya CM Lead/mgmt (`assignOwner`, cek di aplikasi; RLS 0302 sudah mengizinkan Acquisition) | Akuisisi boleh menetapkan — lihat di bawah |
+
+**Field binding (form "Catat Akuisisi (Binding)" dan form akuisisi di modal Prospek Kreator):**
+
+- Keenam field **wajib untuk binding baru**, ditegakkan di `recordAcquisition`
+  (`lib/mcn/binding-fields.ts`), **bukan** `NOT NULL` — baris lama tidak punya nilainya.
+- UID = angka 5–25 digit; WA dinormalisasi `62xxxx` (aplikasi + trigger DB
+  `normalize_phone_62`); GMV Potential ≥ 0, format rupiah ditoleransi;
+  Tgl Binding Akhir ≥ Tgl Binding. CHECK constraint di DB sebagai jaring terakhir.
+- WA disimpan di `acquisitions`, **bukan** `mcn_creators` — konsisten dengan
+  keputusan 2026-10-19 (kontak kreator tidak masuk master kreator). Di modal
+  Prospek, WA terisi otomatis dari nomor pendaftar.
+- Nilai Jenis Kontrak memakai dua nilai yang sudah ada (`kontrak` / `non kontrak`).
+  Bila tim butuh kategori lain (mis. eksklusif), itu perubahan CHECK 0316 terpisah.
+
+**PIC CM oleh Akuisisi:**
+
+- Saat binding, Akuisisi **wajib** memilih PIC CM (karyawan Creator Management
+  aktif) → `mcn_creators.owner_cpm_id`. Tombol "Handoff Selesai" tidak lagi
+  menunggu CM Lead.
+- Selama handoff **belum** selesai, Akuisisi bisa mengganti PIC CM dari tabel
+  Daftar Akuisisi (`assignPicCm`). **Sesudah** handoff, penugasan ulang kembali ke
+  CM Lead lewat Data Kreator (`assignOwner`, tidak berubah).
+- Tidak ada perubahan RLS: update `mcn_creators` oleh Acquisition sudah diizinkan sejak 0302.
+
+**Definisi metrik dashboard** (`lib/mcn/acquisition-stats.ts`, filter: periode, PIC, sumber lead):
+
+- **Scouting** = prospek baru di periode (tanggal WIB): `creator_prospects` →
+  PIC prospek (`owner_id`, tanpa PIC tampil sebagai "Belum ada PIC"), plus
+  kreator yang didaftarkan manual oleh staf Acquisition ("Daftarkan Prospek",
+  `mcn_creators.created_by`) — kreator hasil tautan prospek tidak dihitung dua kali.
+- **Binding** = `acquisitions.binding_date` di periode → `specialist_id`.
+- **CR** = Binding ÷ Scouting **periode yang sama** (rasio aktivitas, bukan kohort).
+- **GMV** = Σ `gmv_post_join` (aktual, terisi lewat "Refresh GMV") dan Σ `gmv_potential`.
+- Filter sumber lead hanya berlaku ke Binding & GMV (prospek tidak punya `lead_source`).
+
+---
+
+
 ## 2026-11-06 — Upload mingguan CM dipusatkan di /meago/gmv-video
 
 **Sumber:** laporan Rizal (CM Lead); ACC Yohan 2026-11-06.
