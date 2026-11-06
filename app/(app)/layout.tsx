@@ -174,6 +174,7 @@ export default async function AppLayout({
 
         {seeCampaign && sectionHeading("Campaign MEA GO")}
         {seeCampaign && <Link href="/meago/campaigns">Campaign MEA GO</Link>}
+        {seeCampaign && <Link href="/meago/laporan-merchant">Laporan Merchant</Link>}
 
         {seeAcq && sectionHeading("Akuisisi Kreator")}
         {seeAcq && <Link href="/acquisition">Akuisisi Kreator</Link>}
