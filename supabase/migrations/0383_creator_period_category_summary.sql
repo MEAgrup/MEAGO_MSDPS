@@ -6,7 +6,7 @@
 --
 -- Export Creator Analysis TikTok TIDAK membawa kolom kategori; CM mengunduh export
 -- yang sudah difilter per kategori di dashboard TikTok, lalu memilih kategorinya di
--- form "Upload Data Mingguan" (lib/mcn/gmv-category.ts).
+-- form "Upload Creator Analysis Mingguan" di /meago/gmv-video (lib/mcn/gmv-category.ts).
 --
 -- Kenapa tabel TERPISAH, bukan kolom `category` di creator_period_summary:
 -- semua pembaca lama (Growth W1-W5, perf_drop, rata-rata GMV master, portal

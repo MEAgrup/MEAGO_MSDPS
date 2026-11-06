@@ -26,7 +26,8 @@ dari sisi MSDPS. Ringkasan status implementasi tetap di `docs/BUILD_PLAN.md`.
 
 1. **GMV per kategori = upload per kategori** (pilihan Yohan). CM mengunduh
    export Creator Analysis yang sudah **difilter per kategori di TikTok**, lalu
-   memilih kategorinya di form "Upload Data Mingguan" (All / Dining /
+   memilih kategorinya di form "Upload Creator Analysis Mingguan"
+   (`/meago/gmv-video`) (All / Dining /
    Accommodation / TTD / LIVE). Sistem **tidak menebak** kategori dari isi file.
    - **All tetap di `creator_period_summary`** (nol perubahan perilaku).
      Dining/Accommodation/TTD/LIVE masuk **tabel terpisah**
@@ -116,6 +117,23 @@ sementara jalur All tidak terpengaruh.
 ---
 
 
+
+---
+
+## 2026-11-06 — Upload mingguan CM dipusatkan di /meago/gmv-video
+
+**Sumber:** laporan Rizal (CM Lead); ACC Yohan 2026-11-06.
+
+- Kartu **Upload Creator Analysis Mingguan** (`IngestForm` → `runIngest`) dipindah
+  ke `/meago/gmv-video`; dihapus dari CM Workspace & Data Kreator. Ingest & tabelnya
+  tidak berubah — hanya lokasi. Gate halaman sama dengan Data Kreator.
+- **Upload GMV Video Mingguan** menerima export TikTok GO terkini
+  "Content Analysis › Video List" (parser `content-analysis.ts` dipakai ulang; window
+  wajib W1–W5) **atau** Template Baku MSDPS (format lama Filter+Data: Creator ID /
+  Video ID / Video GMV). Tiga metode — Unggah File, Tempel dari Excel (+ periode form),
+  Unduh Template — semuanya lewat `parseVideoGmvAny`; tidak ada jalur ingest kedua.
+- Export Content Analysis tidak punya likes/comments/shares absolut → disimpan 0
+  (default kolom), tidak ditebak dari rate.
 
 ---
 

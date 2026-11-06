@@ -280,7 +280,8 @@ export default async function CreatorMonthlyReportPage({
         {!hasCategory ? (
           <p className="muted">
             Belum ada file kategori (Dining/Accommodation/TTD/LIVE) diunggah untuk bulan ini. Unggah lewat
-            &ldquo;Upload Data Mingguan&rdquo; dengan memilih kategori.
+            &ldquo;Upload Creator Analysis Mingguan&rdquo; di{" "}
+            <Link href="/meago/gmv-video">GMV Video Mingguan</Link> dengan memilih kategori.
           </p>
         ) : (
           <div style={{ overflowX: "auto" }}>
