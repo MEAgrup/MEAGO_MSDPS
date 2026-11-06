@@ -59,31 +59,43 @@ export async function loadReport(supabase: SupabaseClient, leadId: string, from:
   const range = periodRange(from, to);
   const params = await loadParams(supabase, leadId);
   if (range.length === 0) return { periods: [], missing: [], metrics: null, params };
-  const start = `${range[0]}-01`;
-  const end = `${range[range.length - 1]}-01`;
-
-  const base = () =>
-    supabase
-      .from("tiktok_post_snapshots")
-      .select(COLS, { count: "exact" })
-      .eq("lead_id", leadId)
-      .eq("status_valid", true)
-      .gte("period_start", start)
-      .lte("period_start", end)
-      .order("period_start")
-      .order("row_seq");
-
-  const first = await base().range(0, PAGE - 1);
-  if (first.error) throw new Error(first.error.message);
-  const total = first.count ?? first.data?.length ?? 0;
-  const pages = [first.data ?? []];
-  const rest: Promise<{ data: unknown[] | null; error: { message: string } | null }>[] = [];
-  for (let off = PAGE; off < total; off += PAGE) rest.push(base().range(off, off + PAGE - 1) as never);
-  for (const r of await Promise.all(rest)) {
-    if (r.error) throw new Error(r.error.message);
-    pages.push((r.data ?? []) as never);
-  }
-  const raw = pages.flat() as unknown as Record<string, unknown>[];
+  // Dibaca per bulan dalam jendela row_seq (1..N berurutan per (lead, bulan), lihat
+  // merchant_report_replace_month) — BUKAN offset + count exact: offset memaksa
+  // Postgres memindai ulang semua baris sebelumnya di tiap halaman, dan count
+  // exact memindai seluruh tabel lead. Keduanya bikin halaman kena
+  // statement_timeout di production (2026-11-06, ~8.900 baris Sushi Yay).
+  const maxSeq = await Promise.all(
+    range.map(async (p) => {
+      const { data, error } = await supabase
+        .from("tiktok_post_snapshots")
+        .select("row_seq")
+        .eq("lead_id", leadId)
+        .eq("period_start", `${p}-01`)
+        .order("row_seq", { ascending: false })
+        .limit(1);
+      if (error) throw new Error(error.message);
+      return { p, max: data && data.length ? Number(data[0].row_seq) : 0 };
+    }),
+  );
+  const windows: { p: string; lo: number }[] = [];
+  for (const { p, max } of maxSeq) for (let lo = 1; lo <= max; lo += PAGE) windows.push({ p, lo });
+  const pages = await Promise.all(
+    windows.map(async ({ p, lo }) => {
+      const { data, error } = await supabase
+        .from("tiktok_post_snapshots")
+        .select(COLS)
+        .eq("lead_id", leadId)
+        .eq("period_start", `${p}-01`)
+        .eq("status_valid", true)
+        .gte("row_seq", lo)
+        .lt("row_seq", lo + PAGE)
+        .order("row_seq");
+      if (error) throw new Error(error.message);
+      return (data ?? []) as unknown as Record<string, unknown>[];
+    }),
+  );
+  // windows sudah urut (bulan naik, row_seq naik) -> urutan baris = (period, row_seq).
+  const raw = pages.flat();
   const rows: MetricRow[] = raw.map((r) => ({
     period: String(r.period_start).slice(0, 7),
     post_id: String(r.post_id),
