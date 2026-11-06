@@ -147,3 +147,20 @@ Tiga hal yang sering salah disimpulkan dari pensiun ini:
 menambah label justru akan membuat `generate_performance_scores` (0209:94) mulai
 menghasilkan angka untuk divisi yang mesinnya baru saja dihentikan. Alasan
 lengkapnya di header migrasi `0361`.
+
+## Laporan Performa Merchant (migrasi 0378) — "snapshot", "outlet", "bucket", "layer", "skor"
+
+| Istilah | Arti di laporan merchant | Jangan tertukar dengan |
+|---|---|---|
+| **Snapshot** | Satu baris `tiktok_post_snapshots` = **post × outlet × bulan** dari export "Content Analysis › Video List". Baris pecahan (post×outlet sama, beda views/CTR) **dijumlahkan** saat ingest. Hanya `status_valid` (Status "Valid posts") yang dihitung. | `tiktok_post_index` (0346) — index GLOBAL per post untuk validasi bukti campaign, tanpa dimensi bulan; tidak diubah. |
+| **Outlet** | Satu **Location ID** TikTok milik brand (cabang/POI). Disimpan di `merchant_locations` per lead. Nama tampilan tanpa awalan brand ("Sushi Yay! - Gatsu" → "Gatsu"). | `merchants` (M4, hasil close_deal) dan kolom `Merchant` export (platform OTA). |
+| **Bucket order** | Kategori outlet menurut order per bulan: 0 / 1–5 / 6–10 / 11–20 / 21–50 / >50 (edges `merchant_report_params.bucket_edges`). Penyebut = outlet yang muncul di export bulan itu — bisa beda tiap bulan. | — |
+| **Skor** | 0,4·PR(GMV) + 0,3·PR(redemption) + 0,3·PR(order); PR = peringkat persentil `(rank−1)/(n−1)`, n=1 → 1,0. Dihitung atas **periode laporan terpilih** (bisa multi-bulan) di `lib/merchant-report/metrics.ts`; view `v_merchant_outlet_score` = versi per bulan. | Skor BD (`/bizdev/skor`), skor M13/M14 (pensiun). |
+| **Layer outlet** | Layer 1 skor ≥0,8 · Layer 2 ≥0,4 · Layer 3 sisanya. | Layer creator (ambang beda). |
+| **Layer creator** | Dihitung hanya di antara creator **bound & ber-GMV**: Layer 1 ≥0,9 · Layer 2 ≥0,6 · selain itu Monitor. Bound GMV 0 & views ≥1.000 = Layer 3; bound lainnya = Monitor; tidak bound = "Belum bound/linked". | GO Ladder (Starter→Elite). |
+| **Bound (di laporan)** | `Creator link status` di export **bulan terakhir periode** tidak kosong. Snapshot, bukan riwayat. | `mcn_creators.binding_status = 'Bound creators'` (Creator Analysis) — yang mengatur akses Creator Portal. Ingest laporan **tidak pernah** menulis `binding_status`. |
+| **Lead induk** | Lead tempat data satu brand di-upload. Brand bisa punya 2 lead (wilayah); PK snapshot tanpa `lead_id` sehingga post×outlet×bulan yang sama tidak bisa masuk ke dua lead (cegah double count). | — |
+| **Insight** | Teks per blok `ins1..ins8`. Default = aturan otomatis (`lib/merchant-report/insights.ts`); versi edit BD disimpan di `merchant_report_notes` per lead + periode (teks polos, bukan HTML) dan ikut tampil di portal merchant. | `notes` internal tabel lain (tidak pernah ke portal). |
+
+Rumus lengkap & acuan angka: `docs/HANDOFF_LAPORAN_MERCHANT.md` §5–§6. Rumus TS wajib
+identik dengan `scripts/merchant_report/compute_metrics.py` — dijaga `scripts/qc_merchant_report.mjs`.

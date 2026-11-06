@@ -1,4 +1,5 @@
-import { getCachedClient } from "@/lib/supabase/server";
+import { getCachedClient, getMerchantPortal } from "@/lib/supabase/server";
+import { PerformanceSection } from "./performance";
 import { num, rupiah, tanggal } from "@/lib/format";
 import { periodLabel, reportStatusLabel, type GmvMonth, type PortalCycle } from "@/lib/merchant-portal";
 
@@ -6,8 +7,10 @@ type MonthlyReport = { period: string; total_gmv: number | null; gmv_estimated: 
 
 // Laporan GMV: per siklus (poi_dining_cycles) + rekap bulanan + laporan bulanan
 // yang sudah siap. Semua lewat RPC merchant_portal_* (hanya data merchant ini).
-export default async function MerchantReportsPage() {
+export default async function MerchantReportsPage({ searchParams }: { searchParams: Promise<{ dari?: string; sampai?: string }> }) {
+  const sp = await searchParams;
   const supabase = await getCachedClient();
+  const brands = (await getMerchantPortal()) ?? [];
   const [{ data: cycRaw }, { data: gmvRaw }, { data: repRaw }] = await Promise.all([
     supabase.rpc("merchant_portal_cycles"),
     supabase.rpc("merchant_portal_gmv_monthly"),
@@ -20,7 +23,9 @@ export default async function MerchantReportsPage() {
   return (
     <>
       <h1>Laporan GMV</h1>
-      <p className="page-sub">GMV per siklus kampanye dan rekap bulanan.</p>
+      <p className="page-sub">Performa bulanan TikTok GO, GMV per siklus kampanye, dan rekap bulanan.</p>
+
+      <PerformanceSection brands={brands} dari={sp.dari} sampai={sp.sampai} />
 
       <div className="card">
         <h2>GMV per Bulan</h2>
