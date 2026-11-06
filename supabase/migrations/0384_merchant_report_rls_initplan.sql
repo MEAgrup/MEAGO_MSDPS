@@ -1,5 +1,5 @@
 -- =============================================================================
--- MSDPS · Laporan Performa Merchant · Migration 0383 — RLS 0381 sekali per query
+-- MSDPS · Laporan Performa Merchant · Migration 0384 — RLS 0381 sekali per query
 -- =============================================================================
 -- Kenapa ada: /meago/laporan-merchant/[lead_id] di production gagal render
 -- (2026-11-06, Vercel log: "canceling statement due to statement timeout").
