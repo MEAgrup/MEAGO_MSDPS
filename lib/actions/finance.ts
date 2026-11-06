@@ -19,6 +19,8 @@ export async function verifyPayment(
   const p_transaction_id = String(formData.get("transaction_id") || "");
   const p_amount = Number(formData.get("amount") || 0);
   const p_proof = String(formData.get("proof") || "").trim() || null;
+  // Link kontrak SPK/MoU (0378): wajib di verifikasi pertama, divalidasi RPC.
+  const p_contract_url = String(formData.get("contract_url") || "").trim() || null;
   if (!p_transaction_id || !(p_amount > 0)) {
     return { ok: false, message: "Jumlah verifikasi harus lebih dari 0." };
   }
@@ -27,6 +29,7 @@ export async function verifyPayment(
     p_transaction_id,
     p_amount,
     p_proof,
+    p_contract_url,
   });
   if (error) return { ok: false, message: `Verifikasi gagal: ${error.message}` };
 
@@ -43,6 +46,33 @@ export async function verifyPayment(
   revalidatePath("/merchants");
   revalidatePath("/deals");
   return { ok: true, message: `Pembayaran diverifikasi. Status transaksi: ${data}.${bridgeNote}` };
+}
+
+// Ganti link kontrak SPK/MoU sebuah transaksi tanpa memverifikasi pembayaran
+// (0378). Validasi URL + gerbang Finance/Director ada di RPC.
+export async function setContractUrl(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, message: "Tidak terautentikasi." };
+
+  const p_transaction_id = String(formData.get("transaction_id") || "");
+  const p_contract_url = String(formData.get("contract_url") || "").trim();
+  if (!p_transaction_id) return { ok: false, message: "Data transaksi tidak lengkap." };
+
+  const { error } = await supabase.rpc("set_transaction_contract_url", {
+    p_transaction_id,
+    p_contract_url,
+  });
+  if (error) return { ok: false, message: `Gagal menyimpan link kontrak: ${error.message}` };
+
+  revalidatePath("/finance");
+  revalidatePath("/merchants");
+  return { ok: true, message: "Link kontrak disimpan." };
 }
 
 // Disbursement payout kreator (M5 out-leg): Finance transfer manual mingguan,

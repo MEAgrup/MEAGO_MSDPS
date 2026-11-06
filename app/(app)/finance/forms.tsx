@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useActionState } from "react";
 import {
   verifyPayment,
+  setContractUrl,
   setTransactionFlag,
   setPayoutStatus,
   type ActionResult,
@@ -14,9 +15,13 @@ import { rupiah } from "@/lib/format";
 export function VerifyForm({
   transactionId,
   outstanding,
+  needsContract,
 }: {
   transactionId: string;
   outstanding: number;
+  // true = belum ada link kontrak tersimpan → kolom link tampil; wajib bila
+  // ini verifikasi pertama (dijaga juga di RPC verify_payment, 0378).
+  needsContract?: { required: boolean };
 }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(
     verifyPayment,
@@ -63,12 +68,61 @@ export function VerifyForm({
         />
       )}
       <input name="proof" placeholder="No. bukti (opsional)" style={{ width: 140 }} />
+      {needsContract && (
+        <input
+          name="contract_url"
+          type="url"
+          pattern="https?://.+"
+          placeholder={`Link kontrak SPK/MoU${needsContract.required ? " (wajib)" : ""}`}
+          required={needsContract.required}
+          style={{ width: 200 }}
+        />
+      )}
       <button className="sm" disabled={pending}>
         {pending ? "…" : "Verifikasi"}
       </button>
       {state && (
         <span className={state.ok ? "badge green" : "badge red"} title={state.message}>
-          {state.ok ? "ok" : "gagal"}
+          {state.ok ? "ok" : state.message}
+        </span>
+      )}
+    </form>
+  );
+}
+
+// Link kontrak SPK/MoU tersimpan (bisa diklik) + ganti oleh Finance (0378).
+export function ContractLink({ url }: { url: string | null }) {
+  return url ? (
+    <a href={url} target="_blank" rel="noopener noreferrer">
+      lihat kontrak
+    </a>
+  ) : (
+    <span className="muted">—</span>
+  );
+}
+
+export function ContractUrlForm({ transactionId }: { transactionId: string }) {
+  const [state, action, pending] = useActionState<ActionResult | null, FormData>(
+    setContractUrl,
+    null
+  );
+  return (
+    <form action={action} className="inline-form">
+      <input type="hidden" name="transaction_id" value={transactionId} />
+      <input
+        name="contract_url"
+        type="url"
+        pattern="https?://.+"
+        placeholder="Ganti link kontrak"
+        required
+        style={{ width: 160 }}
+      />
+      <button className="sm ghost2" disabled={pending}>
+        {pending ? "…" : "Simpan"}
+      </button>
+      {state && (
+        <span className={state.ok ? "badge green" : "badge red"} title={state.message}>
+          {state.ok ? "ok" : state.message}
         </span>
       )}
     </form>
