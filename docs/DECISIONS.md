@@ -7,6 +7,65 @@ dari sisi MSDPS. Ringkasan status implementasi tetap di `docs/BUILD_PLAN.md`.
 
 ---
 
+## 2026-11-06 — CM Workspace: GMV per kategori, search kreator, Report Kreator Bulanan otomatis
+
+**Sumber:** permintaan Rizal (CM Lead); ACC owner (Yohan) 2026-11-06.
+
+**Audit sebelum coding (supaya tidak dobel):**
+
+- Kartu "Report Kreator" (`/meago/creators`, 0312) sudah ada, tapi isinya cuma
+  **upload file manual**. Belum ada report yang disusun otomatis dari data.
+- GMV Video (`creator_video_gmv`, 0317 + `/meago/gmv-video`) sudah ada, tapi di
+  live belum pernah diisi.
+- CM Workspace (Growth W1-W5 + Detail Mingguan) belum punya search.
+- **Belum ada sumber data kategori.** Export Creator Analysis & GMV Video tidak
+  punya kolom kategori. `mcn_creators.niche` baru terisi di 10 dari 2.262
+  kreator, dan `creator_subcat_segment_gmv` (jalur legacy) kosong di live.
+
+**Keputusan:**
+
+1. **GMV per kategori = upload per kategori** (pilihan Yohan). CM mengunduh
+   export Creator Analysis yang sudah **difilter per kategori di TikTok**, lalu
+   memilih kategorinya di form "Upload Creator Analysis Mingguan"
+   (`/meago/gmv-video`) (All / Dining /
+   Accommodation / TTD / LIVE). Sistem **tidak menebak** kategori dari isi file.
+   - **All tetap di `creator_period_summary`** (nol perubahan perilaku).
+     Dining/Accommodation/TTD/LIVE masuk **tabel terpisah**
+     `creator_period_category_summary` (migr. 0383). Alasannya: semua pembaca
+     lama (Growth, `perf_drop`, rata-rata GMV master, portal `/kreator/performa`)
+     dedupe per (kreator, minggu) dengan "created_at terbaru menang". Kalau
+     baris kategori disimpan di tabel yang sama, upload Dining sesudah All akan
+     menimpa angka total minggu itu di semua pembaca tersebut.
+   - Upload kategori **tidak** menjalankan sync master, alert binding/perf_drop,
+     atau auto-fill GMV master, karena semua itu berbasis angka All.
+   - Kategori hanya untuk format Creator Analysis. File legacy dengan kategori
+     selain All ditolak, tidak disimpan diam-diam sebagai All.
+   - Kategori bisa beririsan (mis. LIVE juga Dining), jadi jumlah kategori
+     tidak harus sama dengan All. Hal ini ditulis juga di UI.
+   - Portal kreator **tidak** diberi akses ke tabel baru karena belum diminta.
+2. **Search kreator** di CM Workspace: satu kotak search (username / nama /
+   kode, "@" diabaikan) yang berlaku untuk Growth, Detail Mingguan, dan
+   breakdown kategori. Parameter `q` & `cat` ikut terbawa di navigasi
+   bulan/minggu.
+3. **Report Kreator Bulanan otomatis** (`/meago/creators/report`) melengkapi
+   upload manual, tidak menggantikannya. Isinya disusun dari data yang sudah
+   ada: performa All W1-W5, GMV per kategori, GMV Video per minggu + 10 video
+   terlaris. Bisa dicetak/PDF atau diunduh Excel. Kalau ingin dibaca kreator di
+   portal, CM tinggal mengunggah hasilnya lewat kartu yang sama. Akses sama
+   dengan kartu Report Kreator: CM + management. Staff CM hanya bisa membuka
+   kreator miliknya.
+
+**Status migrasi 0383:** file saja, **belum di-apply** ke staging/live. Sebelum
+di-apply, tab kategori tampil "—" dan upload kategori gagal dengan pesan error,
+sementara jalur All tidak terpengaruh.
+
+**Tes:** `scripts/qc_creator_category_report.mjs` (40 assertion lib),
+`scripts/test_creator_category_summary.sql` (14 assertion RLS/CHECK/retensi),
+`scripts/pg_test_reset.sh` (102 migrasi lolos dari nol).
+
+
+---
+
 ## 2026-11-06 — Akuisisi: dashboard performa, field binding, PIC CM ditetapkan Akuisisi (0382)
 
 **Sumber:** laporan Siti (tim Akuisisi); ACC owner (Yohan) 2026-11-06.
@@ -57,6 +116,9 @@ dari sisi MSDPS. Ringkasan status implementasi tetap di `docs/BUILD_PLAN.md`.
 
 ---
 
+
+
+---
 
 ## 2026-11-06 — Upload mingguan CM dipusatkan di /meago/gmv-video
 
