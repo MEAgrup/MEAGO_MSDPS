@@ -17,6 +17,7 @@ import {
   type WorkbookSheet,
 } from "@/lib/mcn/creator-analysis";
 import { validateW1W5Period } from "@/lib/mcn/weeks";
+import { parseGmvCategory, gmvCategoryLabel, type GmvSubCategory } from "@/lib/mcn/gmv-category";
 import { buildMonthlyAverages, type AverageRow } from "@/lib/mcn/weeks";
 
 export type ActionResult = { ok: boolean; message: string };
@@ -267,7 +268,12 @@ async function sweepExpiredWeeklyData(supabase: SupabaseClient): Promise<void> {
   const cutoff = retentionCutoffDate(months);
 
   // Hapus baris agregat DB kedaluwarsa (client sesi user — RLS delete CM sudah mengizinkan).
-  for (const table of ["creator_period_summary", "creator_subcat_segment_gmv", "creator_top_products"]) {
+  for (const table of [
+    "creator_period_summary",
+    "creator_period_category_summary",
+    "creator_subcat_segment_gmv",
+    "creator_top_products",
+  ]) {
     await supabase.from(table).delete().lt("period_start", cutoff);
   }
 
@@ -320,6 +326,9 @@ export async function runIngest(
   const source_type = String(formData.get("source_type") || "").trim() || "tiktok";
   const platform = source_type; // MEAGO TikTok-only; platform mengikuti source_type.
   const force = readForceReprocess(formData);
+  // Kategori export (0383). Kosong/"all" = jalur lama tanpa perubahan.
+  const category = parseGmvCategory(String(formData.get("category") ?? ""));
+  if (category === null) return { ok: false, message: "Kategori upload tidak dikenal." };
 
   let sheets: WorkbookSheet[];
   let hash8: string;
@@ -336,7 +345,18 @@ export async function runIngest(
   // Router format: workbook "Creator Analysis" (2 sheet Filter+Data) → jalur baru.
   // Selain itu → jalur legacy (report performa single-sheet, cells = sheet pertama).
   if (isCreatorAnalysisWorkbook(sheets)) {
-    return runCreatorAnalysisIngest(supabase, sheets, source_type, platform, hash8, hashFull, force);
+    return runCreatorAnalysisIngest(
+      supabase, sheets, source_type, platform, hash8, hashFull, force,
+      category === "all" ? null : category
+    );
+  }
+  // Kategori hanya didukung format Creator Analysis — format legacy tidak membawa
+  // metrik yang sama, jangan diam-diam disimpan sebagai "All".
+  if (category !== "all") {
+    return {
+      ok: false,
+      message: `Upload kategori ${gmvCategoryLabel(category)} hanya untuk file export Creator Analysis (sheet Filter + Data).`,
+    };
   }
   const cells: string[][] = sheets[0]?.cells ?? [];
 
@@ -627,7 +647,9 @@ async function runCreatorAnalysisIngest(
   platform: string,
   hash8: string,
   hashFull: string,
-  force: boolean
+  force: boolean,
+  // null = All (creator_period_summary, jalur lama). Selain itu → creator_period_category_summary.
+  category: GmvSubCategory | null = null
 ): Promise<ActionResult> {
   // a. Parse workbook. Gagal → pesan error (belum ada batch row).
   const parsed = parseCreatorAnalysisWorkbook(sheets);
@@ -746,6 +768,22 @@ async function runCreatorAnalysisIngest(
   }
   const ids = [...masterById.keys()];
   if (ids.length === 0) return failBatch("Tidak ada kreator ter-resolve dari file.");
+
+  if (category !== null) {
+    return finishCategoryIngest(supabase, {
+      category,
+      ids,
+      fileByCreatorId,
+      batch_id,
+      batchRowId: staging.batchRowId,
+      periodStart,
+      periodEnd,
+      rowCount: rows.length,
+      failBatch,
+      autoCreated,
+      skipped,
+    });
+  }
 
   // f. Insert summary (delete-then-insert per ids+period_start). Kolom legacy lain tak diisi.
   const summaryRows = ids.map((id) => {
@@ -895,6 +933,87 @@ async function runCreatorAnalysisIngest(
   return {
     ok: true,
     message: `Ingest Creator Analysis ${periodStart}..${periodEnd} selesai: ${rows.length} baris, ${ids.length} kreator.${autoMsg}${bindingMsg}${skipMsg}${archiveMsg}`,
+  };
+}
+
+// finishCategoryIngest — sisa jalur Creator Analysis untuk upload BER-KATEGORI (0383).
+// Hanya menulis creator_period_category_summary (delete-then-insert per kreator+minggu+
+// kategori). SENGAJA tidak menyentuh: sync master, alert binding_lost/perf_drop, auto-fill
+// GMV master — semuanya berbasis angka All, bukan potongan per kategori.
+async function finishCategoryIngest(
+  supabase: SupabaseClient,
+  a: {
+    category: GmvSubCategory;
+    ids: string[];
+    fileByCreatorId: Map<string, CreatorAnalysisRow>;
+    batch_id: string;
+    batchRowId: string;
+    periodStart: string;
+    periodEnd: string;
+    rowCount: number;
+    failBatch: (msg: string) => Promise<ActionResult>;
+    autoCreated: string[];
+    skipped: { rowIndex: number; reason: string }[];
+  }
+): Promise<ActionResult> {
+  const label = gmvCategoryLabel(a.category);
+  const { error: cErr } = await supabase
+    .from("upload_batches")
+    .update({ category: a.category })
+    .eq("id", a.batchRowId);
+  if (cErr) return a.failBatch(`Gagal menandai kategori batch: ${cErr.message}`);
+
+  const catRows = a.ids.map((id) => {
+    const row = a.fileByCreatorId.get(id)!;
+    return {
+      mcn_creator_id: id,
+      category: a.category,
+      period_start: a.periodStart,
+      period_end: a.periodEnd,
+      upload_batch: a.batch_id,
+      affiliate_gmv: row.salesValue,
+      orders: row.orders,
+      aov: row.aov,
+      redemption_amount: row.redemptionAmount,
+      redeemed_orders: row.redeemedOrders,
+      new_posts: row.newPosts,
+      posts_with_sales: row.postsWithSales,
+      live_streams: row.liveStreams,
+      valid_live_streams: row.validLiveStreams,
+    };
+  });
+
+  const { error: dErr } = await supabase
+    .from("creator_period_category_summary")
+    .delete()
+    .in("mcn_creator_id", a.ids)
+    .eq("category", a.category)
+    .eq("period_start", a.periodStart);
+  if (dErr) return a.failBatch(`Gagal membersihkan data kategori ${label}: ${dErr.message}`);
+  const { error: iErr } = await supabase.from("creator_period_category_summary").insert(catRows);
+  if (iErr) return a.failBatch(`Gagal menulis data kategori ${label}: ${iErr.message}`);
+
+  const { error: pErr } = await supabase
+    .from("upload_batches")
+    .update({
+      status: "processed",
+      row_count_raw: a.rowCount,
+      creators_count: a.ids.length,
+      processed_at: new Date().toISOString(),
+    })
+    .eq("id", a.batchRowId);
+  if (pErr) return a.failBatch(`Gagal menandai processed: ${pErr.message}`);
+
+  revalidatePath("/meago/workspace");
+  revalidatePath("/meago/creators");
+
+  const autoMsg = a.autoCreated.length
+    ? ` Auto-created: ${a.autoCreated.slice(0, 10).join(", ")}${a.autoCreated.length > 10 ? ` (+${a.autoCreated.length - 10})` : ""}.`
+    : "";
+  const skipMsg = a.skipped.length ? ` Skipped ${a.skipped.length} baris.` : "";
+  return {
+    ok: true,
+    message: `Ingest kategori ${label} ${a.periodStart}..${a.periodEnd} selesai: ${a.rowCount} baris, ${a.ids.length} kreator.${autoMsg}${skipMsg}`,
   };
 }
 

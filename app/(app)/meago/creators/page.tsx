@@ -260,6 +260,10 @@ export default async function McnCreatorsPage({
     creators.map((c) => [c.id, `${c.code ?? "(draft)"} · ${c.name}`])
   );
   const reports = (reportsRaw as ReportRow[] | null) ?? [];
+  const reportMonthDefault = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
 
   // Boundary bulan berjalan + 2 sebelumnya (hari-1 bulan M-2). Pakai `new Date()` tanpa
   // argumen (wall-clock sekarang) — BUKAN new Date(isoString), jadi aman dari pergeseran
@@ -552,6 +556,36 @@ export default async function McnCreatorsPage({
             Staff CM hanya bisa mengunggah untuk kreator miliknya; Lead CM &amp; management
             lintas kreator.
           </p>
+          <div className="subcard" style={{ marginBottom: 16 }}>
+            <h3>Report Bulanan Otomatis</h3>
+            <p className="muted" style={{ fontSize: 12, margin: "0 0 8px" }}>
+              Detail W1-W5, GMV per kategori, dan GMV Video disusun otomatis dari data yang sudah
+              diunggah. Bisa dicetak/PDF atau diunduh Excel, lalu diunggah di bawah bila perlu
+              dibaca kreator di portal.
+            </p>
+            <form method="get" action="/meago/creators/report" className="row">
+              <div>
+                <label>Kreator *</label>
+                <select name="creator" defaultValue="" required>
+                  <option value="" disabled>
+                    Pilih kreator…
+                  </option>
+                  {reportCreators.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.code ?? "(draft)"} · {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label>Bulan *</label>
+                <input type="month" name="month" defaultValue={reportMonthDefault} required />
+              </div>
+              <div style={{ alignSelf: "end" }}>
+                <button type="submit">Lihat Report</button>
+              </div>
+            </form>
+          </div>
           <UploadReportForm creators={reportCreators} />
           <div style={{ overflowX: "auto", marginTop: 16 }}>
             <table>
