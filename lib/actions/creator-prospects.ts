@@ -72,7 +72,8 @@ export async function createCreatorFromProspect(
 }
 
 // "Catat Akuisisi (ACQ)": memakai recordAcquisition yang sudah ada (snapshot
-// komisi, baseline GMV, prospek→binding), lalu menautkan barisnya ke prospek.
+// komisi, baseline GMV, field binding 0382 + PIC CM, prospek→binding), lalu
+// menautkan barisnya ke prospek.
 export async function recordProspectAcquisition(
   _prev: ActionResult | null,
   formData: FormData
@@ -98,6 +99,10 @@ export async function recordProspectAcquisition(
   fd.set("binding_date", bindingDate);
   fd.set("lead_source", "inbound");
   fd.set("notes", `Dari prospek ${p.code}${p.cta_id ? ` · CTA ${p.cta_id}` : ""}`);
+  // Field binding 0382 (UID, WA, GMV Potential, Tgl Binding Akhir, Jenis Kontrak, PIC CM).
+  for (const k of ["creator_uid", "whatsapp", "gmv_potential", "binding_end_date", "status_kontrak", "pic_cm_id"]) {
+    fd.set(k, String(formData.get(k) ?? ""));
+  }
   const res = await recordAcquisition(null, fd);
   if (!res.ok) return res;
 

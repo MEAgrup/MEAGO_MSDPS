@@ -10,6 +10,7 @@ import {
   type ActionResult,
 } from "@/lib/actions/creator-prospects";
 import { PortalAccessButton } from "@/components/portal-access-button";
+import { BindingFieldsInputs } from "../forms";
 
 export type Prospect = {
   id: string;
@@ -89,6 +90,7 @@ export function ProspectList({
   registered,
   empName,
   acqOptions,
+  cmOptions,
   myId,
   canWrite,
   canAssignAny,
@@ -98,6 +100,7 @@ export function ProspectList({
   registered: Record<string, RegisteredCreator>;
   empName: Record<string, string>;
   acqOptions: { id: string; full_name: string }[];
+  cmOptions: { id: string; full_name: string }[];
   myId: string;
   canWrite: boolean;
   canAssignAny: boolean;
@@ -247,6 +250,7 @@ export function ProspectList({
           registeredAs={registered[detail.id] ?? null}
           empName={empName}
           acqOptions={acqOptions}
+          cmOptions={cmOptions}
           myId={myId}
           canWrite={canWrite}
           canAssignAny={canAssignAny}
@@ -263,6 +267,7 @@ function ProspectDetail({
   registeredAs,
   empName,
   acqOptions,
+  cmOptions,
   myId,
   canWrite,
   canAssignAny,
@@ -273,6 +278,7 @@ function ProspectDetail({
   registeredAs: RegisteredCreator | null;
   empName: Record<string, string>;
   acqOptions: { id: string; full_name: string }[];
+  cmOptions: { id: string; full_name: string }[];
   myId: string;
   canWrite: boolean;
   canAssignAny: boolean;
@@ -459,6 +465,7 @@ function ProspectDetail({
               <input type="hidden" name="id" value={p.id} />
               <label>Tanggal Binding *</label>
               <input type="date" name="binding_date" required />
+              <BindingFieldsInputs cmOptions={cmOptions} defaultWa={p.phone_normalized} />
               <button type="submit" className="ghost2" disabled={acqPending}>
                 {acqPending ? "…" : "Catat Akuisisi (inbound)"}
               </button>

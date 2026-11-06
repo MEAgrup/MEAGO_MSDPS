@@ -10,6 +10,7 @@ import {
   HandoffButton,
   RecordReferralForm,
   MarkReferralPaidButton,
+  AssignPicCmForm,
 } from "./forms";
 
 type Acquisition = {
@@ -24,6 +25,10 @@ type Acquisition = {
   gmv_post_join: number | null;
   gmv_quarter_actual: number | null;
   handoff_done: boolean;
+  creator_uid: string | null;
+  whatsapp: string | null;
+  gmv_potential: number | null;
+  binding_end_date: string | null;
 };
 
 type Referral = {
@@ -73,7 +78,7 @@ export default async function AcquisitionPage() {
   ] = await Promise.all([
       supabase
         .from("mcn_creators")
-        .select("id, name, code, status, owner_cpm_id, username, niche, city, created_at")
+        .select("id, name, code, status, status_kontrak, owner_cpm_id, username, niche, city, created_at")
         .order("name", { ascending: true }),
       // Prospek di-query TERPISAH dengan filter status di server. Jangan andalkan
       // filter status dari daftar `creators` di atas: PostgREST membatasi hasil ke
@@ -87,14 +92,14 @@ export default async function AcquisitionPage() {
       supabase
         .from("acquisitions")
         .select(
-          "id, code, mcn_creator_id, specialist_id, lead_source, binding_date, commission_share_at_binding, gmv_last_30d, gmv_post_join, gmv_quarter_actual, handoff_done"
+          "id, code, mcn_creator_id, specialist_id, lead_source, binding_date, commission_share_at_binding, gmv_last_30d, gmv_post_join, gmv_quarter_actual, handoff_done, creator_uid, whatsapp, gmv_potential, binding_end_date"
         )
         .order("binding_date", { ascending: false }),
       supabase
         .from("referrals")
         .select("id, code, new_creator_id, referrer_creator_id, referral_source, commission_status")
         .order("created_at", { ascending: false }),
-      supabase.from("employees").select("id, full_name"),
+      supabase.from("employees").select("id, full_name, division, active"),
       // Semua project kecuali cancelled — yang belum mulai tampil [Persiapan] (QA 2026-07-17).
       supabase
         .from("v_project_summary")
@@ -112,6 +117,7 @@ export default async function AcquisitionPage() {
           name: string;
           code: string | null;
           status: string;
+          status_kontrak: string | null;
           owner_cpm_id: string | null;
           username: string | null;
           niche: string | null;
@@ -142,7 +148,14 @@ export default async function AcquisitionPage() {
 
   const referrals = (refRaw as Referral[] | null) ?? [];
 
-  const empName = new Map(((emps as { id: string; full_name: string }[] | null) ?? []).map((e) => [e.id, e.full_name]));
+  const empRows =
+    (emps as { id: string; full_name: string; division: string | null; active: boolean | null }[] | null) ?? [];
+  const empName = new Map(empRows.map((e) => [e.id, e.full_name]));
+  // Opsi PIC CM (0382): karyawan Creator Management yang aktif.
+  const cmOptions = empRows
+    .filter((e) => e.division === "CreatorManagement" && e.active !== false)
+    .map((e) => ({ id: e.id, full_name: e.full_name }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   const projects = (projRaw as ProjectSummary[] | null) ?? [];
   const todayYMD = todayJakartaYMD();
@@ -157,7 +170,8 @@ export default async function AcquisitionPage() {
       <h1>Akuisisi Kreator</h1>
       <p className="page-sub">
         Catat closing/binding kreator baru, referral antar-kreator, dan handoff ke tim CM.{" "}
-        Pendaftar dari meago.id ada di <Link href="/acquisition/prospek">Prospek Kreator</Link>.
+        Pendaftar dari meago.id ada di <Link href="/acquisition/prospek">Prospek Kreator</Link>. Performa
+        tim & individu ada di <Link href="/acquisition/dashboard">Dashboard Akuisisi</Link>.
       </p>
 
       {canWrite && (
@@ -207,7 +221,7 @@ export default async function AcquisitionPage() {
       {canWrite && (
         <div className="card">
           <h2>Catat Akuisisi (Binding)</h2>
-          <RecordAcquisitionForm prospects={prospects} />
+          <RecordAcquisitionForm prospects={prospects} cmOptions={cmOptions} />
         </div>
       )}
 
@@ -222,6 +236,9 @@ export default async function AcquisitionPage() {
                 <th>Specialist</th>
                 <th>Sumber</th>
                 <th>Binding</th>
+                <th>Kontrak</th>
+                <th>PIC CM</th>
+                <th className="right">GMV Potential</th>
                 <th className="right">GMV 30d Pre</th>
                 <th className="right">GMV Post-Join</th>
                 <th>Handoff</th>
@@ -234,10 +251,41 @@ export default async function AcquisitionPage() {
                 return (
                   <tr key={a.id}>
                     <td className="mono">{a.code ?? "—"}</td>
-                    <td>{creatorName(a.mcn_creator_id)}</td>
+                    <td>
+                      {creatorName(a.mcn_creator_id)}
+                      {(a.creator_uid || a.whatsapp) && (
+                        <div className="muted" style={{ fontSize: 11 }}>
+                          {a.creator_uid && <>UID {a.creator_uid}</>}
+                          {a.creator_uid && a.whatsapp && " · "}
+                          {a.whatsapp && (
+                            <a href={`https://wa.me/${a.whatsapp}`} target="_blank" rel="noreferrer">
+                              WA {a.whatsapp}
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td className="muted">{empName.get(a.specialist_id) ?? "—"}</td>
                     <td className="muted">{a.lead_source ?? "—"}</td>
-                    <td className="muted">{tanggal(a.binding_date)}</td>
+                    <td className="muted">
+                      {tanggal(a.binding_date)}
+                      {a.binding_end_date && <div style={{ fontSize: 11 }}>s/d {tanggal(a.binding_end_date)}</div>}
+                    </td>
+                    <td className="muted">{creator?.status_kontrak ?? "—"}</td>
+                    <td>
+                      {canWrite && !a.handoff_done ? (
+                        <AssignPicCmForm
+                          id={a.id}
+                          currentId={creator?.owner_cpm_id ?? null}
+                          cmOptions={cmOptions}
+                        />
+                      ) : (
+                        <span className="muted">
+                          {creator?.owner_cpm_id ? (empName.get(creator.owner_cpm_id) ?? "—") : "—"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="right">{a.gmv_potential === null ? "—" : rupiah(a.gmv_potential)}</td>
                     <td className="right">{rupiah(a.gmv_last_30d)}</td>
                     <td className="right">
                       {rupiah(a.gmv_post_join)}
@@ -261,7 +309,7 @@ export default async function AcquisitionPage() {
               })}
               {acquisitions.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="muted">
+                  <td colSpan={11} className="muted">
                     Belum ada akuisisi tercatat.
                   </td>
                 </tr>
