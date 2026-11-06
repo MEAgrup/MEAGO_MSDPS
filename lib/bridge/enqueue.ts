@@ -45,10 +45,9 @@ const DEAL_COLUMNS =
   "tanggal_akhir_kontrak, bd_id, bentuk_kerjasama, transaction_id, " +
   "merchant_gmv_baseline, merchant_target_gmv, link_akun_merchant, kategori_merchant";
 
-// Migrasi 0379: blok `merchant_target` (Baseline/Target GMV dari BD) baru
-// dikirim sesudah validator CDPS terbukti menerima kunci tambahan — validator
-// itu tidak bisa diverifikasi dari repo ini, dan penolakan = order 'dead'.
-// Default MATI ⇒ payload persis v1 seperti sebelumnya.
+// Migrasi 0379: Baseline/Target GMV dari BD dikirim sebagai field opsional
+// `merchant.gmv_baseline/target_gmv/link_toko/kategori` (kontrak CDPS,
+// AgencyAPP #563) hanya bila flag ini = "1". Default MATI ⇒ payload persis v1.
 export function merchantTargetEnabled(env: Record<string, string | undefined> = process.env): boolean {
   return env.BRIDGE_KIRIM_MERCHANT_TARGET === "1";
 }

@@ -203,23 +203,15 @@ eq(
 );
 eq("tanpa paymentInfo: catatan tidak berubah", buildBridgePayload(sourceRow).lines[0].catatan, fixture.lines[0].catatan);
 
-// ===== 8. merchant_target (migrasi 0379, membalik D7) ========================
-// Opsional & aditif: tanpa merchantTarget ⇒ kunci top-level identik fixture v1.
+// ===== 8. Baseline/Target GMV dari BD (0379) → merchant.* (kontrak CDPS) =====
+// Opsional & aditif: tanpa merchantTarget ⇒ kunci top-level & merchant identik fixture v1.
 const fixtureKeys = JSON.stringify(Object.keys(fixture).sort());
-eq("tanpa merchantTarget: kunci top-level identik fixture v1", JSON.stringify(Object.keys(buildBridgePayload(sourceRow)).sort()), fixtureKeys);
-eq(
-  "merchantTarget null: kunci top-level identik fixture v1",
-  JSON.stringify(Object.keys(buildBridgePayload({ ...sourceRow, merchantTarget: null })).sort()),
-  fixtureKeys
-);
-eq(
-  "merchantTarget tanpa target_gmv (deal lama): blok tidak dikirim",
-  buildBridgePayload({
-    ...sourceRow,
-    merchantTarget: { merchant_gmv_baseline: 1000000, merchant_target_gmv: null, link_akun_merchant: null, kategori_merchant: null },
-  }).merchant_target,
-  undefined
-);
+const fixtureMerchantKeys = JSON.stringify(Object.keys(fixture.merchant).sort());
+for (const [label, mt] of [["tanpa merchantTarget", undefined], ["merchantTarget null", null]]) {
+  const p = buildBridgePayload({ ...sourceRow, merchantTarget: mt });
+  eq(`${label}: kunci top-level identik fixture v1`, JSON.stringify(Object.keys(p).sort()), fixtureKeys);
+  eq(`${label}: kunci merchant identik fixture v1`, JSON.stringify(Object.keys(p.merchant).sort()), fixtureMerchantKeys);
+}
 const withTarget = buildBridgePayload({
   ...sourceRow,
   merchantTarget: {
@@ -230,20 +222,26 @@ const withTarget = buildBridgePayload({
   },
 });
 eq(
-  "merchant_target: bentuk lengkap, uang string desimal",
-  JSON.stringify(withTarget.merchant_target),
-  JSON.stringify({ gmv_baseline: "12500000.00", target_gmv: "50000000.00", link_akun: "https://shop.tiktok.com/x", kategori: null })
+  "merchant.*: empat field kontrak CDPS, uang string desimal",
+  JSON.stringify({
+    gmv_baseline: withTarget.merchant.gmv_baseline,
+    target_gmv: withTarget.merchant.target_gmv,
+    link_toko: withTarget.merchant.link_toko,
+    kategori: withTarget.merchant.kategori,
+  }),
+  JSON.stringify({ gmv_baseline: "12500000.00", target_gmv: "50000000.00", link_toko: "https://shop.tiktok.com/x", kategori: null })
 );
-eq(
-  "merchant_target: baseline null tetap null",
-  buildBridgePayload({
-    ...sourceRow,
-    merchantTarget: { merchant_gmv_baseline: null, merchant_target_gmv: 1, link_akun_merchant: null, kategori_merchant: "F&B" },
-  }).merchant_target.gmv_baseline,
-  null
-);
-eq("merchant_target: payload_versi tetap 1", withTarget.payload_versi, 1);
-eq("merchant_target: lines tidak tersentuh", JSON.stringify(withTarget.lines), JSON.stringify(buildBridgePayload(sourceRow).lines));
+eq("flag nyala: TIDAK ada merchant_target top-level", withTarget.merchant_target, undefined);
+eq("flag nyala: kunci top-level tetap identik fixture v1", JSON.stringify(Object.keys(withTarget).sort()), fixtureKeys);
+eq("flag nyala: tidak ada link_akun (nama lama)", withTarget.merchant.link_akun, undefined);
+eq("flag nyala: field v1 merchant tidak berubah", withTarget.merchant.external_id, buildBridgePayload(sourceRow).merchant.external_id);
+const oldDeal = buildBridgePayload({
+  ...sourceRow,
+  merchantTarget: { merchant_gmv_baseline: 1000000, merchant_target_gmv: null, link_akun_merchant: null, kategori_merchant: "F&B" },
+});
+eq("deal lama tanpa target: target_gmv null, baseline tetap terkirim", JSON.stringify([oldDeal.merchant.target_gmv, oldDeal.merchant.gmv_baseline, oldDeal.merchant.kategori]), JSON.stringify([null, "1000000.00", "F&B"]));
+eq("merchant.*: payload_versi tetap 1", withTarget.payload_versi, 1);
+eq("merchant.*: lines tidak tersentuh", JSON.stringify(withTarget.lines), JSON.stringify(buildBridgePayload(sourceRow).lines));
 
 rmSync(outDir, { recursive: true, force: true });
 

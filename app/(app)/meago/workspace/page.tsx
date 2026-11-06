@@ -17,8 +17,21 @@ import {
   RequestProgressControls,
 } from "./forms";
 import { ComplaintProgressControls } from "./complaint-actions";
+import {
+  GMV_CATEGORIES,
+  gmvCategoryLabel,
+  matchesCreatorSearch,
+  parseGmvCategory,
+  sumCategoryGmv,
+} from "@/lib/mcn/gmv-category";
 
-type CreatorRow = { id: string; name: string; code: string | null; owner_cpm_id: string | null };
+type CreatorRow = {
+  id: string;
+  name: string;
+  code: string | null;
+  username: string | null;
+  owner_cpm_id: string | null;
+};
 type Alert = {
   id: string;
   alert_type: string;
@@ -100,7 +113,7 @@ function shiftMonth(ym: string, delta: number): string {
 export default async function McnWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; week?: string }>;
+  searchParams: Promise<{ month?: string; week?: string; q?: string; cat?: string }>;
 }) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
@@ -124,13 +137,28 @@ export default async function McnWorkspacePage({
   const monthEnd = formatYMD(ymYear, ymMonth, daysInMonth(ymYear, ymMonth));
   const prevYM = shiftMonth(ym, -1);
   const nextYM = shiftMonth(ym, 1);
+  // Search username/nama/kode (Growth + Detail) & tab kategori GMV — keduanya ikut
+  // terbawa di semua link navigasi bulan/minggu lewat wsHref.
+  const q = (sp.q ?? "").trim().slice(0, 100);
+  const cat = parseGmvCategory(sp.cat) ?? "all";
+  const wsHref = (over: { month?: string; week?: string; cat?: string; q?: string }) => {
+    const p = new URLSearchParams();
+    p.set("month", over.month ?? ym);
+    const wk = over.week ?? sp.week;
+    if (wk) p.set("week", wk);
+    const c = over.cat ?? cat;
+    if (c !== "all") p.set("cat", c);
+    const qq = over.q ?? q;
+    if (qq) p.set("q", qq);
+    return `/meago/workspace?${p.toString()}`;
+  };
 
   const supabase = await getCachedClient();
 
   // Scope CPM: staff CM hanya lihat kreator miliknya (RLS juga menegakkan; UI ikut supaya jelas).
   let creatorQuery = supabase
     .from("mcn_creators")
-    .select("id, name, code, owner_cpm_id")
+    .select("id, name, code, username, owner_cpm_id")
     .order("name", { ascending: true });
   if (isStaffCM) creatorQuery = creatorQuery.eq("owner_cpm_id", me!.id);
 
@@ -149,6 +177,7 @@ export default async function McnWorkspacePage({
     { data: alertsRaw },
     { data: complaintsRaw },
     { data: projRaw },
+    { data: catRaw },
   ] = await Promise.all([
     creatorQuery,
     supabase.from("mcn_creators").select("id, name, code"),
@@ -168,10 +197,25 @@ export default async function McnWorkspacePage({
       )
       .neq("status", "cancelled")
       .order("start_date", { ascending: false }),
+    // GMV per kategori (0383) bulan terpilih — semua kategori satu fetch; disaring ke
+    // scope kreator di JS (hindari .in() ribuan id). RLS = sama creator_period_summary.
+    supabase
+      .from("creator_period_category_summary")
+      .select(
+        "mcn_creator_id, category, period_start, created_at, affiliate_gmv, orders, aov, redemption_amount, redeemed_orders, new_posts, posts_with_sales, live_streams, valid_live_streams"
+      )
+      .gte("period_start", monthStart)
+      .lte("period_start", monthEnd),
   ]);
 
   const creators = (creatorsRaw as CreatorRow[] | null) ?? [];
   const creatorIds = creators.map((c) => c.id);
+  // Baris tabel Growth + Detail + breakdown kategori: kreator dalam scope yang cocok search.
+  const shownCreators = creators.filter((c) => matchesCreatorSearch(c, q));
+  const shownIds = new Set(shownCreators.map((c) => c.id));
+  const catRows = ((catRaw as (SummaryRow & { category: string })[] | null) ?? []).filter((r) =>
+    shownIds.has(r.mcn_creator_id)
+  );
 
   const creatorName = new Map<string, string>(
     ((allCreatorsRaw as { id: string; name: string; code: string | null }[] | null) ?? []).map(
@@ -208,8 +252,9 @@ export default async function McnWorkspacePage({
     reqQuery,
   ]);
 
+  const allRows = (summaryRes.data as SummaryRow[] | null) ?? [];
   if (creatorIds.length > 0) {
-    const rows = (summaryRes.data as SummaryRow[] | null) ?? [];
+    const rows = cat === "all" ? allRows : catRows.filter((r) => r.category === cat);
     const byCreator = new Map<string, SummaryRow[]>();
     for (const r of rows) {
       const arr = byCreator.get(r.mcn_creator_id) ?? [];
@@ -234,8 +279,21 @@ export default async function McnWorkspacePage({
   // Window W1-W5 dari lib/mcn/weeks (JANGAN hitung tanggal manual / new Date(iso)).
   const weekWindows = w1w5WindowsOf(ymYear, ymMonth);
   const weekHasData = weekWindows.map((w) =>
-    creators.some((c) => dedupedByCreator.get(c.id)?.has(w.start))
+    shownCreators.some((c) => dedupedByCreator.get(c.id)?.has(w.start))
   );
+
+  // Breakdown GMV per kategori × minggu (kreator yang tampil). All dari
+  // creator_period_summary, kategori lain dari creator_period_category_summary.
+  const shownAllRows = allRows.filter((r) => shownIds.has(r.mcn_creator_id));
+  const categoryBreakdown = GMV_CATEGORIES.map((c) => {
+    const src = c.key === "all" ? shownAllRows : catRows.filter((r) => r.category === c.key);
+    return {
+      key: c.key,
+      label: c.label,
+      weeks: weekWindows.map((w) => sumCategoryGmv(src.filter((r) => r.period_start === w.start))),
+      total: sumCategoryGmv(src),
+    };
+  });
   let defaultWeekIndex = 1;
   for (let i = weekHasData.length - 1; i >= 0; i--) {
     if (weekHasData[i]) {
@@ -299,22 +357,99 @@ export default async function McnWorkspacePage({
         {isStaffCM && <span className="badge slate">scope: kreator saya</span>}
       </p>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 20 }}>
-        <Link className="btn-ghost sm" href={`/meago/workspace?month=${prevYM}`}>
+        <Link className="btn-ghost sm" href={wsHref({ month: prevYM, week: "" })}>
           ← {prevYM}
         </Link>
         <strong>{ym}</strong>
-        <Link className="btn-ghost sm" href={`/meago/workspace?month=${nextYM}`}>
+        <Link className="btn-ghost sm" href={wsHref({ month: nextYM, week: "" })}>
           {nextYM} →
         </Link>
         {ym !== curYM && (
-          <Link className="sm" href={`/meago/workspace?month=${curYM}`}>
+          <Link className="sm" href={wsHref({ month: curYM, week: "" })}>
             Ke bulan berjalan ({curYM})
           </Link>
         )}
       </div>
 
       <div className="card">
-        <h2>Growth W1-W5 — {ym}</h2>
+        <h2>Cari Kreator &amp; Kategori GMV</h2>
+        <p className="section-sub">
+          Search berlaku untuk tabel Growth, Detail Mingguan, dan breakdown kategori di bawah.
+          Tab kategori mengganti sumber angka Growth &amp; Detail (All = data utama).
+        </p>
+        <form method="get" action="/meago/workspace" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <input type="hidden" name="month" value={ym} />
+          {sp.week && <input type="hidden" name="week" value={sp.week} />}
+          {cat !== "all" && <input type="hidden" name="cat" value={cat} />}
+          <input
+            name="q"
+            defaultValue={q}
+            placeholder="Cari username / nama / kode kreator…"
+            style={{ maxWidth: 320 }}
+          />
+          <button type="submit" className="sm">
+            Cari
+          </button>
+          {q && (
+            <Link className="sm" href={wsHref({ q: "" })}>
+              Reset
+            </Link>
+          )}
+          {q && (
+            <span className="muted">
+              {shownCreators.length} dari {creators.length} kreator cocok
+            </span>
+          )}
+        </form>
+        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+          {GMV_CATEGORIES.map((c) => (
+            <Link
+              key={c.key}
+              className={c.key === cat ? "btn sm" : "btn-ghost sm"}
+              href={wsHref({ cat: c.key })}
+            >
+              {c.label}
+            </Link>
+          ))}
+        </div>
+        <h3 style={{ marginTop: 18 }}>Breakdown GMV per Kategori — {ym}</h3>
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Kategori</th>
+                {weekWindows.map((_, i) => (
+                  <th key={i} className="right">
+                    W{i + 1}
+                  </th>
+                ))}
+                <th className="right">Total Bulan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {categoryBreakdown.map((b) => (
+                <tr key={b.key}>
+                  <td>{b.key === cat ? <strong>{b.label}</strong> : b.label}</td>
+                  {b.weeks.map((v, i) => (
+                    <td key={i} className="right">
+                      {v === null ? <span className="muted">—</span> : rupiah(v)}
+                    </td>
+                  ))}
+                  <td className="right">
+                    {b.total === null ? <span className="muted">—</span> : <strong>{rupiah(b.total)}</strong>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted" style={{ fontSize: 12 }}>
+          — = belum ada file kategori itu diunggah untuk minggu tsb (bukan nol). Kategori bisa
+          beririsan (mis. LIVE juga Dining), jadi jumlah kategori tidak harus sama dengan All.
+        </p>
+      </div>
+
+      <div className="card">
         <div style={{ overflowX: "auto" }}>
           <table>
             <thead>
@@ -329,12 +464,17 @@ export default async function McnWorkspacePage({
               </tr>
             </thead>
             <tbody>
-              {creators.map((c) => {
+              {shownCreators.map((c) => {
                 const g = growthByCreator.get(c.id);
                 return (
                   <tr key={c.id}>
                     <td>
                       {c.code ?? "—"} · {c.name}
+                      {c.username && (
+                        <div className="muted mono" style={{ fontSize: 11 }}>
+                          @{c.username.replace(/^@+/, "")}
+                        </div>
+                      )}
                     </td>
                     {(g?.weeks ?? []).map((w) => (
                       <td key={w.week} className="right">
@@ -365,10 +505,10 @@ export default async function McnWorkspacePage({
                   </tr>
                 );
               })}
-              {creators.length === 0 && (
+              {shownCreators.length === 0 && (
                 <tr>
                   <td colSpan={7} className="muted">
-                    Tidak ada kreator dalam scope Anda.
+                    {q ? `Tidak ada kreator cocok "${q}".` : "Tidak ada kreator dalam scope Anda."}
                   </td>
                 </tr>
               )}
@@ -378,7 +518,10 @@ export default async function McnWorkspacePage({
       </div>
 
       <div className="card">
-        <h2>Detail Mingguan — {ym}</h2>
+        <h2>
+          Detail Mingguan — {ym}
+          {cat !== "all" && <> · {gmvCategoryLabel(cat)}</>}
+        </h2>
         <p className="section-sub">
           Data Creator Analysis per minggu (window W1-W5, W1: {weekWindows[0].start} s/d{" "}
           {weekWindows[0].end}, dst).
@@ -391,7 +534,7 @@ export default async function McnWorkspacePage({
               <Link
                 key={wn}
                 className={active ? "btn sm" : "btn-ghost sm"}
-                href={`/meago/workspace?month=${ym}&week=W${wn}`}
+                href={wsHref({ week: `W${wn}` })}
               >
                 W{wn}
               </Link>
@@ -415,12 +558,17 @@ export default async function McnWorkspacePage({
               </tr>
             </thead>
             <tbody>
-              {creators.map((c) => {
+              {shownCreators.map((c) => {
                 const row = dedupedByCreator.get(c.id)?.get(selectedWeekWindow.start);
                 return (
                   <tr key={c.id}>
                     <td>
                       {c.code ?? "—"} · {c.name}
+                      {c.username && (
+                        <div className="muted mono" style={{ fontSize: 11 }}>
+                          @{c.username.replace(/^@+/, "")}
+                        </div>
+                      )}
                     </td>
                     <td className="right">
                       {row?.affiliate_gmv != null ? (
@@ -466,10 +614,10 @@ export default async function McnWorkspacePage({
                   </tr>
                 );
               })}
-              {creators.length === 0 && (
+              {shownCreators.length === 0 && (
                 <tr>
                   <td colSpan={7} className="muted">
-                    Tidak ada kreator dalam scope Anda.
+                    {q ? `Tidak ada kreator cocok "${q}".` : "Tidak ada kreator dalam scope Anda."}
                   </td>
                 </tr>
               )}

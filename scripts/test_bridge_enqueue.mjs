@@ -214,6 +214,11 @@ function fixture() {
   eq("payload diverifikasi_oleh_external = Finance, bukan BD", call?.args.p_payload.attestation.diverifikasi_oleh_external, "Finance MSDPS — Rina Finance");
   eq("payload bd_identitas", call?.args.p_payload.bd_identitas, "Andi BD");
   eq("flag 0379 mati (default): payload TANPA merchant_target", call?.args.p_payload.merchant_target, undefined);
+  eq(
+    "flag 0379 mati (default): merchant TANPA field baseline",
+    ["gmv_baseline", "target_gmv", "link_toko", "kategori"].filter((k) => k in (call?.args.p_payload.merchant ?? {})),
+    []
+  );
 
   // ===== 3. Sweep berikutnya: tidak mengantre ulang, alert D3 tidak dobel ====
   const before = f.rpcCalls.length;
@@ -253,7 +258,7 @@ function fixture() {
   );
 }
 
-// ===== 6. Flag 0379 hidup → merchant_target ikut payload =====================
+// ===== 6. Flag 0379 hidup → field BD masuk merchant.* (kontrak CDPS) =====================
 {
   eq("merchantTargetEnabled: default mati", merchantTargetEnabled({}), false);
   eq("merchantTargetEnabled: '1' hidup", merchantTargetEnabled({ BRIDGE_KIRIM_MERCHANT_TARGET: "1" }), true);
@@ -267,11 +272,13 @@ function fixture() {
   } finally {
     delete process.env.BRIDGE_KIRIM_MERCHANT_TARGET;
   }
+  const p = f.rpcCalls.find((c) => c.args.p_deal_id === "D1")?.args.p_payload;
   eq(
-    "flag hidup: merchant_target dari kolom brand_deals",
-    f.rpcCalls.find((c) => c.args.p_deal_id === "D1")?.args.p_payload.merchant_target,
-    { gmv_baseline: "10000000.00", target_gmv: "40000000.00", link_akun: "https://shop.tiktok.com/kedai-uji", kategori: "F&B" }
+    "flag hidup: merchant.* dari kolom brand_deals",
+    { gmv_baseline: p?.merchant.gmv_baseline, target_gmv: p?.merchant.target_gmv, link_toko: p?.merchant.link_toko, kategori: p?.merchant.kategori },
+    { gmv_baseline: "10000000.00", target_gmv: "40000000.00", link_toko: "https://shop.tiktok.com/kedai-uji", kategori: "F&B" }
   );
+  eq("flag hidup: TIDAK ada merchant_target top-level", p?.merchant_target, undefined);
 }
 
 rmSync(outDir, { recursive: true, force: true });

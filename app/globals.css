@@ -270,3 +270,11 @@ table { min-width: 560px; }
 
   .login-card { width: 100%; max-width: 360px; padding: 24px; }
 }
+
+/* Cetak (Report Kreator Bulanan, /meago/creators/report): sembunyikan navigasi &
+   tombol aksi supaya hasil "Simpan PDF" hanya berisi laporan. */
+@media print {
+  .sidebar, .sidebar-backdrop, .mobile-topbar, .no-print { display: none !important; }
+  .main { padding: 0; max-width: none; }
+  .card { break-inside: avoid; box-shadow: none; }
+}
