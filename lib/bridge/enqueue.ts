@@ -42,7 +42,16 @@ export interface EnqueueSweepResult {
 
 const DEAL_COLUMNS =
   "id, code, brand_name, shop_id, kategori_poi, pic_name, pic_whatsapp, tanggal_mulai_kontrak, " +
-  "tanggal_akhir_kontrak, bd_id, bentuk_kerjasama, transaction_id";
+  "tanggal_akhir_kontrak, bd_id, bentuk_kerjasama, transaction_id, " +
+  "merchant_gmv_baseline, merchant_target_gmv, link_akun_merchant, kategori_merchant";
+
+// Migrasi 0379: blok `merchant_target` (Baseline/Target GMV dari BD) baru
+// dikirim sesudah validator CDPS terbukti menerima kunci tambahan — validator
+// itu tidak bisa diverifikasi dari repo ini, dan penolakan = order 'dead'.
+// Default MATI ⇒ payload persis v1 seperti sebelumnya.
+export function merchantTargetEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.BRIDGE_KIRIM_MERCHANT_TARGET === "1";
+}
 
 async function setPlanError(admin: EnqueueAdminLike, dealId: string, bdId: string | null, current: string | null, msg: string) {
   if (current !== msg) {
@@ -140,6 +149,7 @@ export async function enqueueDealIfReady(admin: EnqueueAdminLike, dealId: string
       merchant,
       lines: parsedLines.lines,
       paymentInfo,
+      merchantTarget: merchantTargetEnabled() ? deal : null,
     });
   } catch (e) {
     const msg = `Data deal belum lengkap untuk diteruskan ke CDPS: ${(e as Error).message}`;
