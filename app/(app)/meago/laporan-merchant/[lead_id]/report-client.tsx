@@ -55,7 +55,7 @@ export function ReportToolbar({ hasLogo, editedCount }: { hasLogo: boolean; edit
       <form action={logoAction} className="mr-inline">
         <input type="hidden" name="lead_id" value={leadId} />
         <label className="mr-btn">
-          {logoPending ? "Mengunggah…" : hasLogo ? "Ganti logo merchant" : "Upload logo merchant"}
+          {logoPending ? "Mengunggah…" : hasLogo ? "Ganti logo merchant" : "Upload logo merchant (opsional)"}
           <input
             type="file"
             name="logo"
@@ -96,7 +96,7 @@ export function ReportToolbar({ hasLogo, editedCount }: { hasLogo: boolean; edit
       <button className="mr-btn ghost" type="button" onClick={() => window.print()}>
         Cetak / PDF
       </button>
-      <span className="mr-hint">Logo PNG/JPG/SVG ≤1 MB. Insight tersimpan per merchant &amp; periode, ikut tampil di portal merchant.</span>
+      <span className="mr-hint">Logo merchant opsional (PNG/JPG/SVG ≤1 MB) — tanpa logo, header cukup pakai nama brand. Insight tersimpan per merchant &amp; periode, ikut tampil di portal merchant.</span>
       <Msg state={logoState} />
       <Msg state={rmState} />
       <Msg state={msg} />
