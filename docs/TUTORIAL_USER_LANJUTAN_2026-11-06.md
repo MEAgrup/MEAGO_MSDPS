@@ -11,6 +11,7 @@ Baris terbaru ada di paling atas. Kolom yang sama dengan tabel Changelog di Goog
 
 | Tanggal | Fitur | Peminta | Status |
 |---|---|---|---|
+| 6 Nov 2026 | Tutorial: merapikan teks laporan yang dilihat merchant di Merchant Portal + cara memberi akses Merchant Portal ke merchant | Yohan | Tutorial (fitur sudah live). Catatan: email lead Sushi Yay masih kosong, jadi akses portal belum bisa dibuat |
 | 6 Nov 2026 | Tutorial lanjutan: Upload GMV Video format baru + kartu Creator Analysis pindah ke GMV Video; Report Kreator Bulanan, search kreator & GMV per kategori; Dashboard Akuisisi + field binding; Baseline BD terkirim ke CDPS; laporan merchant besar tidak timeout lagi (internal: PR #62, #63, #64, #66, c8e44bd; migrasi 0382, 0383, 0384) | Rizal (CM Lead), Siti (Akuisisi), Yulianti (CMA), Yohan | Live prod sejak 6 Nov 2026; kirim Baseline ke CDPS menunggu flag di Vercel dinyalakan |
 
 ---
@@ -223,5 +224,93 @@ Sama seperti tutorial *Laporan Performa Merchant: Generate Report Otomatis*. Tid
 - Masih muncul error setelah dibuka ulang? Muat ulang halaman satu kali. Bila tetap error, catat **Kode kesalahan**, nama merchant, periode Dari–Sampai, dan jam kejadian, lalu laporkan sesuai checklist Bab 10.
 - Jangan menghapus atau mengupload ulang data hanya karena laporan lambat.
 - Rentang periode yang sangat panjang lebih lama dimuat. Mulai dari 2 bulan, lalu perluas bila perlu.
+
+**Status:** Live sejak 6 Nov 2026.
+
+---
+
+## F. Merapikan teks laporan yang dilihat merchant di Merchant Portal (6 Nov 2026)
+
+**Untuk siapa:** BizDev, SPV Creator Management, Campaign Specialist, Account, Director/OD (yang memegang menu Laporan Merchant).
+
+**Tujuan:** Merchant melihat kotak **Ringkasan** di Merchant Portal (menu **Laporan GMV → Performa Bulanan TikTok GO**). Isi kotak itu diambil dari insight **Apa yang sudah bekerja** dan **Apa yang perlu diperkuat** di Laporan Merchant. Rapikan teksnya **sebelum** merchant diberi akses, supaya yang dibaca merchant sudah final dan bahasanya enak.
+
+### Langkah klik
+
+1. Sidebar **Campaign MEA GO → Laporan Merchant**.
+2. Di tabel **Merchant dengan data**, klik **Buka laporan →** pada merchant yang dituju (contoh: Sushi Yay — LEAD-202609-0018).
+3. **Biarkan periode Dari–Sampai seperti saat laporan pertama dibuka (dua bulan terakhir yang punya data).** Insight disimpan per periode. Saat pertama membuka portal, merchant juga melihat dua bulan terakhir, jadi teks yang Anda rapikan di periode inilah yang tampil.
+4. Klik **Aktifkan edit insight**.
+5. Di kotak **Apa yang sudah bekerja**, rapikan teksnya. Satu baris = satu poin. Teks polos, tanpa format.
+6. Klik **Simpan** di bawah kotak itu. Kotak diberi tanda **✎ diedit tim BD**.
+7. Lakukan hal yang sama untuk kotak **Apa yang perlu diperkuat**, lalu klik **Simpan**.
+8. Klik **Selesai edit**.
+9. Setiap kali data bulan baru diunggah, "dua bulan terakhir" bergeser. Ulangi langkah 2–8 untuk periode baru.
+
+### Arti field penting
+
+| Bagian | Tampil di Merchant Portal? |
+|---|---|
+| Apa yang sudah bekerja | **Ya.** Kalau belum diedit, merchant melihat teks otomatis. Kalau sudah disimpan, merchant melihat teks hasil edit. |
+| Apa yang perlu diperkuat | **Ya, tapi hanya bila sudah disimpan.** Kalau belum disimpan, bagian ini tidak muncul di portal. |
+| Insight lain (Tindakan digital, Layer outlet, Audit prioritas, KPI outlet, Retensi & diversifikasi creator, Arah konten) | **Tidak.** Hanya di laporan internal dan hasil Cetak / PDF. |
+| Kembalikan otomatis (per kotak) | Menghapus editan kotak itu dan kembali ke teks otomatis. Portal ikut kembali ke teks otomatis. |
+| Kembalikan teks otomatis (n) | Menghapus **semua** editan di periode ini. |
+| ✎ diedit tim BD | Tanda bahwa kotak itu memakai teks hasil edit. |
+
+### Kesalahan umum / tips
+
+- Merchant melihat teks otomatis, bukan hasil edit? Penyebabnya, periode yang dipilih merchant di portal (Dari–Sampai) **berbeda** dengan periode saat Anda menyimpan. Simpan juga editan untuk periode yang dibuka merchant, atau minta merchant memilih periode yang sama.
+- Tulis dengan bahasa untuk klien. **Jangan** menulis nama/username kreator, catatan internal, atau angka merchant lain, karena teks ini dibaca merchant.
+- Tanda "-", "•", atau "*" di awal baris otomatis dihapus. Tidak perlu mengetik bullet.
+- Maksimal 4.000 karakter per kotak.
+- Selesaikan dulu langkah ini, **baru** kirim akses portal (bagian G).
+
+**Status:** Live sejak 6 Nov 2026.
+
+---
+
+## G. Memberi akses Merchant Portal ke merchant (6 Nov 2026)
+
+**Untuk siapa:** BizDev, OD, Director.
+
+**Tujuan:** Merchant bisa login sendiri ke **Merchant Portal** untuk melihat Beranda, status Kampanye, dan **Laporan GMV** (termasuk Performa Bulanan TikTok GO dari Laporan Merchant).
+
+### Syarat sebelum mulai
+
+- Status lead **Dealing** atau **Renewal**, dan transaksinya **sudah dicatat** di Merchant Deals. Tanpa dua hal ini, tombol akses tidak muncul.
+- **Email lead terisi.** Email ini menjadi email login merchant.
+- Nomor WhatsApp PIC terisi (disarankan). Kalau kosong, link dikirim manual.
+
+### Langkah klik
+
+1. Sidebar **Leads**. Cari brand merchant (ketik di kolom pencarian brand).
+2. Di bawah nama brand, klik tombol **Kirim Akses Portal**.
+3. Jendela **Akses Merchant Portal · [nama brand]** terbuka. Klik **Buat Akses**.
+4. Muncul **Link aktivasi** (sekali pakai, berlaku 72 jam) dan **Pesan WhatsApp** yang sudah jadi.
+5. Klik **Kirim via WhatsApp** untuk membuka WhatsApp ke nomor PIC dengan pesan terisi, lalu kirim. Bila nomor kosong, klik **Salin link** dan kirim manual ke PIC.
+6. Merchant membuka link, mengisi **Buat Password** dan **Ulangi Password** (minimal 8 karakter), lalu menyimpan. Akun aktif.
+7. Selanjutnya merchant masuk lewat halaman **login** aplikasi yang sama dengan email + password tadi, dan otomatis diarahkan ke Merchant Portal.
+8. Link kedaluwarsa, hilang, atau merchant lupa password? Tombol di Leads sekarang bertuliskan **Kirim Ulang Akses** → klik **Buat Link Baru**. Link lama otomatis tidak berlaku.
+
+### Arti field penting
+
+| Field / tombol | Arti |
+|---|---|
+| Kirim Akses Portal | Muncul hanya untuk merchant closing (Dealing/Renewal + ada transaksi). |
+| Link aktivasi | Link sekali pakai untuk membuat password, berlaku 72 jam. |
+| Pesan WhatsApp | Pesan resmi siap kirim ke PIC, sudah berisi link. |
+| Kirim Ulang Akses / Buat Link Baru | Membuat link baru dan menonaktifkan link lama. Akun merchant tetap sama. |
+| Email login merchant | Email yang tercatat di lead. |
+
+### Kesalahan umum / tips
+
+- **"[email lead kosong — lengkapi dulu]"**: email lead belum diisi. Saat ini email **tidak bisa diubah** dari tombol Edit di Leads, jadi minta Tim Tech / Director mengisikan email PIC merchant, lalu ulangi langkah 2. *(Contoh: email lead Sushi Yay per 6 Nov 2026 masih kosong.)*
+- **"[akses portal hanya untuk merchant closing (Dealing/Renewal + ada deal)]"**: ubah status lead atau catat transaksinya dulu.
+- **"[hanya BizDev yang dapat mengirim akses Merchant Portal]"**: minta BizDev, OD, atau Director yang mengirim.
+- **"Email ini milik akun karyawan"** / **"[email ini sudah dipakai akun Merchant Portal]"**: pakai email PIC lain.
+- Kirim link **hanya ke PIC merchant**, jangan ke grup. Siapa pun yang memegang link bisa membuat password.
+- Rapikan dulu teks laporan (bagian F) sebelum mengirim akses.
+- Mencabut akses merchant belum ada tombolnya. Hubungi Tim Tech / Director.
 
 **Status:** Live sejak 6 Nov 2026.
