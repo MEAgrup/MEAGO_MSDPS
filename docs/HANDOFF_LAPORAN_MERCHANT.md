@@ -1,6 +1,6 @@
 # MSDPS — Laporan Performa Merchant otomatis (model "Analisa Sushi Yay")
 
-## Status build (2026-11-06) — kode SELESAI, 0381 DI-APPLY KE STAGING (belum production)
+## Status build (2026-11-06) — kode SELESAI, 0381 DI-APPLY KE STAGING + PRODUCTION (data belum di-upload)
 
 Dibangun dari rencana di bawah (disetujui Yohan 2026-11-04). Ringkasan apa yang ada:
 
@@ -57,11 +57,19 @@ Dibangun dari rencana di bawah (disetujui Yohan 2026-11-04). Ringkasan apa yang 
 - **Staging** (`vgjzvdpxrdoefoncuazw`): di-apply 2026-11-06 (tercatat dengan nama lama `0378_merchant_report`, isi identik 0381); `scripts/test_merchant_report.sql` dijalankan dengan
   hak bawaan Supabase (tanpa grant tambahan) → **61/61 lolos**, transaksi dibatalkan.
 
+- **Production** (`mvcckptntrvzujqaoxxh`): `0381_merchant_report` di-apply 2026-11-06 atas persetujuan Yohan (aditif:
+  tabel/view/RPC/bucket baru + kolom `leads.logo_path`, tidak mengubah data lama). Dicek: RLS aktif di 4 tabel, anon
+  tanpa akses tabel/view/RPC, authenticated punya hak default, 2 bucket privat, snapshot 0 baris.
+- **Lead induk Sushi Yay = LEAD-202609-0018** (Jawa Barat, punya deal) — dikonfirmasi Yohan 2026-11-06.
+  LEAD-202609-0155 (DKI) tidak dipakai untuk upload.
+
 ### BELUM (perlu orang / akses)
-1. Uji UI §8 dengan data asli. Staging hanya punya 1 lead (tidak ada Sushi Yay) dan **preview Vercel feature branch
-   memakai Supabase PRODUCTION** (`docs/STAGING.md` §3) — jangan upload lewat preview PR.
-2. Apply 0381 ke production + merge PR, lalu upload file ke lead induk Sushi Yay (default LEAD-202609-0018).
-3. Item §7 (logo MEAGO!, logo merchant, konfirmasi lead induk, akun merchant uji) masih menunggu Yohan.
+1. Merge PR, lalu upload `DATA_RAW_DINING_GAB_2026_sushi_yay_only.xlsx` lewat `/meago/laporan-merchant` ke
+   LEAD-202609-0018 (filter outlet dikosongkan) → Agu & Sep masuk, Jan–Jul ditolak beralasan. Lalu cek §8.2–8.3:
+   `v_merchant_monthly` = tabel §6, generate Agu–Sep, edit insight, logo, cetak PDF.
+2. Item §7 (logo MEAGO!, logo merchant, akun merchant uji) masih menunggu Yohan.
+3. Staging hanya punya 1 lead dan belum menerima 0378–0380 dari `main`; 0381 di sana tercatat dengan nama lama
+   `0378_merchant_report`.
 
 ---
 
