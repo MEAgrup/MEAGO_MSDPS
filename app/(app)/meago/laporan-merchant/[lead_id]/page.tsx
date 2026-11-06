@@ -1,5 +1,5 @@
 // /meago/laporan-merchant/[lead_id]?dari=YYYY-MM&sampai=YYYY-MM — Laporan Performa
-// Merchant (migrasi 0378). Metrik dihitung dari tiktok_post_snapshots dengan
+// Merchant (migrasi 0381). Metrik dihitung dari tiktok_post_snapshots dengan
 // lib/merchant-report/metrics.ts (port compute_metrics.py); insight otomatis bisa
 // ditimpa teks tersimpan tim BD (merchant_report_notes).
 import "./report.css";

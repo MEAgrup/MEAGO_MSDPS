@@ -148,7 +148,7 @@ menambah label justru akan membuat `generate_performance_scores` (0209:94) mulai
 menghasilkan angka untuk divisi yang mesinnya baru saja dihentikan. Alasan
 lengkapnya di header migrasi `0361`.
 
-## Laporan Performa Merchant (migrasi 0378) — "snapshot", "outlet", "bucket", "layer", "skor"
+## Laporan Performa Merchant (migrasi 0381) — "snapshot", "outlet", "bucket", "layer", "skor"
 
 | Istilah | Arti di laporan merchant | Jangan tertukar dengan |
 |---|---|---|

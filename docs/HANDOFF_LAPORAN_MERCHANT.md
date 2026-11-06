@@ -1,12 +1,12 @@
 # MSDPS — Laporan Performa Merchant otomatis (model "Analisa Sushi Yay")
 
-## Status build (2026-11-06) — kode SELESAI, 0378 DI-APPLY KE STAGING (belum production)
+## Status build (2026-11-06) — kode SELESAI, 0381 DI-APPLY KE STAGING (belum production)
 
 Dibangun dari rencana di bawah (disetujui Yohan 2026-11-04). Ringkasan apa yang ada:
 
 | Lapis | File |
 |---|---|
-| Migrasi | `supabase/migrations/0378_merchant_report.sql` (**0378**, bukan 0377 — nomor 0377 sudah dipakai bridge CDPS otomatis) |
+| Migrasi | `supabase/migrations/0381_merchant_report.sql` (**0381**, bukan 0377 — 0377–0380 sudah dipakai migrasi lain di `main`) |
 | Parser export | `lib/merchant-report/video-list.ts` (+ `read-xlsx.ts` yang mempertahankan tipe sel) |
 | Rumus | `lib/merchant-report/metrics.ts` — port 1:1 `scripts/merchant_report/compute_metrics.py` |
 | Insight otomatis | `lib/merchant-report/insights.ts` |
@@ -16,7 +16,7 @@ Dibangun dari rencana di bawah (disetujui Yohan 2026-11-04). Ringkasan apa yang 
 | Uji | `scripts/qc_merchant_report.mjs` (unit + paritas vs Python), `scripts/test_merchant_report.sql` (61 assertion RLS/rumus/portal, rollback) |
 
 ### Penyimpangan dari rencana (sengaja, dengan alasan)
-1. **Nomor migrasi 0378** (0377 terpakai).
+1. **Nomor migrasi 0381** (0377–0380 terpakai: bridge CDPS, kontrak SPK, target GMV deal, fix review deal).
 2. **Upload file mentah lewat signed upload ke Storage** (bucket privat `merchant-report-uploads`, dihapus setelah dibaca) —
    bukan lewat body server action, karena batas body Vercel ±4,5 MB lebih kecil dari workbook gabungan.
 3. **`mcn_creators.binding_status` TIDAK disinkron** dari Video List. Perubahan kolom itu mencabut undangan Creator Portal
@@ -36,7 +36,7 @@ Dibangun dari rencana di bawah (disetujui Yohan 2026-11-04). Ringkasan apa yang 
    `low_red` ada di `merchant_report_params` (default = sample) — ubah via SQL bila perlu.
 
 ### Verifikasi yang sudah dijalankan
-- `bash scripts/pg_test_reset.sh` → 99 migrasi lolos dari nol; 0378 idempoten (di-apply 2×).
+- `bash scripts/pg_test_reset.sh` → 99 migrasi lolos dari nol; 0381 idempoten (di-apply 2×).
 - `scripts/test_merchant_report.sql` → 61/61 lolos (wewenang, ganti-bulan atomik, tolak lead kedua, rumus view dihitung
   tangan, merchant_locations, params/notes/logo, isolasi portal A vs B, anon ditolak).
 - `node scripts/qc_merchant_report.mjs` → 1044/1044 lolos: unit parser + **paritas penuh dengan compute_metrics.py** pada
@@ -54,13 +54,13 @@ Dibangun dari rencana di bawah (disetujui Yohan 2026-11-04). Ringkasan apa yang 
 - **Temuan data**: sheet SEPT memuat 162 baris outlet **"Yay! Grill"** (Gatsu Bandung, Cipondoh) dan angka sample yang
   disetujui (74 outlet Sep) MENGHITUNGNYA. Karena itu filter kata kunci outlet dijadikan **opsional, default kosong**
   (export TikTok sudah per akun merchant); nama brand lead hanya dipakai membuang awalan "Brand - " dari nama outlet.
-- **Staging** (`vgjzvdpxrdoefoncuazw`): 0378 di-apply 2026-11-06; `scripts/test_merchant_report.sql` dijalankan dengan
+- **Staging** (`vgjzvdpxrdoefoncuazw`): di-apply 2026-11-06 (tercatat dengan nama lama `0378_merchant_report`, isi identik 0381); `scripts/test_merchant_report.sql` dijalankan dengan
   hak bawaan Supabase (tanpa grant tambahan) → **61/61 lolos**, transaksi dibatalkan.
 
 ### BELUM (perlu orang / akses)
 1. Uji UI §8 dengan data asli. Staging hanya punya 1 lead (tidak ada Sushi Yay) dan **preview Vercel feature branch
    memakai Supabase PRODUCTION** (`docs/STAGING.md` §3) — jangan upload lewat preview PR.
-2. Apply 0378 ke production + merge PR, lalu upload file ke lead induk Sushi Yay (default LEAD-202609-0018).
+2. Apply 0381 ke production + merge PR, lalu upload file ke lead induk Sushi Yay (default LEAD-202609-0018).
 3. Item §7 (logo MEAGO!, logo merchant, konfirmasi lead induk, akun merchant uji) masih menunggu Yohan.
 
 ---

@@ -1,6 +1,6 @@
 // Teks insight OTOMATIS laporan merchant (aturan dari render_report.py). Ini teks
 // DEFAULT — tim BD/CM bisa mengeditnya per merchant + periode; versi edit disimpan
-// di merchant_report_notes (migrasi 0378) dan menang atas teks di sini.
+// di merchant_report_notes (migrasi 0381) dan menang atas teks di sini.
 // Format: TEKS POLOS, satu elemen array = satu poin/baris. Pure.
 
 import type { ReportMetrics, ReportParams, Monthly } from "./metrics";

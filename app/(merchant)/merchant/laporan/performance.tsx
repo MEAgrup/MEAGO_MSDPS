@@ -1,5 +1,5 @@
 // Seksi "Performa Bulanan" portal merchant — ringkasan Laporan Performa Merchant
-// (migrasi 0378). Data dari RPC whitelist merchant_portal_performance*: angka
+// (migrasi 0381). Data dari RPC whitelist merchant_portal_performance*: angka
 // agregat milik merchant ini saja (tanpa nama kreator, judul post, data merchant
 // lain). Insight = versi yang disimpan tim BD bila ada, selain itu teks otomatis.
 import { getCachedClient } from "@/lib/supabase/server";

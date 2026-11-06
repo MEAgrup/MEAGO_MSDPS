@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { isBrandCategory, isDealStatus, normalizePhone62 } from "@/lib/leads/intake";
-import { isBentukKerjasama, isOpsName } from "@/lib/deals/intake";
+import { isBentukKerjasama, isOpsName, readMerchantTarget, type MerchantTargetFields } from "@/lib/deals/intake";
 import { parseIntTolerant, parseRupiah } from "@/lib/mcn/parsers";
 import { readCdpsPlan, type CdpsPlan } from "@/lib/bridge/plan";
 import { upsertCdpsPlan, tryEnqueueNow, describeEnqueue } from "@/lib/bridge/server";
@@ -78,6 +78,11 @@ const DEAL_FORM_KEYS = [
   "tanggal_akhir_kontrak",
   // Migrasi 0377: cara bayar untuk transaksi Finance yang kini dibuat otomatis.
   "payment_intent",
+  // Migrasi 0379: Baseline & Target GMV diisi BD (membalik Bridge D7).
+  "merchant_gmv_baseline",
+  "merchant_target_gmv",
+  "link_akun_merchant",
+  "kategori_merchant",
 ] as const;
 
 export type DealFormSnapshot = Partial<Record<(typeof DEAL_FORM_KEYS)[number], string>>;
@@ -97,7 +102,7 @@ function formDataFromSnapshot(payload: unknown): FormData {
 
 type SupabaseClientLike = Awaited<ReturnType<typeof createClient>>;
 
-type DealFields = {
+type DealFields = MerchantTargetFields & {
   lead_id: string;
   bd_id: string;
   ops_name: string;
@@ -125,7 +130,8 @@ type DealFields = {
 // pengecekan di sini hanya supaya pesan errornya ramah & spesifik per-field.
 async function readDealFields(
   supabase: SupabaseClientLike,
-  formData: FormData
+  formData: FormData,
+  opts: { requireTarget: boolean } = { requireTarget: false }
 ): Promise<{ fields: DealFields; brand_name: string } | { error: string }> {
   const lead_id = String(formData.get("lead_id") || "").trim();
   const bd_id = String(formData.get("bd_id") || "").trim();
@@ -224,6 +230,9 @@ async function readDealFields(
   const pic_whatsapp = normalizePhone62(pic_whatsapp_raw);
   if (!pic_whatsapp) return { error: "[nomor WhatsApp tidak valid]" };
 
+  const target = readMerchantTarget((k) => String(formData.get(k) ?? ""), opts);
+  if ("error" in target) return target;
+
   return {
     brand_name: lead.brand_name ?? lead.lead_name,
     fields: {
@@ -246,6 +255,7 @@ async function readDealFields(
       konten_needed,
       total_jam_live,
       brief_link: brief_link || null,
+      ...target.fields,
     },
   };
 }
@@ -259,7 +269,8 @@ export async function registerDealTransaction(
   if (!user || !me) return { ok: false, message: "Tidak terautentikasi." };
   if (!canManageDeals(me)) return { ok: false, message: "Tidak berwenang mendaftarkan transaksi deal." };
 
-  const parsed = await readDealFields(supabase, formData);
+  // Target GMV wajib hanya untuk deal BARU (0379) — edit/approval deal lama tidak.
+  const parsed = await readDealFields(supabase, formData, { requireTarget: true });
   if ("error" in parsed) return { ok: false, message: parsed.error };
 
   // Migrasi 0377: deal Berbayar WAJIB memilih layanan CDPS atau "Tidak perlu

@@ -1,5 +1,5 @@
 // Parser workbook export TikTok GO "Content Analysis › Video List" untuk LAPORAN
-// PERFORMA MERCHANT (migrasi 0378, tabel tiktok_post_snapshots).
+// PERFORMA MERCHANT (migrasi 0381, tabel tiktok_post_snapshots).
 //
 // Beda dengan lib/mcn/content-analysis.ts (yang mengisi tiktok_post_index untuk
 // validasi bukti campaign): di sini satu workbook boleh berisi BANYAK sheet bulan

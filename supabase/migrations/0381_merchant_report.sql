@@ -1,11 +1,12 @@
 -- =============================================================================
--- MSDPS · Laporan Performa Merchant · Migration 0378
+-- MSDPS · Laporan Performa Merchant · Migration 0381
 -- =============================================================================
 -- Kenapa ada: Yohan (2026-11-04) ingin laporan performa merchant TikTok Dining
 -- model "Analisa Sushi Yay" dibuat OTOMATIS dari MSDPS, bulanan, periode dipilih
 -- user, insight bisa diedit tim BD, logo merchant bisa di-upload. Rencana lengkap:
--- docs/HANDOFF_LAPORAN_MERCHANT.md. (Handoff menyebut nomor 0377 — nomor itu
--- sudah dipakai bridge CDPS otomatis, jadi migrasi ini 0378.)
+-- docs/HANDOFF_LAPORAN_MERCHANT.md. (Handoff menyebut nomor 0377 — 0377–0380 sudah
+-- dipakai bridge CDPS, kontrak SPK, target GMV deal, dan fix review deal, jadi
+-- migrasi ini 0381. Di staging sempat ter-apply dengan nama 0378_merchant_report.)
 --
 -- Sumber data satu-satunya: export TikTok GO "Content Analysis › Video List"
 -- per bulan. Unit baris = post × outlet × bulan; baris pecahan dijumlahkan saat
@@ -35,7 +36,7 @@ comment on function is_merchant_report_staff() is
 -- ---- 1. Logo merchant --------------------------------------------------------
 alter table leads add column if not exists logo_path text;
 comment on column leads.logo_path is
-  'Path objek logo merchant di bucket privat merchant-logos (PNG/JPG/SVG ≤1 MB). Ditampilkan lewat signed URL. Diisi lewat RPC merchant_report_set_logo (0378).';
+  'Path objek logo merchant di bucket privat merchant-logos (PNG/JPG/SVG ≤1 MB). Ditampilkan lewat signed URL. Diisi lewat RPC merchant_report_set_logo (0381).';
 
 insert into storage.buckets (id, name, public) values ('merchant-logos', 'merchant-logos', false)
 on conflict (id) do nothing;
@@ -62,7 +63,7 @@ create table if not exists merchant_locations (
   unique (lead_id, location_id)
 );
 comment on table merchant_locations is
-  'Outlet (Location TikTok GO) milik satu lead/brand, disinkron otomatis tiap upload export Video List (0378). location_name_norm = nama tanpa awalan brand ("Sushi Yay! - Gatsu" -> "Gatsu").';
+  'Outlet (Location TikTok GO) milik satu lead/brand, disinkron otomatis tiap upload export Video List (0381). location_name_norm = nama tanpa awalan brand ("Sushi Yay! - Gatsu" -> "Gatsu").';
 
 -- ---- 3. Snapshot post × outlet × bulan ---------------------------------------
 create table if not exists tiktok_post_snapshots (

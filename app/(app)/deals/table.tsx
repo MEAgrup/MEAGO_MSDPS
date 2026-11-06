@@ -46,6 +46,11 @@ export type Deal = {
   konten_needed: number | null;
   total_jam_live: number | null;
   brief_link: string | null;
+  // Migrasi 0379 — Baseline & Target GMV diisi BD.
+  merchant_gmv_baseline: number | null;
+  merchant_target_gmv: number | null;
+  link_akun_merchant: string | null;
+  kategori_merchant: string | null;
   // B0 (bridge MSDPS→CDPS Fase 1) — null selama nol transaksi Finance dibuat
   // untuk deal ini; begitu terisi, "Buat Transaksi Finance" tidak lagi tampil
   // (create_poi_finance() sendiri menolak dobel: [transaksi untuk deal ini
@@ -462,6 +467,10 @@ function EditDealModal({
                     konten_needed: deal.konten_needed ?? "",
                     total_jam_live: deal.total_jam_live ?? "",
                     brief_link: deal.brief_link ?? "",
+                    merchant_gmv_baseline: deal.merchant_gmv_baseline ?? "",
+                    merchant_target_gmv: deal.merchant_target_gmv ?? "",
+                    link_akun_merchant: deal.link_akun_merchant ?? "",
+                    kategori_merchant: deal.kategori_merchant ?? "",
                   }}
                 />
               </div>
@@ -509,6 +518,10 @@ const CHANGE_FIELD_LABELS: { key: string; label: string }[] = [
   { key: "konten_needed", label: "Jumlah Konten" },
   { key: "total_jam_live", label: "Total Jam Live" },
   { key: "brief_link", label: "Link Brief" },
+  { key: "merchant_gmv_baseline", label: "GMV Baseline" },
+  { key: "merchant_target_gmv", label: "Target GMV" },
+  { key: "link_akun_merchant", label: "Link Akun Merchant" },
+  { key: "kategori_merchant", label: "Kategori Merchant" },
 ];
 
 // Nilai deal SAAT INI dalam bentuk yang sama persis dengan payload form,
@@ -548,6 +561,14 @@ function currentFormValue(deal: Deal, key: string): string {
       return deal.total_jam_live != null ? String(deal.total_jam_live) : "";
     case "brief_link":
       return deal.brief_link ?? "";
+    case "merchant_gmv_baseline":
+      return deal.merchant_gmv_baseline != null ? String(deal.merchant_gmv_baseline) : "";
+    case "merchant_target_gmv":
+      return deal.merchant_target_gmv != null ? String(deal.merchant_target_gmv) : "";
+    case "link_akun_merchant":
+      return deal.link_akun_merchant ?? "";
+    case "kategori_merchant":
+      return deal.kategori_merchant ?? "";
     default:
       return "";
   }
@@ -556,7 +577,7 @@ function currentFormValue(deal: Deal, key: string): string {
 function displayValue(key: string, raw: string, bdNameById: Record<string, string>): string {
   if (!raw) return "—";
   if (key === "bd_id") return bdNameById[raw] ?? raw;
-  if (key === "nominal_harga") return rupiah(Number(raw) || 0);
+  if (key === "nominal_harga" || key === "merchant_gmv_baseline" || key === "merchant_target_gmv") return rupiah(Number(raw) || 0);
   return raw;
 }
 

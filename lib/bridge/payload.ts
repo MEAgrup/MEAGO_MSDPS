@@ -65,6 +65,18 @@ export interface BridgeSourceRow {
   // di kontrak v1, jadi tidak ada field baru yang bisa ditolak validator CDPS.
   // Tidak diisi ⇒ output identik dengan sebelumnya (fixture v1 tetap cocok).
   paymentInfo?: BridgePaymentInfo | null;
+  // Migrasi 0379 (membalik D7): Baseline & Target GMV diisi BD di MSDPS.
+  // Pola sama dengan paymentInfo — tidak diisi ⇒ output identik v1 (fixture
+  // tetap cocok). Yang mengisinya hanya enqueue.ts, dan hanya bila flag
+  // BRIDGE_KIRIM_MERCHANT_TARGET=1 (sesudah validator CDPS menerima kunci ini).
+  merchantTarget?: BridgeMerchantTargetRow | null;
+}
+
+export interface BridgeMerchantTargetRow {
+  merchant_gmv_baseline: number | string | null; // brand_deals (0379) — BUKAN brand_deals.target_gmv (campaign, 0342)
+  merchant_target_gmv: number | string | null;
+  link_akun_merchant: string | null;
+  kategori_merchant: string | null;
 }
 
 export interface BridgePaymentInfo {
@@ -100,6 +112,15 @@ export interface BridgeOrderPayloadV1 {
     alasan_non_roster: string | null;
     nilai_cross_charge: string | null;
   }>;
+  // OPSIONAL, aditif (bukan kontrak v1 asli — payload_versi tetap 1). Hanya
+  // ada bila deal punya target_gmv DAN flag pengiriman aktif. Uang = string
+  // desimal seperti attestation.nilai. Lihat docs/DECISIONS.md 2026-11-06.
+  merchant_target?: {
+    gmv_baseline: string | null;
+    target_gmv: string;
+    link_akun: string | null;
+    kategori: string | null;
+  };
 }
 
 /** Integer-rupiah decimal string, never a float, never localized. "15000000.00", not "15.000.000". */
@@ -146,7 +167,7 @@ export function paymentSummaryText(info: BridgePaymentInfo): string | null {
  * the DB and this builder have drifted, not that the deal is merely incomplete.
  */
 export function buildBridgePayload(row: BridgeSourceRow): BridgeOrderPayloadV1 {
-  const { deal, bd, transaction, financeVerifier, merchant, lines, paymentInfo } = row;
+  const { deal, bd, transaction, financeVerifier, merchant, lines, paymentInfo, merchantTarget } = row;
   const paymentNote = paymentInfo ? paymentSummaryText(paymentInfo) : null;
 
   if (!deal.kategori_poi) throw new Error("deal.kategori_poi kosong — payload bridge butuh kategori POI");
@@ -163,6 +184,8 @@ export function buildBridgePayload(row: BridgeSourceRow): BridgeOrderPayloadV1 {
   // Glosarium trap (GLOSARIUM.md:9-31): merchant = brand/POI di sini, TIDAK
   // PERNAH kolom TikTok export "Merchant" (OTA/delivery platform, otaPlatformsRaw).
   const externalId = deal.shop_id && deal.shop_id.trim() !== "" ? deal.shop_id : merchant.id;
+
+  const targetGmv = merchantTarget ? moneyString(merchantTarget.merchant_target_gmv) : null;
 
   return {
     payload_versi: PAYLOAD_VERSI,
@@ -192,6 +215,17 @@ export function buildBridgePayload(row: BridgeSourceRow): BridgeOrderPayloadV1 {
       alasan_non_roster: l.alasan_non_roster,
       nilai_cross_charge: moneyString(l.nilai_cross_charge),
     })),
+    // Deal tanpa target_gmv (sebelum 0379) ⇒ blok tidak dikirim sama sekali.
+    ...(merchantTarget && targetGmv
+      ? {
+          merchant_target: {
+            gmv_baseline: moneyString(merchantTarget.merchant_gmv_baseline),
+            target_gmv: targetGmv,
+            link_akun: merchantTarget.link_akun_merchant?.trim() || null,
+            kategori: merchantTarget.kategori_merchant?.trim() || null,
+          },
+        }
+      : {}),
   };
 }
 

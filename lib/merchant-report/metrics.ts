@@ -8,7 +8,7 @@
 //     n=1 -> 1,0;
 //   * jumlah baris top 5% memakai round() Python (pembulatan bankir);
 //   * median = statistics.median (rata-rata dua tengah bila genap).
-// Versi per bulan dari rumus yang sama ada di view v_merchant_* (migrasi 0378).
+// Versi per bulan dari rumus yang sama ada di view v_merchant_* (migrasi 0381).
 // Pure — tanpa import DB/React.
 
 export type MetricRow = {

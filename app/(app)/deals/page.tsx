@@ -8,7 +8,8 @@ const DEAL_COLUMNS =
   "id, code, unique_id, brand_name, lead_id, bd_id, ops_name, kategori_poi, pic_name, pic_whatsapp, " +
   "tanggal_mulai_kontrak, tanggal_akhir_kontrak, bentuk_kerjasama, nominal_harga, benefit, " +
   "visit_start_date, visit_start_time, visit_end_date, visit_end_time, kreator_needed, konten_needed, " +
-  "total_jam_live, brief_link, transaction_id, created_at";
+  "total_jam_live, brief_link, merchant_gmv_baseline, merchant_target_gmv, link_akun_merchant, kategori_merchant, " +
+  "transaction_id, created_at";
 
 const CHANGE_REQUEST_COLUMNS =
   "id, deal_id, deal_code, deal_brand_name, action, payload, status, requested_by, requested_at, " +
