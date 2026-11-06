@@ -25,6 +25,7 @@ type Trx = {
   amount_verified: number;
   amount_outstanding: number;
   status: string;
+  contract_url: string | null;
 };
 
 export default async function MerchantsPage() {
@@ -62,7 +63,7 @@ export default async function MerchantsPage() {
     supabase.from("services").select("id, code, merchant_id, service_type, status"),
     supabase
       .from("transactions")
-      .select("id, code, merchant_id, total_agreed_value, amount_verified, amount_outstanding, status"),
+      .select("id, code, merchant_id, total_agreed_value, amount_verified, amount_outstanding, status, contract_url"),
     attemptsQuery,
   ]);
 
@@ -193,6 +194,7 @@ export default async function MerchantsPage() {
                   <th className="right">Terverifikasi</th>
                   <th className="right">Outstanding</th>
                   <th>Status</th>
+                  <th>Kontrak</th>
                 </tr>
               </thead>
               <tbody>
@@ -215,11 +217,20 @@ export default async function MerchantsPage() {
                         {t.status}
                       </span>
                     </td>
+                    <td>
+                      {t.contract_url ? (
+                        <a href={t.contract_url} target="_blank" rel="noopener noreferrer">
+                          lihat kontrak
+                        </a>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {tr.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="muted">
+                    <td colSpan={6} className="muted">
                       Belum ada transaksi.
                     </td>
                   </tr>

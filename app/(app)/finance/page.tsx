@@ -3,6 +3,8 @@ import { getCachedClient, getSessionUser, getEmployee } from "@/lib/supabase/ser
 import { rupiah, tanggal } from "@/lib/format";
 import {
   VerifyForm,
+  ContractLink,
+  ContractUrlForm,
   FlagButton,
   PayoutTransferForm,
   PayoutCancelForm,
@@ -22,6 +24,7 @@ type Trx = {
   flag_jatuh_tempo: boolean;
   flag_bermasalah: boolean;
   released_to_account_at: string | null;
+  contract_url: string | null;
 };
 
 type Payout = {
@@ -75,7 +78,7 @@ export default async function FinancePage() {
     supabase
       .from("transactions")
       .select(
-        "id, code, merchant_id, payment_intent, total_agreed_value, amount_verified, amount_outstanding, status, flag_jatuh_tempo, flag_bermasalah, released_to_account_at"
+        "id, code, merchant_id, payment_intent, total_agreed_value, amount_verified, amount_outstanding, status, flag_jatuh_tempo, flag_bermasalah, released_to_account_at, contract_url"
       )
       .order("created_at", { ascending: false }),
     // Out-leg: antrian disbursement payout kreator (PYO dari M9).
@@ -163,6 +166,7 @@ export default async function FinancePage() {
               <th className="right">Outstanding</th>
               <th>Status</th>
               <th>Reminder</th>
+              <th>Kontrak SPK/MoU</th>
               {canVerify && <th>Verifikasi</th>}
             </tr>
           </thead>
@@ -204,9 +208,19 @@ export default async function FinancePage() {
                       </>
                     )}
                   </td>
+                  <td>
+                    <ContractLink url={t.contract_url} />
+                    {canVerify && t.contract_url && <ContractUrlForm transactionId={t.id} />}
+                  </td>
                   {canVerify && (
                     <td>
-                      <VerifyForm transactionId={t.id} outstanding={Number(t.amount_outstanding)} />
+                      <VerifyForm
+                        transactionId={t.id}
+                        outstanding={Number(t.amount_outstanding)}
+                        needsContract={
+                          t.contract_url ? undefined : { required: Number(t.amount_verified) === 0 }
+                        }
+                      />
                     </td>
                   )}
                 </tr>
@@ -214,7 +228,7 @@ export default async function FinancePage() {
             })}
             {queue.length === 0 && (
               <tr>
-                <td colSpan={canVerify ? 8 : 7} className="muted">
+                <td colSpan={canVerify ? 9 : 8} className="muted">
                   Tidak ada transaksi menunggu verifikasi.
                 </td>
               </tr>
@@ -359,6 +373,7 @@ export default async function FinancePage() {
               <th className="right">Nilai</th>
               <th className="right">Terverifikasi</th>
               <th>Status</th>
+              <th>Kontrak</th>
               <th>Gerbang Account</th>
             </tr>
           </thead>
@@ -374,6 +389,9 @@ export default async function FinancePage() {
                   <td>
                     <span className={`badge ${STATUS_CLASS[t.status] ?? "gray"}`}>{t.status}</span>
                   </td>
+                  <td>
+                    <ContractLink url={t.contract_url} />
+                  </td>
                   <td className="muted">
                     {t.released_to_account_at ? (
                       <span className="badge green">terbuka</span>
@@ -386,7 +404,7 @@ export default async function FinancePage() {
             })}
             {list.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted">
+                <td colSpan={7} className="muted">
                   Belum ada transaksi.
                 </td>
               </tr>
